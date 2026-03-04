@@ -1,0 +1,22 @@
+name: Call Graph
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  callgraph:
+    uses: Beneficial-AI-Foundation/scip-callgraph/.github/workflows/generate-lean-callgraph.yml@main
+    with:
+      project_path: '.'
+      github_url: https://github.com/Beneficial-AI-Foundation/VCV-io
