@@ -78,7 +78,9 @@ lemma support_eq_simulateQ (mx : OracleComp spec α) :
 
 @[simp, grind =] lemma support_liftM (q : OracleQuery spec α) :
     support (liftM q : OracleComp spec α) = Set.range q.cont := by
-  simp [support_eq_simulateQ]
+  rw [support_eq_simulateQ, simulateQ_query]
+  change q.cont '' (Set.univ : Set (spec.Range q.input)) = Set.range q.cont
+  exact Set.image_univ
 
 @[grind =] lemma support_query (t : spec.Domain) :
     support (liftM (query t) : OracleComp spec _) = Set.univ := by simp
@@ -164,7 +166,8 @@ lemma probOutput_liftM_eq_div (q : OracleQuery spec α) (x : α) :
 
 @[simp, grind =]
 lemma probOutput_query (t : spec.Domain) (u : spec.Range t) :
-    Pr[= u | (query t : OracleComp spec _)] = (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ := by simp
+    Pr[= u | (query t : OracleComp spec _)] = (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ := by
+  simp [probOutput_def, evalDist_query, PMF.uniformOfFintype_apply]
 
 @[grind =]
 lemma probEvent_liftM_eq_div (q : OracleQuery spec α) (p : α → Prop) :
@@ -186,7 +189,15 @@ lemma probOutput_query_eq_div (t : spec.Domain) (u : spec.Range t) :
 lemma probEvent_query (t : spec.Domain) (p : spec.Range t → Prop) [DecidablePred p] :
     Pr[ p | (query t : OracleComp spec _)] =
       Finset.card {x | p x} / Fintype.card (spec.Range t) := by
-  simp [probEvent_liftM_eq_div]
+  classical
+  have hcard : Finset.card {x | p x} = Fintype.card {x : spec.Range t // p x} := by
+    symm
+    exact Fintype.card_of_subtype {x | p x} (by
+      intro x
+      simp)
+  rw [probEvent_liftM_eq_div]
+  simp [hcard]
+  rfl
 
 end evalDist
 
@@ -359,7 +370,7 @@ lemma evalDist_simulateQ_run'_eq_evalDist {σ τ : Type u}
       (bind_map_left (m := OracleComp spec) Prod.fst ((so t).run s) mx).symm]
     rw [evalDist_bind, h t s]
     change OptionT.lift (PMF.uniformOfFintype (spec.Range t)) >>= (fun u => evalDist (mx u)) = _
-    rw [show (fun u => evalDist (mx u)) = evalDist ∘ mx from rfl, ← evalDist_query_bind]
+    simpa using (evalDist_query_bind (t := t) (ou := mx)).symm
 
 /-- Stronger version with computational hypothesis: if the implementation passes through
 queries exactly, then `simulateQ` preserves `evalDist`. -/
