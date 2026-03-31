@@ -275,8 +275,10 @@ lemma support_seq_map_vector_cons [LawfulMonad m] :
 @[simp]
 lemma probOutput_seq_map_vector_cons_eq_mul [LawfulMonad m] (xs : List.Vector α (n + 1)) :
     Pr[= xs | (· ::ᵥ ·) <$> mx <*> my] = Pr[= xs.head | mx] * Pr[= xs.tail | my] := by
-  rw [← probOutput_seq_map_eq_mul_of_injective2 mx my _ Vector.injective2_cons,
-    List.Vector.cons_head_tail]
+  change Pr[= xs | Vector.cons <$> mx <*> my] = Pr[= xs.head | mx] * Pr[= xs.tail | my]
+  rw [← List.Vector.cons_head_tail xs]
+  exact probOutput_seq_map_eq_mul_of_injective2 mx my Vector.cons Vector.injective2_cons
+    xs.head xs.tail
 
 @[simp]
 lemma probOutput_seq_map_vector_cons_eq_mul' [LawfulMonad m] (xs : List.Vector α (n + 1)) :

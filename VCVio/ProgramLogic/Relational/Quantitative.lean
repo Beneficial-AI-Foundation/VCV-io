@@ -487,9 +487,22 @@ private lemma eRelWP_indicator_eqRel_le
 
 private lemma min_add_tsub (a b : ℝ≥0∞) : min a b + (a - b) = a := by
   rcases le_total a b with hab | hab
-  · simp [min_eq_left hab, tsub_eq_zero_of_le hab]
-  · rw [min_eq_right hab, add_comm]
-    exact tsub_add_cancel_of_le hab
+  · calc
+      min a b + (a - b) = a + (a - b) := by
+        exact congrArg (fun x => x + (a - b)) (min_eq_left hab)
+      _ = a := by rw [tsub_eq_zero_of_le hab, add_zero]
+  · calc
+      min a b + (a - b) = b + (a - b) := by
+        exact congrArg (fun x => x + (a - b)) (min_eq_right hab)
+      _ = a := by
+        rw [add_comm]
+        exact tsub_add_cancel_of_le hab
+
+private lemma min_add_tsub_comm (a b : ℝ≥0∞) : min a b + (b - a) = b := by
+  calc
+    min a b + (b - a) = min b a + (b - a) := by
+      exact congrArg (fun x => x + (b - a)) (min_comm a b)
+    _ = b := min_add_tsub b a
 
 private lemma tsum_min_add_etvDist_eq_one
     {p q : PMF (Option α)} (hp : p none = 0) (hq : q none = 0) :
@@ -505,7 +518,7 @@ private lemma tsum_min_add_etvDist_eq_one
     exact tsum_congr fun a => min_add_tsub (p (some a)) (q (some a))
   have h2 : S + ∑' a, (q (some a) - p (some a)) = 1 := by
     rw [← ENNReal.tsum_add, ← hsum_q]
-    exact tsum_congr fun a => by rw [min_comm]; exact min_add_tsub (q (some a)) (p (some a))
+    exact tsum_congr fun a => min_add_tsub_comm (p (some a)) (q (some a))
   have hS_ne_top : S ≠ ⊤ := ne_top_of_le_ne_top one_ne_top hS_le
   have htsub1 : ∑' a, (p (some a) - q (some a)) = 1 - S :=
     ENNReal.eq_sub_of_add_eq hS_ne_top (by rwa [add_comm] at h1)
@@ -567,7 +580,11 @@ private lemma tsum_min_le_eRelWP
       rw [← ENNReal.tsum_add, ← hQ_sum]
       exact tsum_congr fun a =>
         show min (P a) (Q a) + (Q a - min (Q a) (P a)) = Q a from by
-          rw [min_comm]; exact add_tsub_cancel_of_le (min_le_left _ _)
+          calc
+            min (P a) (Q a) + (Q a - min (Q a) (P a)) =
+                min (P a) (Q a) + (Q a - min (P a) (Q a)) := by
+                  exact congrArg (fun x => min (P a) (Q a) + (Q a - x)) (min_comm (Q a) (P a))
+            _ = Q a := add_tsub_cancel_of_le (min_le_right _ _)
     exact ((ENNReal.add_right_inj hS_ne_top).mp (h1.trans h2.symm)).symm
   have hmul_δ : ∀ a, rP a * (δ * δ⁻¹) = rP a := by
     intro a
@@ -596,8 +613,11 @@ private lemma tsum_min_le_eRelWP
     conv_lhs => arg 1; rw [show
       (fun a => if a = b then min (P a) (Q a) else (0 : ℝ≥0∞)) =
         (fun a => if a = b then min (Q b) (P b) else 0) from by
-          ext a
-          split <;> simp_all [min_comm]]
+          funext a
+          by_cases h : a = b
+          · subst h
+            simpa using (min_comm (P a) (Q a))
+          · simp [h]]
     rw [tsum_eq_single b (fun a ha => if_neg ha)]
     simp only [ite_true]
     have htsum_rQ : ∑' a, rP a * rQ b * δ⁻¹ = rQ b := by
@@ -629,7 +649,11 @@ private lemma tsum_min_le_eRelWP
       probOutput_map_eq_tsum_ite c_spmf Prod.fst a]
     change ∑' z : α × α, (if a = z.1 then cf (some z) else 0) = P a
     rw [ENNReal.tsum_prod']; dsimp only [Prod.fst]
-    simp_rw [hite_tsum]
+    rw [show
+      (fun a' => ∑' b, if a = a' then cf (some (a', b)) else 0) =
+        (fun a' => if a = a' then ∑' b, cf (some (a', b)) else 0) from by
+          funext a'
+          simpa using hite_tsum (P := a = a') (f := fun b => cf (some (a', b)))]
     rw [tsum_eq_single a (fun a' (ha' : a' ≠ a) => if_neg (Ne.symm ha'))]
     rw [if_pos rfl, hfst_sum]
   have hcpl_snd : Prod.snd <$> c_spmf = pb := by
@@ -638,7 +662,11 @@ private lemma tsum_min_le_eRelWP
       probOutput_map_eq_tsum_ite c_spmf Prod.snd b]
     change ∑' z : α × α, (if b = z.2 then cf (some z) else 0) = Q b
     rw [ENNReal.tsum_prod', ENNReal.tsum_comm]; dsimp only [Prod.snd]
-    simp_rw [hite_tsum]
+    rw [show
+      (fun b' => ∑' a, if b = b' then cf (some (a, b')) else 0) =
+        (fun b' => if b = b' then ∑' a, cf (some (a, b')) else 0) from by
+          funext b'
+          simpa using hite_tsum (P := b = b') (f := fun a => cf (some (a, b')))]
     rw [tsum_eq_single b (fun b' (hb' : b' ≠ b) => if_neg (Ne.symm hb'))]
     rw [if_pos rfl, hsnd_sum]
   let c : SPMF.Coupling pa pb :=

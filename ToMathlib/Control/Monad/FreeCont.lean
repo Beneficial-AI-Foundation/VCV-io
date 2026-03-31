@@ -38,7 +38,8 @@ When unfolded, it takes the form:
 
 Compare this to the inductive definition, which has two constructors:
 - `pure : α → FreeMonad f α`
-- `roll : f β → (β → FreeMonad f α) → FreeMonad f α` -/
+- `roll : f β → (β → FreeMonad f α) → FreeMonad f α`
+-/
 def FreeContM (f : Type z → Type y) (α : Type w) : Type (max (u + 1) w y (z + 1)) :=
   FreeContT f Id.{u} α
 
@@ -150,13 +151,15 @@ instance [Monad m] [LawfulMonad m] : LawfulMonadLift m (FreeContT f m) where
   monadLift_pure := by
     intro α a
     dsimp [instMonadLift, instMonad]
-    funext r a b
-    simp [lift, pure]
+    funext r handleEff handlePure
+    change Pure.pure a >>= handlePure = handlePure a
+    simpa using (pure_bind a handlePure)
   monadLift_bind := by
     intros α β ma g
     dsimp [instMonadLift, instMonad]
-    funext r a b
-    simp [lift, bind]
+    funext r handleEff handlePure
+    change (ma >>= g) >>= handlePure = ma >>= fun x => g x >>= handlePure
+    simpa using (bind_assoc ma g handlePure)
 
 instance {n : Type u → Type v} [MonadLiftT m n] : MonadLiftT (FreeContT f m) (FreeContT f n) where
   monadLift := fun x => fun handleEff handlePure => by
