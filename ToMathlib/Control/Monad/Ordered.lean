@@ -98,11 +98,11 @@ scoped instance (priority := low) instDiscreteMonad (m) [Monad m] : OrderedMonad
     le_refl _ := rfl
     le_trans _ _ _ hab hbc := hab.trans hbc
   }
-  bind_mono h hf := by
+  bind_mono := by
+    intro α β ma ma' f f' h hf
     subst h
-    rename_i f g
-    have hfg : f = g := funext hf
-    subst hfg
+    have hff' : f = f' := funext hf
+    subst hff'
     rfl
 
 end Discrete
@@ -177,7 +177,10 @@ instance on the monad lift.
 -/
 def instDiscreteMonadLift {m n} [Monad m] [h : OrderedMonad n] [MonadLift m n] :
     OrderedMonadLift m n where
-  monadLift_mono h := by rename_i a b; have : a = b := h; simp only [this, le_refl]
+  monadLift_mono := by
+    intro α a b hab
+    subst hab
+    rfl
 
 end MonadLift
 

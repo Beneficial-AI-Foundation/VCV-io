@@ -84,22 +84,91 @@ def inducedNatTrans (M : RelativeMonad C D J) : NatTrans J M.inducedFunctor wher
 /-- If a relative monad is over the identity functor, it is a monad. -/
 def monadOfId (M : RelativeMonad C _ (𝟭 _)) : Monad C where
   toFunctor := M.inducedFunctor
-  η := { app X := M.η }
-  μ := NatTrans.mk (fun X => M.μ (𝟙 (M.T X)))
-    (fun X Y f => by
-      simp only [Functor.comp_obj, inducedFunctor_obj, Functor.comp_map, inducedFunctor_map,
-        Functor.id_obj, Functor.id_map]
-      rw [← assoc, ← assoc]
-      simp)
-  right_unit _ := by
-    simp only [Functor.id_obj, inducedFunctor_obj, inducedFunctor_map, Functor.id_map]
-    rw [← assoc]
-    simp
-  assoc _ := by
-    simp only [Functor.comp_obj, inducedFunctor_obj, inducedFunctor_map, Functor.id_obj,
-      Functor.id_map]
-    rw [← assoc, ← assoc]
-    simp
+  η :=
+    { app X := M.η
+      naturality := by
+        intro X Y f
+        simpa [inducedFunctor] using (M.right_unit (f := f ≫ M.η)).symm }
+  μ :=
+    { app := fun X => M.μ (𝟙 (M.T X))
+      naturality := by
+        intro X Y f
+        calc
+          M.μ (M.μ (f ≫ M.η) ≫ M.η) ≫ M.μ (𝟙 (M.T Y))
+              = M.μ (((M.μ (f ≫ M.η) ≫ M.η) ≫ M.μ (𝟙 (M.T Y)))) := by
+                  symm
+                  simpa using
+                    (M.assoc (X := M.T X) (Y := M.T Y) (Z := Y)
+                      (f := M.μ (f ≫ M.η) ≫ M.η) (g := 𝟙 (M.T Y)))
+          _ = M.μ (M.μ (f ≫ M.η)) := by
+                have hη : M.η ≫ M.μ (𝟙 (M.T Y)) = 𝟙 (M.T Y) :=
+                  M.right_unit (X := M.T Y) (Y := Y) (f := 𝟙 (M.T Y))
+                have hinner :
+                    (M.μ (f ≫ M.η) ≫ M.η) ≫ M.μ (𝟙 (M.T Y)) = M.μ (f ≫ M.η) := by
+                  calc
+                    (M.μ (f ≫ M.η) ≫ M.η) ≫ M.μ (𝟙 (M.T Y))
+                        = M.μ (f ≫ M.η) ≫ (M.η ≫ M.μ (𝟙 (M.T Y))) := by
+                            simp [Category.assoc]
+                    _ = M.μ (f ≫ M.η) ≫ 𝟙 (M.T Y) := by
+                            exact congrArg (fun t => M.μ (f ≫ M.η) ≫ t) hη
+                    _ = M.μ (f ≫ M.η) := by simp
+                exact congrArg M.μ hinner
+          _ = M.μ (𝟙 (M.T X)) ≫ M.μ (f ≫ M.η) := by
+                simpa using
+                  (M.assoc (X := M.T X) (Y := X) (Z := Y)
+                    (f := 𝟙 (M.T X)) (g := f ≫ M.η)) }
+  left_unit := by
+    intro X
+    simpa using (M.right_unit (f := 𝟙 (M.T X)))
+  right_unit := by
+    intro X
+    calc
+      M.μ (M.η ≫ M.η) ≫ M.μ (𝟙 (M.T X))
+          = M.μ ((M.η ≫ M.η) ≫ M.μ (𝟙 (M.T X))) := by
+              symm
+              simpa using
+                (M.assoc (X := X) (Y := M.T X) (Z := X)
+                  (f := M.η ≫ M.η) (g := 𝟙 (M.T X)))
+      _ = M.μ M.η := by
+            have hη : M.η ≫ M.μ (𝟙 (M.T X)) = 𝟙 (M.T X) :=
+              M.right_unit (X := M.T X) (Y := X) (f := 𝟙 (M.T X))
+            have hinner : (M.η ≫ M.η) ≫ M.μ (𝟙 (M.T X)) = M.η := by
+              calc
+                (M.η ≫ M.η) ≫ M.μ (𝟙 (M.T X))
+                    = M.η ≫ (M.η ≫ M.μ (𝟙 (M.T X))) := by
+                        simp [Category.assoc]
+                _ = M.η ≫ 𝟙 (M.T X) := by
+                    exact congrArg (fun t => M.η ≫ t) hη
+                _ = M.η := by simp
+            exact congrArg M.μ hinner
+      _ = 𝟙 (M.T X) := by
+            simpa using (M.left_unit (X := X))
+  assoc := by
+    intro X
+    calc
+      M.μ (M.μ (𝟙 (M.T X)) ≫ M.η) ≫ M.μ (𝟙 (M.T X))
+          = M.μ (((M.μ (𝟙 (M.T X)) ≫ M.η) ≫ M.μ (𝟙 (M.T X)))) := by
+              symm
+              simpa using
+                (M.assoc (X := M.T (M.T X)) (Y := M.T X) (Z := X)
+                  (f := M.μ (𝟙 (M.T X)) ≫ M.η) (g := 𝟙 (M.T X)))
+      _ = M.μ (M.μ (𝟙 (M.T X))) := by
+            have hη : M.η ≫ M.μ (𝟙 (M.T X)) = 𝟙 (M.T X) :=
+              M.right_unit (X := M.T X) (Y := X) (f := 𝟙 (M.T X))
+            have hinner :
+                (M.μ (𝟙 (M.T X)) ≫ M.η) ≫ M.μ (𝟙 (M.T X)) = M.μ (𝟙 (M.T X)) := by
+              calc
+                (M.μ (𝟙 (M.T X)) ≫ M.η) ≫ M.μ (𝟙 (M.T X))
+                    = M.μ (𝟙 (M.T X)) ≫ (M.η ≫ M.μ (𝟙 (M.T X))) := by
+                        simp [Category.assoc]
+                _ = M.μ (𝟙 (M.T X)) ≫ 𝟙 (M.T X) := by
+                    exact congrArg (fun t => M.μ (𝟙 (M.T X)) ≫ t) hη
+                _ = M.μ (𝟙 (M.T X)) := by simp
+            exact congrArg M.μ hinner
+      _ = M.μ (𝟙 (M.T (M.T X))) ≫ M.μ (𝟙 (M.T X)) := by
+            simpa using
+              (M.assoc (X := M.T (M.T X)) (Y := M.T X) (Z := X)
+                (f := 𝟙 (M.T (M.T X))) (g := 𝟙 (M.T X)))
 
 /-- Transport a relative monad along a natural isomorphism of the underlying functor. -/
 def ofNatIso {J₁ J₂ : C ⥤ D} (φ : J₁ ≅ J₂) (M : RelativeMonad C D J₁) : RelativeMonad C D J₂ where
