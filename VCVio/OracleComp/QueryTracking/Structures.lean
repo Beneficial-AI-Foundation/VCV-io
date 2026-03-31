@@ -242,7 +242,8 @@ lemma single_le_iff_pos [DecidableEq ι] (i : ι) (qc : QueryCount ι) :
     exact this
   · intro j
     by_cases hj : j = i
-    · simp [hj]; omega
+    · subst j
+      simpa [single] using Nat.succ_le_of_lt h
     · simp [hj]
 
 end QueryCount
@@ -527,6 +528,7 @@ lemma pop_eq_some_of_cons (seed : QuerySeed spec) (i : ι)
     seed.pop i = some (u, Function.update seed i us) := by
   unfold pop
   simp [h]
+  rfl
 
 lemma cons_of_pop_eq_some (seed : QuerySeed spec) (i : ι)
     (u : spec.Range i) (rest : QuerySeed spec)
