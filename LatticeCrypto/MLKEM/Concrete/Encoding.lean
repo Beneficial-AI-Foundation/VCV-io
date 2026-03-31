@@ -172,6 +172,7 @@ private theorem bitsToBytes_bytesToBits (bytes : ByteArray) :
       simpa using congrArg packByte hbitsEq
     rw [hpack, packByte_bitOf_byte]
     rw [ByteArray.getElem_eq_getElem_data]
+    rfl
 
 private theorem bytesToBits_getD_lt_two (bytes : ByteArray) (i : Nat) :
     (bytesToBits bytes).getD i 0 < 2 := by
@@ -366,7 +367,7 @@ private theorem byteDecode_byteEncode_of_bound {d : Nat} (hd : 0 < d) (f : Rq)
           exact j.isLt)) =
         Nat.digitsAppend 2 d ((f[i]'hi : Coeff).val) := by
     simpa [hlenDigits] using
-      (List.ofFn_getElem (l := Nat.digitsAppend 2 d ((f[i]'hi : Coeff).val)))
+      (List.ofFn_getElem (xs := Nat.digitsAppend 2 d ((f[i]'hi : Coeff).val)))
   have hcoeffBitsInput :
       (List.ofFn fun j : Fin d => (bytesToBits (byteEncode d f))[i * d + j.val]?.getD 0) =
         List.ofFn (fun j : Fin d => (bytesToBits (byteEncode d f)).getD (i * d + j.val) 0) := by
@@ -821,8 +822,7 @@ private theorem byteDecodeVec_byteEncodeVec_of_bound {d k : Nat} (hd : 0 < d) (v
         simpa [byteEncode_size] using hj
       simp only [Array.getElem_ofFn]
       rw [getByteD_byteEncodeVec (hd := hd) (v := v) (poly := i) (j := j) hi hj]
-      rw [← ByteArray.getElem_eq_getElem_data (a := byteEncode d (v[i]'hi)) (h := hjEnc)]
-      rw [getByteD_eq_getElem hjEnc]
+      simpa [ByteArray.getElem_eq_getElem_data] using (getByteD_eq_getElem (bytes := byteEncode d (v[i]'hi)) hjEnc)
   simp only [byteDecodeVec, Vector.getElem_ofFn]
   rw [hbytes]
   exact byteDecode_byteEncode_of_bound hd (f := v[i]'hi) (hbound := hbound ⟨i, hi⟩)
@@ -923,6 +923,7 @@ private theorem messageToArray_ofByteArray (ba : ByteArray) (hsize : ba.size = 3
     have hi : i < ba.size := by simpa [hsize] using hi1
     rw [Array.getElem_ofFn]
     simp [hi, ByteArray.getElem_eq_getElem_data]
+    rfl
 
 private theorem toArray_byteEncode1Msg (f : Rq) :
     (byteEncode1Msg f).toArray = (byteEncode 1 f).data := by
