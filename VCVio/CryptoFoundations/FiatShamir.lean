@@ -497,24 +497,25 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
       simpa using hleft oa]
     simpa using hrun oa s
   change
-    Pr[= true | (runtime M).evalDist (do
-      let (pk, sk) ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).keygen
-      let sig ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).sign pk sk msg
-      (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).verify pk msg sig)] = 1
-  rw [show (runtime M).evalDist (do
-      let (pk, sk) ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).keygen
-      let sig ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).sign pk sk msg
-      (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).verify pk msg sig) =
-        evalDist (do
+    Pr[= true | (FiatShamir σ hr M).exec (do
+      let (pk, sk) ← (FiatShamir σ hr M).keygen
+      let sig ← (FiatShamir σ hr M).sign pk sk msg
+      (FiatShamir σ hr M).verify pk msg sig)] = 1
+  have hExec :
+      (FiatShamir σ hr M).exec (do
+      let (pk, sk) ← (FiatShamir σ hr M).keygen
+      let sig ← (FiatShamir σ hr M).sign pk sk msg
+      (FiatShamir σ hr M).verify pk msg sig) =
+        (do
           let (pk, sk) ← hr.gen
           let (c, e) ← σ.commit pk sk
           let r ← $ᵗ Ω
           let s ← σ.respond pk sk e r
-          pure (σ.verify pk c r s)) by
-    change evalDist (StateT.run' (simulateQ (idImpl + ro) (do
-        let (pk, sk) ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).keygen
-        let sig ← (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).sign pk sk msg
-        (FiatShamir (m := OracleComp (unifSpec + (M × PC →ₒ Ω))) σ hr M).verify pk msg sig)) ∅) = _
+          pure (σ.verify pk c r s)) := by
+    change StateT.run' (simulateQ (idImpl + ro) (do
+        let (pk, sk) ← (FiatShamir σ hr M).keygen
+        let sig ← (FiatShamir σ hr M).sign pk sk msg
+        (FiatShamir σ hr M).verify pk msg sig)) ∅ = _
     dsimp only [FiatShamir]
     have hquery :
         ∀ q : M × PC,
@@ -558,10 +559,13 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
         StateT.modifyGet, StateT.run]
     have hro_miss : ∀ {β : Type} (q : M × PC)
         (rest : Ω → StateT ((M × PC →ₒ Ω).QueryCache) ProbComp β),
-        (ro q >>= rest).run' ∅ =
+        (do
+          let r ← ro q
+          rest r).run' ∅ =
           $ᵗ Ω >>= fun r =>
             (rest r).run' ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r) := by
       intro β q rest
+      change (ro q >>= rest).run' ∅ = _
       change Prod.fst <$> ((ro q >>= rest).run ∅) =
         $ᵗ Ω >>= fun r =>
           Prod.fst <$> (rest r).run ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r)
@@ -569,13 +573,14 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
         StateT.run_get, pure_bind, uniformSampleImpl, bind_assoc, map_bind,
         liftM, MonadLiftT.monadLift,
         MonadLift.monadLift, StateT.run_lift, hmod]
-    simp only [bind_assoc, pure_bind]
-    simp_rw [hpeel, hro_miss, hpeel]
     have hro_hit : ∀ {β : Type} (q : M × PC) (r : Ω)
         (rest : Ω → StateT ((M × PC →ₒ Ω).QueryCache) ProbComp β),
-        (ro q >>= rest).run' ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r) =
+        (do
+          let r' ← ro q
+          rest r').run' ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r) =
           (rest r).run' ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r) := by
       intro β q r rest
+      change (ro q >>= rest).run' ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r) = _
       change Prod.fst <$> ((ro q >>= rest).run
           ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery q r)) =
         Prod.fst <$> (rest r).run
@@ -583,23 +588,76 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
       rw [StateT.run_bind]
       simp only [ro, randomOracle, QueryImpl.withCaching_apply, StateT.run_bind,
         StateT.run_get, pure_bind, QueryCache.cacheQuery_self, StateT.run_pure]
-    simp_rw [hro_hit]
     have hpure_run' : ∀ {α : Type} (a : α) (s : (M × PC →ₒ Ω).QueryCache),
         (pure a : StateT _ ProbComp α).run' s = (pure a : ProbComp α) := by
       intro α a s
       change Prod.fst <$> (pure (a, s) : ProbComp _) = pure a
       simp [map_pure]
-    simp_rw [hpure_run']]
-  change
-    Pr[= true | (do
-      let (pk, sk) ← hr.gen
-      let (c, e) ← σ.commit pk sk
-      let r ← $ᵗ Ω
-      let s ← σ.respond pk sk e r
-      pure (σ.verify pk c r s) : ProbComp Bool)] = 1
+    have hinner :
+        ∀ (pk : X) (sk : W) (c : PC) (e : SC),
+          (do
+            let r ← ro (msg, c)
+            let s ← simulateQ (idImpl + ro) (liftM (σ.respond pk sk e r))
+            let r' ← ro (msg, c)
+            pure (σ.verify pk c r' s)).run' ∅ =
+          (do
+            let r ← $ᵗ Ω
+            let s ← σ.respond pk sk e r
+            pure (σ.verify pk c r s)) := by
+      intro pk sk c e
+      have hmiss_inner :=
+        hro_miss (q := (msg, c))
+          (rest := fun r =>
+            do
+              let s ← simulateQ (idImpl + ro) (liftM (σ.respond pk sk e r))
+              let r' ← ro (msg, c)
+              pure (σ.verify pk c r' s))
+      rw [hmiss_inner]
+      simp_rw [hpeel]
+      have hhit_inner :
+          ∀ (r : Ω) (s : P),
+            (do
+              let r' ← ro (msg, c)
+              pure (σ.verify pk c r' s)).run'
+                ((∅ : (M × PC →ₒ Ω).QueryCache).cacheQuery (msg, c) r) =
+              pure (σ.verify pk c r s) := by
+        intro r s
+        have hhit :=
+          hro_hit (q := (msg, c)) (r := r)
+            (rest := fun r' => pure (σ.verify pk c r' s))
+        rw [hhit, hpure_run']
+      apply bind_congr
+      intro r
+      apply bind_congr
+      intro s
+      exact hhit_inner r s
+    have hsig_block :
+        ∀ (pk : X) (sk : W),
+          (do
+            let ce ← simulateQ (idImpl + ro) (liftM (σ.commit pk sk))
+            let r ← ro (msg, ce.1)
+            let s ← simulateQ (idImpl + ro) (liftM (σ.respond pk sk ce.2 r))
+            let r' ← ro (msg, ce.1)
+            pure (σ.verify pk ce.1 r' s)).run' ∅ =
+          (do
+            let ce ← σ.commit pk sk
+            let r ← $ᵗ Ω
+            let s ← σ.respond pk sk ce.2 r
+            pure (σ.verify pk ce.1 r s)) := by
+      intro pk sk
+      simp_rw [hpeel]
+      apply bind_congr
+      intro ce
+      rcases ce with ⟨c, e⟩
+      exact hinner pk sk c e
+    apply bind_congr
+    rintro ⟨pk, sk⟩
+    simpa [bind_assoc, StateT.run_bind, map_eq_bind_pure_comp, Function.comp] using
+      hsig_block pk sk
+  rw [hExec]
   vcstep
   vcstep using (fun x => OracleComp.ProgramLogic.propInd (x ∈ support hr.gen))
-  · simpa [OracleComp.ProgramLogic.propInd] using
+  · simpa [OracleComp.ProgramLogic.propInd_eq_ite] using
       OracleComp.ProgramLogic.triple_support (oa := hr.gen)
   · intro x
     rcases x with ⟨pk, sk⟩
