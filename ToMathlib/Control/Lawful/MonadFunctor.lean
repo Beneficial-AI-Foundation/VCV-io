@@ -46,13 +46,37 @@ instance {m n o} [Monad m] [Monad n] [Monad o] [MonadFunctor n o] [MonadFunctorT
     [LawfulMonadFunctor n o] [LawfulMonadFunctorT m n] : LawfulMonadFunctorT m o where
   monadMap_id := by
     intro α
-    simp only [instMonadFunctorTOfMonadFunctor, monadMap_id, LawfulMonadFunctor.monadMap_id]
+    let F : {β : Type _} → n β → n β :=
+      fun {β} => @monadMap m n _ β (fun {γ} => (id : m γ → m γ))
+    let IdN : {β : Type _} → n β → n β := fun {β} => (id : n β → n β)
+    have hF : @F = @IdN := by
+      funext β x
+      exact congrFun (LawfulMonadFunctorT.monadMap_id (m := m) (n := n) (α := β)) x
+    funext x
+    change MonadFunctor.monadMap (m := n) F x = x
+    rw [hF]
+    exact congrFun (LawfulMonadFunctor.monadMap_id (m := n) (n := o) (α := α)) x
   monadMap_comp := by
     intro α f g
-    simp only [instMonadFunctorTOfMonadFunctor, monadMap_comp, LawfulMonadFunctor.monadMap_comp]
+    let F : {β : Type _} → n β → n β := fun {β} => @monadMap m n _ β f
+    let G : {β : Type _} → n β → n β := fun {β} => @monadMap m n _ β g
+    let FG : {β : Type _} → n β → n β := fun {β} x => F (G x)
+    let H : {β : Type _} → n β → n β := fun {β} => @monadMap m n _ β (f ∘ g)
+    have hFG : @FG = @H := by
+      funext β x
+      exact congrFun (LawfulMonadFunctorT.monadMap_comp (m := m) (n := n) (α := β) f g) x
+    funext x
+    change MonadFunctor.monadMap (m := n) F (MonadFunctor.monadMap (m := n) G x) =
+      MonadFunctor.monadMap (m := n) H x
+    calc
+      MonadFunctor.monadMap (m := n) F (MonadFunctor.monadMap (m := n) G x)
+          = MonadFunctor.monadMap (m := n) FG x := by
+              exact congrFun (LawfulMonadFunctor.monadMap_comp (m := n) (n := o) (α := α) F G) x
+      _ = MonadFunctor.monadMap (m := n) H x := by
+            rw [hFG]
 
 instance lawfulMonadFunctorRefl {m} [Monad m] : LawfulMonadFunctorT m m where
-  monadMap_id := by intro α; simp only [monadFunctorRefl]
-  monadMap_comp := by intro α f g; simp only [monadFunctorRefl]
+  monadMap_id := by intro α; rfl
+  monadMap_comp := by intro α f g; rfl
 
 instance {m n} [MonadFunctor m n] : MonadFunctorT m n := inferInstance

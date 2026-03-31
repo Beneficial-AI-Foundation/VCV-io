@@ -334,7 +334,9 @@ lemma List.countP_eq_sum_fin_ite {α : Type*} (xs : List α) (p : α → Bool) :
   | cons x xs h => {
     rw [List.countP_cons, ← h]
     refine (Fin.sum_univ_succ _).trans ((add_comm _ _).trans ?_)
-    simp
+    rw [Finset.sum_boole, Finset.sum_boole]
+    simp [Fin.getElem_fin]
+    rfl
   }
 
 lemma List.card_filter_getElem_eq {α : Type*} [DecidableEq α]
