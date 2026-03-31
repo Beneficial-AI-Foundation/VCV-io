@@ -520,16 +520,22 @@ private lemma IND_CPA_stepPrefix_resume_eq_hybridLR
                       (encAlg'.IND_CPA_queryImpl_hybridLR_counted pk
                         (if branch then k + 1 else k))
                       (oa u.1)).run u.2) = _
-                rw [show
+                have hquery_run :
                     ((encAlg'.IND_CPA_queryImpl_hybridLR_counted pk
-                        (if branch then k + 1 else k) (.inr mm)).run st) = pure (c, st) from by
-                      change
-                        (encAlg'.IND_CPA_hybridChallengeOracleLR_counted pk
-                          (if branch then k + 1 else k) mm).run st = _
-                      simpa using
-                        (IND_CPA_hybridChallengeOracleLR_counted_run_some
-                          (encAlg' := encAlg') pk (if branch then k + 1 else k) mm c st hcache)]
-                simp
+                        (if branch then k + 1 else k) (.inr mm)).run st) = pure (c, st) := by
+                  change
+                    (encAlg'.IND_CPA_hybridChallengeOracleLR_counted pk
+                      (if branch then k + 1 else k) mm).run st = _
+                  simpa using
+                    (IND_CPA_hybridChallengeOracleLR_counted_run_some
+                      (encAlg' := encAlg') pk (if branch then k + 1 else k) mm c st hcache)
+                rw [hquery_run]
+                exact
+                  pure_bind (m := ProbComp) (c, st) fun u =>
+                    (simulateQ
+                      (encAlg'.IND_CPA_queryImpl_hybridLR_counted pk
+                        (if branch then k + 1 else k))
+                      (oa u.1)).run u.2
               rw [simulateQ_query_bind, StateT.run']
               change
                 Prod.fst <$>
