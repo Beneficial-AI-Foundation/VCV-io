@@ -29,12 +29,27 @@ payloads (for example elliptic-curve points), and `gen : G` is a fixed public ge
 
 ## Proof structure
 
+**Security games**
+
+**IND-CPA₁ instantiated for ElGamal** (`AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp`):
+  sample `b ← {0,1}` and `(pk, sk) ← KeyGen`;
+  adversary chooses `(m₀, m₁)`; compute `c := (c₁, c₂) ← Encrypt(pk, m_b)`;
+  adversary receives `(c₁, c₂)` and outputs `b'`; wins if `b' = b`.
+**DDH** (`DiffieHellman.ddhExp`):
+  sample `a, b ← F` and a bit `β`; let `A = a•g`, `B = b•g`;
+  set `T = (a·b)•g` if `β = 1`, else `T = c•g` with `c ← F`;
+  adversary receives `(g, A, B, T)` and outputs `β'`; wins if `β' = β`.
+
 1. ElGamal definition and correctness.
 2. One-time DDH bridge:
-   `IND_CPA_OneTime_DDHReduction`,
-   `IND_CPA_OneTime_game_evalDist_eq_ddhExpReal`,
-   `IND_CPA_OneTime_DDHReduction_rand_half`, and
-   `elGamal_oneTime_signedAdvantageReal_abs_eq_two_mul_ddhGuessAdvantage`.
+   `IND_CPA_OneTime_DDHReduction` - builds a DDH adversary from a one-time IND-CPA₁ adversary
+      by embedding `(A, B, T)` in the DDH experiment as `(pk, c₁, c₂)` in the IND-CPA₁ game.
+   `IND_CPA_OneTime_game_evalDist_eq_ddhExpReal` - the one-time IND-CPA game has
+      the same distribution as the DDH real experiment (under the reduction).
+   `IND_CPA_OneTime_DDHReduction_rand_half` - in the DDH random branch the mask
+      is uniform, so `Pr[b' = b] = 1/2`.
+   `elGamal_oneTime_signedAdvantageReal_abs_eq_two_mul_ddhGuessAdvantage` -
+      `|Adv^{IND-CPA}_{1-time}| = 2 · Adv^{DDH}_{guess}`, relating the two advantage notions.
 3. Final theorem:
    `elGamal_IND_CPA_le_q_mul_ddh` is a direct instantiation of
    `AsymmEncAlg.IND_CPA_advantage_toReal_le_q_mul_of_oneTime_signedAdvantageReal_bound`
@@ -110,9 +125,9 @@ private lemma IND_CPA_OneTime_game_evalDist_eq_ddhExpReal
     evalDist
       (AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp
         (encAlg := elGamalAsymmEnc F G gen) adv) =
-      evalDist
-        (DiffieHellman.ddhExpReal (F := F) gen
-          (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)) := by
+    evalDist
+      (DiffieHellman.ddhExpReal (F := F) gen
+        (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)) := by
   simp only [AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp,
     DiffieHellman.ddhExpReal, IND_CPA_OneTime_DDHReduction, elGamalAsymmEnc]
   ext z
