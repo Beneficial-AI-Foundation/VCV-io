@@ -182,10 +182,23 @@ private lemma ddhExp_probOutput_eq_branch (g : G) (adversary : DDHAdversary F G)
       let z ← if bit then ddhExpReal g adversary
                else ddhExpRand g adversary
       pure (bit == z)] := by
+  -- Goal: Pr[= true | ddhExp g adv] = Pr[= true | bit ← $Bool; if bit then real else rand]
   unfold ddhExp
+  -- LHS is now unfolded:
+  --   Pr[= true | a ← $F; b ← $F; bit ← $Bool;
+  --               c ← (if bit then pure(a*b) else $F);
+  --               b' ← adv(g, a•g, b•g, c•g); pure(bit == b')]
+  -- RHS unchanged. Need to move `bit` to the front of LHS.
+  -- Convert probOutput to probEvent: Pr[= true | X] → Pr[· = true | X]
+  -- (swap lemmas are stated for probEvent)
   simp only [← probEvent_eq_eq_probOutput]
+  -- Swap inside: for each fixed a, swap b;bit → bit;b.
+  -- Then swap outer: a;bit → bit;a.
+  -- Net effect: a;b;bit → bit;a;b (valid since $F, $F, $Bool are independent).
   rw [probEvent_bind_congr fun a _ => probEvent_bind_bind_swap _ _ _ _,
       probEvent_bind_bind_swap]
+  -- Convert back: Pr[· = true | X] → Pr[= true | X].
+  -- Both sides now start with bit ← $Bool.
   simp only [probEvent_eq_eq_probOutput]
   refine probOutput_bind_congr' ($ᵗ Bool) true ?_
   intro bit
