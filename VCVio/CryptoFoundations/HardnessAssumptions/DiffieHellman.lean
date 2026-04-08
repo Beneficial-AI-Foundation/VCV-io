@@ -188,20 +188,30 @@ private lemma ddhExp_probOutput_eq_branch (g : G) (adversary : DDHAdversary F G)
   --   Pr[= true | a ← $F; b ← $F; bit ← $Bool;
   --               c ← (if bit then pure(a*b) else $F);
   --               b' ← adv(g, a•g, b•g, c•g); pure(bit == b')]
-  -- RHS unchanged. Need to move `bit` to the front of LHS.
+  -- RHS unchanged. Need to move `bit` to the front of LHS (apply a swap lemma).
   -- Convert probOutput to probEvent: Pr[= true | X] → Pr[· = true | X]
   -- (swap lemmas are stated for probEvent)
   simp only [← probEvent_eq_eq_probOutput]
-  -- Swap inside: for each fixed a, swap b;bit → bit;b.
-  -- Then swap outer: a;bit → bit;a.
-  -- Net effect: a;b;bit → bit;a;b (valid since $F, $F, $Bool are independent).
-  rw [probEvent_bind_congr fun a _ => probEvent_bind_bind_swap _ _ _ _,
-      probEvent_bind_bind_swap]
+  -- LHS: Pr[· = true | a ← $F; b ← $F; bit ← $Bool; …]
+  -- `probEvent_bind_congr` takes a proof that the continuation is equal for each `a`:
+  --   `fun a _ => probEvent_bind_bind_swap …` is a lambda providing that proof,
+  --   where `a` is the bound value and `_` is the (unused) membership witness.
+  -- Inside, `probEvent_bind_bind_swap` swaps b;bit → bit;b.
+  -- After: Pr[· = true | a ← $F; bit ← $Bool; b ← $F; …]
+  rw [probEvent_bind_congr fun a _ => probEvent_bind_bind_swap _ _ _ _]
+  -- Now swap the outer pair: a;bit → bit;a.
+  -- After: Pr[· = true | bit ← $Bool; a ← $F; b ← $F; …]
+  rw [probEvent_bind_bind_swap]
   -- Convert back: Pr[· = true | X] → Pr[= true | X].
   -- Both sides now start with bit ← $Bool.
   simp only [probEvent_eq_eq_probOutput]
+  -- Goal: Pr[= true | bit ← $Bool; f bit] = Pr[= true | bit ← $Bool; g bit].
+  -- `probOutput_bind_congr'` strips the common outer bind, reducing to:
+  --   ∀ bit, Pr[= true | f bit] = Pr[= true | g bit]
+  -- `intro bit` then fixes an arbitrary `bit : Bool`.
   refine probOutput_bind_congr' ($ᵗ Bool) true ?_
   intro bit
+  -- Case split: bit = true → unfolds to ddhExpReal; bit = false → ddhExpRand.
   cases bit <;> simp [ddhExpReal, ddhExpRand]
 
 /-- The single-game DDH decomposes: `Pr[win] - 1/2 = (Pr[real=1] - Pr[rand=1]) / 2`. -/
@@ -209,6 +219,9 @@ lemma ddhExp_probOutput_sub_half (g : G) (adversary : DDHAdversary F G) :
     (Pr[= true | ddhExp g adversary]).toReal - 1 / 2 =
     ((Pr[= true | ddhExpReal g adversary]).toReal -
       (Pr[= true | ddhExpRand g adversary]).toReal) / 2 := by
+  -- Rewrite Pr[= true | ddhExp …] to the branch form (bit ← $Bool; if bit then real else rand)
+  -- using `ddhExp_probOutput_eq_branch`. The `show … from by congr 1; exact …` wraps the
+  -- probability equality under `.toReal` so that `rw` can substitute in the goal.
   rw [show (Pr[= true | ddhExp g adversary]).toReal =
       (Pr[= true | do
         let bit ← ($ᵗ Bool : ProbComp Bool)
@@ -216,6 +229,8 @@ lemma ddhExp_probOutput_sub_half (g : G) (adversary : DDHAdversary F G) :
                  else ddhExpRand g adversary
         pure (bit == z)]).toReal from by
     congr 1; exact ddhExp_probOutput_eq_branch (F := F) g adversary]
+  -- Generic identity: for a fair coin choosing between two experiments f, g,
+  -- Pr[bit = z | bit ← $Bool; z ← (if bit then f else g)] - 1/2 = (Pr[f=1] - Pr[g=1]) / 2.
   exact probOutput_uniformBool_branch_toReal_sub_half
     (ddhExpReal g adversary)
     (ddhExpRand g adversary)
@@ -224,11 +239,15 @@ lemma ddhExp_probOutput_sub_half (g : G) (adversary : DDHAdversary F G) :
 `ddhDistAdvantage = 2 * ddhGuessAdvantage`. -/
 theorem ddhDistAdvantage_eq_two_mul_ddhGuessAdvantage (g : G) (adversary : DDHAdversary F G) :
     ddhDistAdvantage g adversary = 2 * ddhGuessAdvantage g adversary := by
+  -- Goal: |Pr[real=1] - Pr[rand=1]| = 2 * |Pr[ddhExp=1] - 1/2|
   unfold ddhDistAdvantage ddhGuessAdvantage
+  -- h : Pr[ddhExp=1] - 1/2 = (Pr[real=1] - Pr[rand=1]) / 2  (from the branch decomposition)
   have h := ddhExp_probOutput_sub_half (F := F) g adversary
+  -- Rearrange h to: Pr[real=1] - Pr[rand=1] = 2 * (Pr[ddhExp=1] - 1/2)
   have h2 : (Pr[= true | ddhExpReal g adversary]).toReal -
       (Pr[= true | ddhExpRand g adversary]).toReal =
       2 * ((Pr[= true | ddhExp g adversary]).toReal - 1 / 2) := by linarith
+  -- Substitute h2 into LHS, then |2 * x| = 2 * |x| since 2 ≥ 0.
   rw [h2, abs_mul, abs_of_nonneg (by positivity)]
 
 end DDHBranch

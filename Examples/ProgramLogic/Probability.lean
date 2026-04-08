@@ -24,6 +24,8 @@ variable {α β γ δ ε : Type}
 
 /-! ## Congruence -/
 
+-- Congruence under bind:
+-- ∀ x ∈ supp(X), Pr[f(x) = y] = Pr[g(x) = y]  ⟹  Pr[(X >>= f) = y] = Pr[(X >>= g) = y].
 example {mx : OracleComp spec α} {f g : α → OracleComp spec β} {y : β}
     (h : ∀ x ∈ support mx, Pr[= y | f x] = Pr[= y | g x]) :
     Pr[= y | mx >>= f] = Pr[= y | mx >>= g] := by
@@ -32,6 +34,7 @@ example {mx : OracleComp spec α} {f g : α → OracleComp spec β} {y : β}
 
 /-! ## Bind swap -/
 
+-- Bind swap: Pr[y | a ← X; b ← Y; f(a,b)] = Pr[y | b ← Y; a ← X; f(a,b)].
 example {mx : OracleComp spec α} {my : OracleComp spec β}
     {f : α → β → OracleComp spec γ} {y : γ} :
     Pr[= y | mx >>= fun a => my >>= fun b => f a b] =
@@ -40,12 +43,16 @@ example {mx : OracleComp spec α} {my : OracleComp spec β}
 
 /-! ## `rw under` -/
 
+-- Swap under 1 bind: Pr[y | a ← X; b ← Y; c ← Z; f(a,b,c)] = Pr[y | a ← X; c ← Z; b ← Y; f(a,b,c)].
+-- `under 1` means "keep the outer bind on X fixed, then swap Y and Z."
 example {mx : OracleComp spec α} {my : OracleComp spec β}
     {mz : OracleComp spec γ} {f : α → β → γ → OracleComp spec δ} {y : δ} :
     Pr[= y | mx >>= fun a => my >>= fun b => mz >>= fun c => f a b c] =
     Pr[= y | mx >>= fun a => mz >>= fun c => my >>= fun b => f a b c] := by
   vcstep rw under 1
 
+-- `under 2`: keep W and X fixed, swap Y and Z.
+-- Pr[out | w ← W; x ← X; y ← Y; z ← Z; f] = Pr[out | w ← W; x ← X; z ← Z; y ← Y; f].
 example {mw : OracleComp spec α} {mx : OracleComp spec β}
     {my : OracleComp spec γ} {mz : OracleComp spec δ}
     {f : α → β → γ → δ → OracleComp spec ε} {out : ε} :
@@ -55,6 +62,8 @@ example {mw : OracleComp spec α} {mx : OracleComp spec β}
 
 /-! ## Auto swap detection -/
 
+-- `vcstep` without arguments automatically detects which pair of binds to swap.
+-- Same goal as above, but the tactic finds the swap itself.
 example {mw : OracleComp spec α} {mx : OracleComp spec β}
     {my : OracleComp spec γ} {mz : OracleComp spec δ}
     {f : α → β → γ → δ → OracleComp spec ε} {out : ε} :
@@ -62,6 +71,8 @@ example {mw : OracleComp spec α} {mx : OracleComp spec β}
     Pr[= out | mw >>= fun w => mx >>= fun x => mz >>= fun z => my >>= fun y => f w x y z] := by
   vcstep
 
+-- Auto swap works inside nested `do` blocks with `<$>` (map):
+-- Pr[true | w ← W; x ← X; π₁(y ← Y; z ← Z; f)] = Pr[true | w ← W; x ← X; π₁(z ← Z; y ← Y; f)].
 example {mw : OracleComp spec α} {mx : OracleComp spec β}
     {my : OracleComp spec γ} {mz : OracleComp spec δ}
     {f : α → β → γ → δ → OracleComp spec (Bool × ε)} :
@@ -83,6 +94,8 @@ example {mw : OracleComp spec α} {mx : OracleComp spec β}
       pure b] := by
   vcstep
 
+-- Outer swap with `<$>`:
+-- Pr[out | w ← W; x ← X; f(w,x) <$> Y] = Pr[out | x ← X; w ← W; f(w,x) <$> Y].
 example {mw : OracleComp spec α} {mx : OracleComp spec β} {my : OracleComp spec γ}
     {f : α → β → γ → δ} [DecidableEq δ] {out : δ} :
     Pr[= out | do
@@ -99,6 +112,8 @@ example {mw : OracleComp spec α} {mx : OracleComp spec β} {my : OracleComp spe
 
 /-! ## `rw congr` / `rw congr'` -/
 
+-- Congruence for events: ∀ x, Pr[q(f(x))] = Pr[q(g(x))]  ⟹  Pr[q(X >>= f)] = Pr[q(X >>= g)].
+-- `vcstep rw congr'` strips the bind; the user provides the pointwise proof.
 example {mx : OracleComp spec α} {f g : α → OracleComp spec β} {q : β → Prop}
     (h : ∀ x, Pr[ q | f x] = Pr[ q | g x]) :
     Pr[ q | mx >>= f] = Pr[ q | mx >>= g] := by
@@ -107,6 +122,8 @@ example {mx : OracleComp spec α} {f g : α → OracleComp spec β} {q : β → 
 
 /-! ## Exhaustive `vcgen` on probability equalities -/
 
+-- `vcgen` is fully automated: repeatedly applies swap + congruence until both sides match.
+-- Pr[q | a ← X; b ← Y; f(a,b)] = Pr[q | b ← Y; a ← X; f(a,b)].
 example {mx : OracleComp spec α} {my : OracleComp spec β}
     {f : α → β → OracleComp spec γ} {q : γ → Prop} :
     Pr[ q | mx >>= fun a => my >>= fun b => f a b] =
