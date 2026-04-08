@@ -102,7 +102,8 @@ def validStep (last : Option CKAAction) (next : CKAAction) : Bool :=
   | some .recvA,  .sendA  | some .recvA,  .challA  => true
   | _, _ => false
 
-/-- Internal state of the CKA game. -/
+/-- Internal state of the CKA game:
+`(stA, stB, ρA, ρB, kA, kB, b, correct, lastAction)`. -/
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
