@@ -55,9 +55,8 @@ This packages the two capabilities that security experiments usually need togeth
 
 The bundle is kept separate from the core scheme definitions so that executable scheme data does
 not become noncomputable merely by carrying denotational semantics. -/
-structure ProbCompRuntime (m : Type → Type v) [Monad m] where
-  /-- Bundled subprobabilistic semantics for the ambient monad. -/
-  toSPMFSemantics : SPMFSemantics m
+structure ProbCompRuntime (m : Type → Type v) [Monad m]
+    extends SPMFSemantics m where
   /-- Bundled injection of plain probabilistic sampling into the ambient monad. -/
   toProbCompLift : ProbCompLift m
 

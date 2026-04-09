@@ -33,8 +33,7 @@ universe u v
 
 /-- A continuous key agreement (CKA) protocol with initial-key space `IK`,
 per-party state space `St`, epoch-key space `I`, and protocol-message space `Rho`. -/
-structure CKAScheme (m : Type → Type u) (IK St I Rho : Type)
-    extends ExecutionMethod m where
+structure CKAScheme (m : Type → Type u) [Monad m] (IK St I Rho : Type) where
   initKeyGen : m IK
   initA : IK → m St
   initB : IK → m St
@@ -45,7 +44,7 @@ structure CKAScheme (m : Type → Type u) (IK St I Rho : Type)
 
 namespace CKAScheme
 
-variable {m : Type → Type v} {IK St I Rho : Type}
+variable {m : Type → Type v} [Monad m] {IK St I Rho : Type}
   (cka : CKAScheme m IK St I Rho)
 
 /-! ## Oracle-based games
