@@ -33,7 +33,9 @@ def supportWhen (o : QueryImpl spec Set) (mx : OracleComp spec α) : Set α :=
 lemma supportWhen_pure (o : QueryImpl spec Set) (x : α) :
     supportWhen o (pure x : OracleComp spec α) = {x} := by
   ext y
-  simp [supportWhen]
+  rw [supportWhen, simulateQ_pure]
+  change y ∈ ({x} : Set α) ↔ y ∈ ({x} : Set α)
+  simp
 
 @[simp]
 lemma supportWhen_query_bind (o : QueryImpl spec Set) (q : spec.Domain)
@@ -41,7 +43,12 @@ lemma supportWhen_query_bind (o : QueryImpl spec Set) (q : spec.Domain)
     supportWhen o ((query q : OracleComp spec _) >>= oa) =
       ⋃ x ∈ o q, supportWhen o (oa x) := by
   ext y
-  simp [supportWhen, Set.bind_def]
+  rw [supportWhen, simulateQ_query_bind]
+  constructor <;> intro hy
+  · change y ∈ (⋃ i ∈ o q, simulateQ (r := SetM) o (oa i)) at hy
+    simpa [supportWhen] using hy
+  · change y ∈ (⋃ i ∈ o q, simulateQ (r := SetM) o (oa i))
+    simpa [supportWhen] using hy
 
 /-- Reachable outputs of a bind are the reachable outputs of the continuation over reachable
 outputs of the first computation. -/
@@ -49,8 +56,13 @@ outputs of the first computation. -/
 lemma supportWhen_bind (o : QueryImpl spec Set) (oa : OracleComp spec α)
     (ob : α → OracleComp spec β) :
     supportWhen o (oa >>= ob) = ⋃ x ∈ supportWhen o oa, supportWhen o (ob x) := by
-  ext y
-  simp [supportWhen, simulateQ_bind, Set.bind_def]
+  rw [supportWhen, simulateQ_bind]
+  change support
+      (((simulateQ (r := SetM) o oa) >>= fun x => simulateQ (r := SetM) o (ob x)) : SetM β) =
+    ⋃ x ∈ supportWhen o oa, supportWhen o (ob x)
+  simpa [supportWhen] using
+    (support_bind (m := SetM) (simulateQ (r := SetM) o oa)
+      (fun x => simulateQ (r := SetM) o (ob x)))
 
 /-- Membership form of [`OracleComp.supportWhen_bind`]. -/
 lemma mem_supportWhen_bind_iff (o : QueryImpl spec Set) (oa : OracleComp spec α)
