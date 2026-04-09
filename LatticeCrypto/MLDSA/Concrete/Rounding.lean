@@ -153,69 +153,6 @@ local instance : Zero Rq := Vector.instZero
 local instance : Sub Rq := Vector.instSub
 local instance : Neg Rq := Vector.instNeg
 
-local instance instRqAddCommGroup : AddCommGroup Rq where
-  add := (· + ·)
-  add_assoc a b c := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add, Vector.getElem_add, Vector.getElem_add, Vector.getElem_add]
-    exact add_assoc _ _ _
-  zero := 0
-  zero_add a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add, Vector.getElem_zero]
-    exact zero_add _
-  add_zero a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add, Vector.getElem_zero]
-    exact add_zero _
-  nsmul := rqNSMul
-  nsmul_zero x := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_zero]
-    simp [rqNSMul]
-  nsmul_succ n x := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add]
-    simpa [rqNSMul] using AddMonoid.nsmul_succ n (x.get ⟨i, hi⟩)
-  neg := Neg.neg
-  sub := Sub.sub
-  sub_eq_add_neg a b := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_sub, Vector.getElem_add, Vector.getElem_neg]
-    exact sub_eq_add_neg _ _
-  zsmul := rqZSMul
-  zsmul_zero' a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_zero]
-    simp [rqZSMul]
-  zsmul_succ' n a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add]
-    simpa [rqZSMul] using SubNegMonoid.zsmul_succ' n (a.get ⟨i, hi⟩)
-  zsmul_neg' n a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_neg]
-    simpa [rqZSMul] using SubNegMonoid.zsmul_neg' n (a.get ⟨i, hi⟩)
-  neg_add_cancel a := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add, Vector.getElem_neg, Vector.getElem_zero]
-    exact neg_add_cancel _
-  add_comm a b := by
-    apply Vector.ext
-    intro i hi
-    rw [Vector.getElem_add, Vector.getElem_add]
-    exact add_comm _ _
-
 /-- Casting `centeredRepr` back into `ZMod q` recovers the original coefficient. -/
 private theorem centeredRepr_cast (x : Coeff) :
     x = intToCoeff (LatticeCrypto.centeredRepr x) := by
@@ -484,22 +421,16 @@ theorem concretePower2Round_high_low_decomp (r : Rq) :
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  rw [Vector.getElem_add]
-  change (power2RoundShift (power2RoundHigh r)).get j +
-      (power2RoundLow r).get j = r.get j
-  rw [power2RoundShift_high_get, power2RoundLow_get]
-  exact power2RoundCoeff_eq (r.get j)
+  simpa [Vector.get_eq_getElem, power2RoundShift_high_get, power2RoundLow_get]
+    using power2RoundCoeff_eq (r.get j)
 
 theorem concretePower2Round_remainder_eq_low (r : Rq) :
     r - power2RoundShift (power2RoundHigh r) = power2RoundLow r := by
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  rw [Vector.getElem_sub]
-  change r.get j - (power2RoundShift (power2RoundHigh r)).get j =
-      (power2RoundLow r).get j
-  rw [power2RoundShift_high_get, power2RoundLow_get]
-  exact sub_eq_iff_eq_add'.2 (power2RoundCoeff_eq (r.get j)).symm
+  simpa [Vector.get_eq_getElem, power2RoundShift_high_get, power2RoundLow_get]
+    using sub_eq_iff_eq_add'.2 (power2RoundCoeff_eq (r.get j)).symm
 
 theorem concretePower2Round_bound (r : Rq) :
     LatticeCrypto.cInfNorm (r - power2RoundShift (power2RoundHigh r)) ≤ 2 ^ (droppedBits - 1) := by
@@ -524,10 +455,8 @@ theorem concreteRounding_high_low_decomp (p : Params) (hγ : 0 < p.gamma2) (r : 
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  rw [Vector.getElem_add]
-  change (highBitsShift p (highBits p r)).get j + (lowBits p r).get j = r.get j
-  rw [highBitsShift_high_get, lowBits_get]
-  simpa [highBitsCoeff, lowBitsCoeff] using decomposeCoeff_eq (r.get j) hγ
+  simpa [Vector.get_eq_getElem, highBitsShift_high_get, lowBits_get, highBitsCoeff, lowBitsCoeff]
+    using decomposeCoeff_eq (r.get j) hγ
 
 theorem concreteRounding_lowBits_bound (p : Params)
     (hγ : 0 < p.gamma2) (hq : 2 * p.gamma2 < modulus) (r : Rq) :
@@ -1850,8 +1779,8 @@ theorem concreteRounding_useHint_correct_of_isApproved (p : Params)
     rw [makeHint_get]
     rw [highBits, Vector.get_ofFn]
     have hadd : (r + z).get j = r.get j + z.get j := by
-      rw [Vector.get_eq_getElem, Vector.getElem_add]
-      simp [Vector.get_eq_getElem]
+      show (r + z)[j.val] = r[j.val] + z[j.val]
+      simpa using (Vector.getElem_add (xs := r) (ys := z) (i := j.val) (h := j.isLt))
     rw [hadd]
     exact congrArg (fun n : ℕ => (n : Coeff))
       (useHintCoeff_correct_of_small_of_isApproved p hp (z := z.get j) (r := r.get j) hzj)
@@ -1866,12 +1795,15 @@ theorem concreteRounding_useHint_bound_of_isApproved (p : Params)
       r.get j -
         (((2 * p.gamma2 : ℕ) : Coeff) *
           (useHintCoeff (h.get j) (r.get j) p.gamma2 : Coeff)) := by
-    rw [Vector.get_eq_getElem, Vector.getElem_sub]
-    simp only [Vector.get_eq_getElem]
+    have hsub : (r - highBitsShift p (useHint p h r)).get j =
+        r.get j - (highBitsShift p (useHint p h r)).get j := by
+      show (r - highBitsShift p (useHint p h r))[j.val] =
+          r[j.val] - (highBitsShift p (useHint p h r))[j.val]
+      simpa using (Vector.getElem_sub (xs := r) (ys := highBitsShift p (useHint p h r))
+        (i := j.val) (h := j.isLt))
+    rw [hsub]
     congr 1
-    have := highBitsShift_useHint_get p h r j
-    simp only [Vector.get_eq_getElem] at this
-    exact this
+    exact highBitsShift_useHint_get p h r j
   rw [hcoeff]
   exact useHintCoeff_shift_sub_bound_of_isApproved p hp (h.get j) (r.get j)
 
@@ -1896,8 +1828,8 @@ theorem concreteRounding_hide_low_of_isApproved (p : Params)
       exact hlowj0
     rw [highBits, Vector.get_ofFn, highBits, Vector.get_ofFn]
     have hadd : (r + s).get j = r.get j + s.get j := by
-      rw [Vector.get_eq_getElem, Vector.getElem_add]
-      simp [Vector.get_eq_getElem]
+      show (r + s)[j.val] = r[j.val] + s[j.val]
+      simpa using (Vector.getElem_add (xs := r) (ys := s) (i := j.val) (h := j.isLt))
     rw [hadd]
     exact congrArg (fun n : ℕ => (n : Coeff))
       (highBitsCoeff_add_eq_of_small_of_isApproved p hp (r := r.get j)
