@@ -1,4 +1,6 @@
 import Examples.BR93
+import Examples.CKA.CKAfromDDH
+import Examples.CKA.Defs
 import Examples.CommitmentScheme
 import Examples.CommitmentScheme.Binding
 import Examples.CommitmentScheme.Common
@@ -33,5 +35,3 @@ import Examples.Regev
 import Examples.Schnorr
 import Examples.Signature
 import Examples.SimpleTwoServerPIR
-import Examples.CKA.Defs
-import Examples.CKA.CKAfromDDH

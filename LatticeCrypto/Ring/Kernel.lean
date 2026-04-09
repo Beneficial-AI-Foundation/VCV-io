@@ -39,7 +39,7 @@ Bridges the semantic coefficient-indexed carrier to mutable `Array` operations
 (`toArray` / `ofArray`) with round-trip and size laws. Scheme-specific fast
 paths (e.g. concrete NTTs) operate on arrays via the kernel, then convert back
 to the backend carrier. -/
-structure PolyKernel (Coeff : Type u) (backend : PolyBackend Coeff) where
+structure PolyKernel (Coeff : Type u) (backend : PolyBackend.{u, v} Coeff) where
   toArray : backend.Poly → Array Coeff
   ofArray : Array Coeff → backend.Poly
   toArray_size : ∀ p, (toArray p).size = backend.degree
@@ -50,7 +50,7 @@ structure PolyKernel (Coeff : Type u) (backend : PolyBackend Coeff) where
 
 namespace PolyKernel
 
-variable {Coeff : Type u} {backend : PolyBackend Coeff}
+variable {Coeff : Type u} {backend : PolyBackend.{u, v} Coeff}
 
 /-- Reify a kernel array back to the backend coefficient function. -/
 def coeffFn (_kernel : PolyKernel Coeff backend) (a : Array Coeff) (h : a.size = backend.degree) :
@@ -68,7 +68,7 @@ into a single computable bundle. Downstream scheme `Arithmetic.lean` modules
 this structure via `vectorNegacyclicRing` and then expose scheme-local type
 aliases (`Rq`, `Tq`, `RqVec`, etc.) that the rest of the scheme imports. -/
 structure NegacyclicRing (Coeff : Type u) [CommRing Coeff] where
-  backend : PolyBackend Coeff
+  backend : PolyBackend.{u, v} Coeff
   kernel : PolyKernel Coeff backend
   zero : backend.Poly
   add : backend.Poly → backend.Poly → backend.Poly
@@ -85,7 +85,7 @@ operation is sound with respect to the corresponding quotient-ring operation.
 This structure is `noncomputable` by design — it exists only for proof-level
 reasoning and is never evaluated at runtime. -/
 structure NegacyclicRingSemantics {Coeff : Type u} [CommRing Coeff]
-    (ring : NegacyclicRing Coeff) where
+    (ring : NegacyclicRing.{u, v} Coeff) where
   quotientOf : ring.backend.Poly → NegacyclicQuotient Coeff ring.backend.degree
   zero_sound : quotientOf ring.zero = 0
   add_sound : ∀ f g, quotientOf (ring.add f g) = quotientOf f + quotientOf g
@@ -98,35 +98,35 @@ namespace NegacyclicRing
 variable {Coeff : Type u} [CommRing Coeff]
 
 /-- The coefficient-domain carrier of a bundled negacyclic ring. -/
-abbrev Poly (ring : NegacyclicRing Coeff) : Type _ :=
+abbrev Poly (ring : NegacyclicRing.{u, v} Coeff) : Type _ :=
   ring.backend.Poly
 
 /-- The degree of the bundled polynomial carrier. -/
-abbrev degree (ring : NegacyclicRing Coeff) : Nat :=
+abbrev degree (ring : NegacyclicRing.{u, v} Coeff) : Nat :=
   ring.backend.degree
 
 /-- The semantic quotient associated to a bundled negacyclic ring. -/
-abbrev Quotient (ring : NegacyclicRing Coeff) : Type _ :=
+abbrev Quotient (ring : NegacyclicRing.{u, v} Coeff) : Type _ :=
   NegacyclicQuotient Coeff ring.degree
 
 /-- Coefficient projection from the bundled backend. -/
-def coeff (ring : NegacyclicRing Coeff) (p : ring.Poly) : Fin ring.degree → Coeff :=
+def coeff (ring : NegacyclicRing.{u, v} Coeff) (p : ring.Poly) : Fin ring.degree → Coeff :=
   ring.backend.coeff p
 
-instance (ring : NegacyclicRing Coeff) : Zero ring.Poly :=
+instance (ring : NegacyclicRing.{u, v} Coeff) : Zero ring.Poly :=
   ⟨ring.zero⟩
 
-instance (ring : NegacyclicRing Coeff) : Add ring.Poly :=
+instance (ring : NegacyclicRing.{u, v} Coeff) : Add ring.Poly :=
   ⟨ring.add⟩
 
-instance (ring : NegacyclicRing Coeff) : Sub ring.Poly :=
+instance (ring : NegacyclicRing.{u, v} Coeff) : Sub ring.Poly :=
   ⟨ring.sub⟩
 
-instance (ring : NegacyclicRing Coeff) : Neg ring.Poly :=
+instance (ring : NegacyclicRing.{u, v} Coeff) : Neg ring.Poly :=
   ⟨ring.neg⟩
 
 /-- Indexed access into a polynomial carrier by coefficient position. -/
-instance (ring : NegacyclicRing Coeff) :
+instance (ring : NegacyclicRing.{u, v} Coeff) :
     GetElem ring.Poly Nat Coeff (fun _ i => i < ring.degree) where
   getElem p i hi := ring.backend.coeff p ⟨i, hi⟩
 
@@ -134,7 +134,7 @@ end NegacyclicRing
 
 namespace NegacyclicRingSemantics
 
-variable {Coeff : Type u} [CommRing Coeff] {ring : NegacyclicRing Coeff}
+variable {Coeff : Type u} [CommRing Coeff] {ring : NegacyclicRing.{u, v} Coeff}
 
 /-- The semantic quotient associated to a bundled soundness interpretation. -/
 abbrev Quotient (_sem : NegacyclicRingSemantics ring) : Type _ :=
