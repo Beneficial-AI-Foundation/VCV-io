@@ -61,7 +61,6 @@ def ddhCKA (F G : Type) [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
   sendB := ddhCKA.send gen
   recvA := ddhCKA.recv
   recvB := ddhCKA.recv
-  __ := ExecutionMethod.default
 
 namespace ddhCKA
 
