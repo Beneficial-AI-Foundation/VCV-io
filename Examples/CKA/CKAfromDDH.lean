@@ -82,24 +82,23 @@ Asserts `correct = true` and one of four phases for the game state
 - **Pending-A→B**: `(y, x, y•g, -, y•(x•g), -, b, true, sendA/challA)`.
 - **Sync-B**: `(y, y•g, -, -, -, -, b, true, recvB)`.
 - **Pending-B→A**: `(y, x', -, x'•g, -, x'•(y•g), b, true, sendB/challB)`. -/
-private def gameInvariant (gen : G) (state : GameState (F ⊕ G) G G) : Prop :=
-  let ⟨sA, sB, ρA, ρB, kA, kB, _, correct, last⟩ := state
-  correct = true ∧
-  match last with
+private def gameInvariant (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
+  s.correct = true ∧
+  match s.lastAction with
   | none | some .recvA => -- initial state or state after O-Recv-A
-    ∃ x : F, sA = .inr (x • gen) ∧ sB = .inl x ∧
-      ρA = none ∧ ρB = none ∧ kA = none ∧ kB = none
+    ∃ x : F, s.stA = .inr (x • gen) ∧ s.stB = .inl x ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
   | some .sendA | some .challA => -- state after O-Send-A or O-Chall-A
-    ∃ x y : F, sA = .inl y ∧ sB = .inl x ∧
-      ρA = some (y • gen) ∧ ρB = none ∧
-      kA = some (y • (x • gen)) ∧ kB = none
+    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
+      s.lastRhoA = some (y • gen) ∧ s.lastRhoB = none ∧
+      s.lastKeyA = some (y • (x • gen)) ∧ s.lastKeyB = none
   | some .recvB => -- state after O-Recv-B
-    ∃ y : F, sA = .inl y ∧ sB = .inr (y • gen) ∧
-      ρA = none ∧ ρB = none ∧ kA = none ∧ kB = none
+    ∃ y : F, s.stA = .inl y ∧ s.stB = .inr (y • gen) ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
   | some .sendB | some .challB => -- state after O-Send-B or O-Chall-B
-    ∃ x y : F, sA = .inl y ∧ sB = .inl x ∧
-      ρA = none ∧ ρB = some (x • gen) ∧
-      kA = none ∧ kB = some (x • (y • gen))
+    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
+      s.lastRhoA = none ∧ s.lastRhoB = some (x • gen) ∧
+      s.lastKeyA = none ∧ s.lastKeyB = some (x • (y • gen))
 
 /-! ### Invariant preservation -/
 
@@ -107,15 +106,10 @@ omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
 /-- `gameInvariant` holds on `initGameState` for any key `(x₀ • gen, x₀)`. -/
 private lemma gameInvariant_init (x₀ : F) :
     gameInvariant gen
-      { stA := .inr (x₀ • gen)
-        stB := .inl x₀
-        lastRhoA := none
-        lastRhoB := none
-        lastKeyA := none
-        lastKeyB := none
-        b := false
-        correct := true
-        lastAction := none } :=
+      { stA := .inr (x₀ • gen), stB := .inl x₀,
+        lastRhoA := none, lastRhoB := none, lastKeyA := none, lastKeyB := none,
+        b := false, correct := true, lastAction := none,
+        tA := 0, tB := 0, tStar := 0, deltaCKA := 0 } :=
   ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
@@ -134,10 +128,10 @@ set_option linter.flexible false in
 private lemma oracleSendA_preserves_gameInvariant :
     QueryImpl.PreservesInv (CKAScheme.oracleSendA (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩
   cases hGuard : validStep last .sendA
   case false => -- guard failed → no-op
-    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩) := by
+    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩) := by
       simpa [CKAScheme.oracleSendA, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true => -- guard passed → sync-A phase (last = none | recvA)
@@ -158,10 +152,10 @@ key check: `x•(y•g) = y•(x•g)` by `smul_comm`. -/
 private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
     QueryImpl.PreservesInv (CKAScheme.oracleRecvB (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩
   cases hGuard : validStep last .recvB
   case false => -- guard failed → no-op
-    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩) := by
+    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩) := by
       simpa [CKAScheme.oracleRecvB, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true => -- guard passed → pending-A→B phase (last = sendA | challA)
@@ -170,7 +164,7 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
       rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       have : z = ((),
-        ⟨.inl y, .inr (y • gen), none, none, none, none, b, true, some .recvB⟩) := by
+        ⟨.inl y, .inr (y • gen), none, none, none, none, b, true, some .recvB, epA, epB, ts, dc⟩) := by
         simpa [CKAScheme.oracleRecvB, validStep, ddhCKA, ddhCKA.recv, smul_comm x y gen,
           StateT.run_bind, StateT.run_get, pure_bind] using hz
       subst this
@@ -182,10 +176,10 @@ set_option linter.flexible false in
 private lemma oracleSendB_preserves_gameInvariant :
     QueryImpl.PreservesInv (CKAScheme.oracleSendB (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩
   cases hGuard : validStep last .sendB
   case false => -- guard failed → no-op
-    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩) := by
+    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩) := by
       simpa [CKAScheme.oracleSendB, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true => -- guard passed → sync-B phase (last = recvB)
@@ -205,10 +199,10 @@ key check: `y•(x'•g) = x'•(y•g)` by `smul_comm`. -/
 private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
     QueryImpl.PreservesInv (CKAScheme.oracleRecvA (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩
   cases hGuard : validStep last .recvA
   case false => -- guard failed → no-op
-    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last⟩) := by
+    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, ts, dc⟩) := by
       simpa [CKAScheme.oracleRecvA, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true => -- guard passed → pending-B→A phase (last = sendB | challB)
@@ -217,7 +211,7 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
       rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       have : z = ((),
-        ⟨.inr (x • gen), .inl x, none, none, none, none, b, true, some .recvA⟩) := by
+        ⟨.inr (x • gen), .inl x, none, none, none, none, b, true, some .recvA, epA, epB, ts, dc⟩) := by
         simpa [CKAScheme.oracleRecvA, validStep, ddhCKA, ddhCKA.recv, smul_comm y x gen,
           StateT.run_bind, StateT.run_get, pure_bind] using hz
       subst this
@@ -290,15 +284,10 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
       (Inv := gameInvariant gen)
       (correctnessImpl_preserves_gameInvariant (F := F) (G := G) (gen := gen))
       adv
-      { stA := .inr (x₀ • gen)
-        stB := .inl x₀
-        lastRhoA := none
-        lastRhoB := none
-        lastKeyA := none
-        lastKeyB := none
-        b := false
-        correct := true
-        lastAction := none }
+      { stA := .inr (x₀ • gen), stB := .inl x₀,
+        lastRhoA := none, lastRhoB := none, lastKeyA := none, lastKeyB := none,
+        b := false, correct := true, lastAction := none,
+        tA := 0, tB := 0, tStar := 0, deltaCKA := 0 }
       (gameInvariant_init (gen := gen) x₀)
       out
       hout

@@ -58,12 +58,13 @@ The CKA game [ACD19, Def. 13] gives the adversary oracle access to:
   *Correctness assert*: the received key must match the sender's corresponding key.
 - **O-Chall-A / O-Chall-B**
   Like send, but return real key (`b = 0`) or random key (`b = 1`).
-- **TODO:** corruption oracles.
+- **O-Corrupt-A / O-Corrupt-B**
+  Return the current state of party A (resp. B) and record the corruption epoch.
 
 As in [TripleRatchet, SPQR], and contrary to [ACD19], we don't consider additional oracles that
 allow to corrupt the randomness of a sending party.
 
-As in [ACD19,TripleRathet], and contrary to [SPQR], we consider *Alternating Communication*:
+As in [ACD19, TripleRatchet], and contrary to [SPQR], we consider *Alternating Communication*:
 the games enforce parties A and B to execute the sending and receiving
 algorithms in an alternating order.
 
@@ -99,8 +100,7 @@ def validStep (last : Option CKAAction) (next : CKAAction) : Bool :=
   | some .recvA,  .sendA  | some .recvA,  .challA  => true
   | _, _ => false
 
-/-- Internal state of the CKA game:
-`(stA, stB, ρA, ρB, kA, kB, b, correct, lastAction)`. -/
+/-- Internal state of the CKA game. -/
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
@@ -111,6 +111,10 @@ structure GameState (St I Rho : Type) where
   b : Bool
   correct : Bool
   lastAction : Option CKAAction
+  tA : ℕ                 -- epoch counter for A (incremented on each send/chall by A)
+  tB : ℕ                 -- epoch counter for B (incremented on each send/chall by B)
+  tStar : ℕ              -- challenge epoch (game parameter)
+  deltaCKA : ℕ            -- healing parameter (game parameter)
 
 /-- Oracle spec for the CKA correctness game (send + recv only). -/
 def ckaCorrectnessSpec (Rho I : Type) :=
@@ -120,11 +124,13 @@ def ckaCorrectnessSpec (Rho I : Type) :=
   + (Unit →ₒ Option (Rho × I))   -- O-Send-B
   + (Unit →ₒ Unit)               -- O-Recv-B
 
-/-- Oracle spec for the CKA security game (send + recv + challenge). -/
-def ckaSecuritySpec (Rho I : Type) :=
+/-- Oracle spec for the CKA security game (send + recv + challenge + corrupt). -/
+def ckaSecuritySpec (St Rho I : Type) :=
   ckaCorrectnessSpec Rho I
   + (Unit →ₒ Option (Rho × I))   -- O-Chall-A
   + (Unit →ₒ Option (Rho × I))   -- O-Chall-B
+  + (Unit →ₒ Option St)           -- O-Corrupt-A
+  + (Unit →ₒ Option St)           -- O-Corrupt-B
 
 /-! ### Send oracles -/
 
@@ -139,7 +145,8 @@ def oracleSendA (cka : CKAScheme ProbComp IK St I Rho) :
         stA := stA'
         lastRhoA := some ρ
         lastKeyA := some key
-        lastAction := some .sendA }
+        lastAction := some .sendA
+        tA := state.tA + 1 }
       return some (ρ, key) -- return message and key
     else pure none
 
@@ -154,7 +161,8 @@ def oracleSendB (cka : CKAScheme ProbComp IK St I Rho) :
         stB := stB'
         lastRhoB := some ρ
         lastKeyB := some key
-        lastAction := some .sendB }
+        lastAction := some .sendB
+        tB := state.tB + 1 }
       return some (ρ, key) -- return message and key
     else pure none
 
@@ -217,7 +225,8 @@ def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
         stA := stA'
         lastRhoA := some ρ
         lastKeyA := some key
-        lastAction := some .challA }
+        lastAction := some .challA
+        tA := state.tA + 1 }
       return some (ρ, outKey) -- return message and key
     else pure none
 
@@ -234,9 +243,41 @@ def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
         stB := stB'
         lastRhoB := some ρ
         lastKeyB := some key
-        lastAction := some .challB }
+        lastAction := some .challB
+        tB := state.tB + 1 }
       return some (ρ, outKey) -- return message and key
     else pure none
+
+/-! ### Corruption oracles
+
+Following [ACD19, Def. 13], corruption is allowed iff `allowCorr ∨ finished`:
+- `allowCorr` : `max(tA, tB) + 2 ≤ tStar` (before the challenge window)
+- `finishedP` : `tP ≥ tStar + ΔCKA` (state healed after the challenge)
+-/
+
+/-- Corruption allowed before the challenge window. -/
+def allowCorr (state : GameState St I Rho) : Bool :=
+  max state.tA state.tB + 2 ≤ state.tStar
+
+/-- Party P has healed: `tP ≥ t* + ΔCKA`. -/
+def finishedA (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA ≤ state.tA
+def finishedB (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA ≤ state.tB
+
+/-- `O-Corrupt-A`: return A's state if `allowCorr ∨ finishedA`. -/
+def oracleCorruptA (St I Rho : Type) :
+    QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
+  fun () => do
+    let state ← get
+    if allowCorr state || finishedA state then return some state.stA
+    else return none
+
+/-- `O-Corrupt-B`: return B's state if `allowCorr ∨ finishedB`. -/
+def oracleCorruptB (St I Rho : Type) :
+    QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
+  fun () => do
+    let state ← get
+    if allowCorr state || finishedB state then return some state.stB
+    else return none
 
 /-- Oracle for adversary randomness: forwards to `ProbComp`. -/
 def oracleUnif (St I Rho : Type) :
@@ -252,45 +293,55 @@ def ckaCorrectnessImpl [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
 
 /-- Oracle implementation for the security game. -/
 def ckaSecurityImpl [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
-    QueryImpl (ckaSecuritySpec Rho I) (StateT (GameState St I Rho) ProbComp) :=
+    QueryImpl (ckaSecuritySpec St Rho I) (StateT (GameState St I Rho) ProbComp) :=
   ckaCorrectnessImpl cka
     + oracleChallA cka + oracleChallB cka
+    + oracleCorruptA St I Rho + oracleCorruptB St I Rho
 
 /-- Correctness adversary: send + recv oracles only. -/
 abbrev CorrectnessAdversary (Rho I : Type) := OracleComp (ckaCorrectnessSpec Rho I) Bool
 
-/-- Security adversary: send + recv + challenge oracles. -/
-abbrev SecurityAdversary (Rho I : Type) := OracleComp (ckaSecuritySpec Rho I) Bool
+/-- Security adversary: send + recv + challenge + corruption oracles. -/
+abbrev SecurityAdversary (St Rho I : Type) := OracleComp (ckaSecuritySpec St Rho I) Bool
 
 /-! ### Correctness game -/
+
+/-- Initial game state. `tStar` and `deltaCKA` are security-game parameters -/
+def initGameState (stA stB : St) (b : Bool)
+    (tStar : ℕ := 0) (deltaCKA : ℕ := 0) : GameState St I Rho :=
+  { stA, stB, lastRhoA := none, lastRhoB := none,
+    lastKeyA := none, lastKeyB := none,
+    b, correct := true, lastAction := none,
+    tA := 0, tB := 0, tStar, deltaCKA }
 
 def correctnessExp [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
     (adversary : CorrectnessAdversary Rho I) : ProbComp Bool := do
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
   let stB ← cka.initB ik
-  let initState : GameState St I Rho :=
-    ⟨stA, stB, none, none, none, none, false, true, none⟩
-  let (_, state) ← (simulateQ (ckaCorrectnessImpl cka) adversary).run initState
+  let (_, state) ← (simulateQ (ckaCorrectnessImpl cka) adversary).run
+    (initGameState stA stB false)
   return state.correct
 
 /-! ### Security game -/
 
+/-- Security game parameterized by challenge epoch `tStar` and healing delay `deltaCKA`
+[ACD19, Def. 13]. -/
 def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : SecurityAdversary Rho I) : ProbComp Bool := do
+    (adversary : SecurityAdversary St Rho I) (tStar deltaCKA : ℕ) : ProbComp Bool := do
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
   let stB ← cka.initB ik
   let b ← $ᵗ Bool
-  let initState : GameState St I Rho :=
-    ⟨stA, stB, none, none, none, none, b, true, none⟩
-  let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run initState
+  let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run
+    (initGameState stA stB b tStar deltaCKA)
   return (b == b')
 
 /-- CKA security advantage: `|Pr[Win] - 1/2|`. -/
 noncomputable def securityAdvantage [SampleableType I] [DecidableEq I]
-    (cka : CKAScheme ProbComp IK St I Rho) (adversary : SecurityAdversary Rho I) : ℝ :=
-  |(Pr[= true | securityExp cka adversary]).toReal - 1 / 2|
+    (cka : CKAScheme ProbComp IK St I Rho) (adversary : SecurityAdversary St Rho I)
+    (tStar deltaCKA : ℕ) : ℝ :=
+  |(Pr[= true | securityExp cka adversary tStar deltaCKA]).toReal - 1 / 2|
 
 end Games
 
