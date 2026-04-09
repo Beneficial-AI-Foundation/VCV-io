@@ -1,4 +1,6 @@
 import Examples.BR93
+import Examples.CKA.CKAfromDDH
+import Examples.CKA.Defs
 import Examples.ElGamal.Basic
 import Examples.ElGamal.Common
 import Examples.ElGamal.Hash
@@ -22,5 +24,3 @@ import Examples.Regev
 import Examples.Schnorr
 import Examples.Signature
 import Examples.SimpleTwoServerPIR
-import Examples.CKA.Defs
-import Examples.CKA.CKAfromDDH

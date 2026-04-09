@@ -32,6 +32,7 @@ def supportWhen (o : QueryImpl spec Set) (mx : OracleComp spec α) : Set α :=
 @[simp]
 lemma supportWhen_pure (o : QueryImpl spec Set) (x : α) :
     supportWhen o (pure x : OracleComp spec α) = {x} := by
+  ext y
   simp [supportWhen]
 
 @[simp]
@@ -39,7 +40,8 @@ lemma supportWhen_query_bind (o : QueryImpl spec Set) (q : spec.Domain)
     (oa : spec.Range q → OracleComp spec α) :
     supportWhen o ((query q : OracleComp spec _) >>= oa) =
       ⋃ x ∈ o q, supportWhen o (oa x) := by
-  simp [supportWhen]
+  ext y
+  simp [supportWhen, Set.bind_def]
 
 /-- Reachable outputs of a bind are the reachable outputs of the continuation over reachable
 outputs of the first computation. -/
@@ -47,6 +49,7 @@ outputs of the first computation. -/
 lemma supportWhen_bind (o : QueryImpl spec Set) (oa : OracleComp spec α)
     (ob : α → OracleComp spec β) :
     supportWhen o (oa >>= ob) = ⋃ x ∈ supportWhen o oa, supportWhen o (ob x) := by
+  ext y
   simp [supportWhen, simulateQ_bind, Set.bind_def]
 
 /-- Membership form of [`OracleComp.supportWhen_bind`]. -/
