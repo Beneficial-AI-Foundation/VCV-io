@@ -150,7 +150,7 @@ private lemma IND_CPA_OneTime_game_evalDist_eq_ddhExpReal
   -- Unfold all definitions to expose the raw sampling sequences on both sides.
   simp only [AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp,
     DiffieHellman.ddhExpReal, IND_CPA_OneTime_DDHReduction,
-    elGamalAsymmEnc, ExecutionMethod.default]
+    elGamalAsymmEnc]
   -- Goal: D₁ = D₂ (two PMFs). Reduce to pointwise: ∀ z, D₁(z) = D₂(z).
   ext z
   -- Rewrite D₁(z) = D₂(z) as Pr[= z | comp₁] = Pr[= z | comp₂] (probOutput form).
