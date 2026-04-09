@@ -24,4 +24,3 @@ import Examples.Signature
 import Examples.SimpleTwoServerPIR
 import Examples.CKA.Defs
 import Examples.CKA.CKAfromDDH
-import Examples.CKA.CKAfromKEM
