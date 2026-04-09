@@ -529,21 +529,17 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
       let (pk, sk) ← (FiatShamir σ hr M).keygen
       let sig ← (FiatShamir σ hr M).sign pk sk msg
       (FiatShamir σ hr M).verify pk msg sig)] = 1
-  have hExec :
-      (runtime M).evalDist (do
-      let (pk, sk) ← (FiatShamir σ hr M).keygen
-      let sig ← (FiatShamir σ hr M).sign pk sk msg
-      (FiatShamir σ hr M).verify pk msg sig) =
+  have hExecProb :
+      StateT.run' (simulateQ (idImpl + ro) (do
+        let (pk, sk) ← (FiatShamir σ hr M).keygen
+        let sig ← (FiatShamir σ hr M).sign pk sk msg
+        (FiatShamir σ hr M).verify pk msg sig)) ∅ =
         (do
           let (pk, sk) ← hr.gen
           let (c, e) ← σ.commit pk sk
           let r ← $ᵗ Ω
           let s ← σ.respond pk sk e r
           pure (σ.verify pk c r s)) := by
-    change StateT.run' (simulateQ (idImpl + ro) (do
-        let (pk, sk) ← (FiatShamir σ hr M).keygen
-        let sig ← (FiatShamir σ hr M).sign pk sk msg
-        (FiatShamir σ hr M).verify pk msg sig)) ∅ = _
     dsimp only [FiatShamir]
     have hquery :
         ∀ q : M × PC,
@@ -682,7 +678,41 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
     rintro ⟨pk, sk⟩
     simpa [bind_assoc, StateT.run_bind, map_eq_bind_pure_comp, Function.comp] using
       hsig_block pk sk
+  have hExec :
+      let lhs : OracleComp (unifSpec + (M × PC →ₒ Ω)) Bool := do
+        let (pk, sk) ← (FiatShamir σ hr M).keygen
+        let sig ← (FiatShamir σ hr M).sign pk sk msg
+        (FiatShamir σ hr M).verify pk msg sig
+      let rhs : ProbComp Bool := do
+        let (pk, sk) ← hr.gen
+        let (c, e) ← σ.commit pk sk
+        let r : Ω ← ($ᵗ Ω : ProbComp Ω)
+        let s ← σ.respond pk sk e r
+        pure (σ.verify pk c r s)
+      (runtime M).evalDist lhs = evalDist (m := ProbComp) rhs := by
+    change
+      let lhs : OracleComp (unifSpec + (M × PC →ₒ Ω)) Bool := do
+        let (pk, sk) ← (FiatShamir σ hr M).keygen
+        let sig ← (FiatShamir σ hr M).sign pk sk msg
+        (FiatShamir σ hr M).verify pk msg sig
+      let rhs : ProbComp Bool := do
+        let (pk, sk) ← hr.gen
+        let (c, e) ← σ.commit pk sk
+        let r : Ω ← ($ᵗ Ω : ProbComp Ω)
+        let s ← σ.respond pk sk e r
+        pure (σ.verify pk c r s)
+      evalDist (StateT.run' (simulateQ (idImpl + ro) lhs) ∅) =
+        evalDist (m := ProbComp) rhs
+    simpa using congrArg evalDist hExecProb
   rw [hExec]
+  change
+    let rhs : ProbComp Bool := do
+      let (pk, sk) ← hr.gen
+      let (c, e) ← σ.commit pk sk
+      let r : Ω ← ($ᵗ Ω : ProbComp Ω)
+      let s ← σ.respond pk sk e r
+      pure (σ.verify pk c r s)
+    Pr[= true | rhs] = 1
   vcstep
   vcstep using (fun x => OracleComp.ProgramLogic.propInd (x ∈ support hr.gen))
   · simpa [OracleComp.ProgramLogic.propInd_eq_ite] using
