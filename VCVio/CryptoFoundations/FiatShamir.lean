@@ -525,12 +525,12 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
       simpa using hleft oa]
     simpa using hrun oa s
   change
-    Pr[= true | (FiatShamir σ hr M).exec (do
+    Pr[= true | (runtime M).evalDist (do
       let (pk, sk) ← (FiatShamir σ hr M).keygen
       let sig ← (FiatShamir σ hr M).sign pk sk msg
       (FiatShamir σ hr M).verify pk msg sig)] = 1
   have hExec :
-      (FiatShamir σ hr M).exec (do
+      (runtime M).evalDist (do
       let (pk, sk) ← (FiatShamir σ hr M).keygen
       let sig ← (FiatShamir σ hr M).sign pk sk msg
       (FiatShamir σ hr M).verify pk msg sig) =
