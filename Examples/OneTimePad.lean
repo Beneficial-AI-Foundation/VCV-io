@@ -64,12 +64,11 @@ lemma complete : (oneTimePad).Complete := by
             pure (k ^^^ σ) : OptionT ProbComp (BitVec sp))) =
         ({some m} : Set (Option (BitVec sp))) := by
     rw [hstep, OptionT.run_bind]
-    simpa [support_map] using
-      support_map_const (($ᵗ BitVec sp) : ProbComp (BitVec sp)) (some m) hkey
+    simp [support_map]
   have hsupp :
       support (simulateQ oneTimePad.impl (SymmEncAlg.CompleteExp oneTimePad m).run) =
         ({some m} : Set (Option (BitVec sp))) := by
-    simp [oneTimePad, SymmEncAlg.CompleteExp, simulateQ_id']
+    simp only [oneTimePad, SymmEncAlg.CompleteExp, simulateQ_id']
     exact hsupp0
   refine probOutput_eq_one ?_
   exact ⟨by simp, hsupp⟩

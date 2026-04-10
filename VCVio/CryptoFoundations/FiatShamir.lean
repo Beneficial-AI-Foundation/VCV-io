@@ -526,9 +526,7 @@ theorem perfectlyCorrect [DecidableEq M] [DecidableEq PC] [SampleableType Ω]
         (OracleQuery.liftM_add_right_query
           (spec₁ := unifSpec) (spec₂ := (M × PC →ₒ Ω)) q)
     simp_rw [hquery]
-    simp only [simulateQ_bind, simulateQ_pure, simulateQ_query,
-      QueryImpl.add_apply_inr,
-      OracleQuery.cont_query, OracleQuery.input_query, id_map]
+    simp only [simulateQ_bind, simulateQ_pure]
     have hpeel : ∀ {α β : Type} (oa : ProbComp α)
         (rest : α → StateT ((M × PC →ₒ Ω).QueryCache) ProbComp β)
         (s : (M × PC →ₒ Ω).QueryCache),

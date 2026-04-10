@@ -2,17 +2,6 @@ import Examples.BR93
 import Examples.CKA.Defs
 import Examples.CKA.FromDDH.Construction
 import Examples.CKA.FromDDH.Security
-import Examples.CommitmentScheme
-import Examples.CommitmentScheme.Binding
-import Examples.CommitmentScheme.Common
-import Examples.CommitmentScheme.Extractability
-import Examples.CommitmentScheme.Hiding
-import Examples.CommitmentScheme.Hiding.CountBounds
-import Examples.CommitmentScheme.Hiding.Defs
-import Examples.CommitmentScheme.Hiding.LoggingBounds
-import Examples.CommitmentScheme.Hiding.LoggingBounds.Average
-import Examples.CommitmentScheme.Hiding.LoggingBounds.QuerySalt
-import Examples.CommitmentScheme.Hiding.Main
 import Examples.ElGamal.Basic
 import Examples.ElGamal.Common
 import Examples.ElGamal.Hash
