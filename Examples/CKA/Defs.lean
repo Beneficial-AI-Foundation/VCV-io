@@ -60,19 +60,22 @@ The CKA game [ACD19, Def. 13] gives the adversary oracle access to:
 - **O-Corrupt-A / O-Corrupt-B**
   Return the current state of party A (resp. B) and record the corruption epoch.
 
+As in [ACD19, TripleRatchet], and contrary to [SPQR], we have:
+- **Alternating Communication**: the games enforce parties A and B to execute the sending and
+receiving algorithms in an alternating order.
+
+- **Fully Passive Adversary**: the adversary can neither modify nor reorder sent messages.
+
+- **Static Challenge Epoch**: the security adversary can only challenge the key for one epoch,
+which is fixed at the beginning of the security experiment.
+
 As in [TripleRatchet, SPQR], and contrary to [ACD19], we don't consider additional oracles that
 allow to corrupt the randomness of a sending party.
 
-As in [ACD19, TripleRatchet], and contrary to [SPQR], we consider *Alternating Communication*:
-the games enforce parties A and B to execute the sending and receiving
-algorithms in an alternating order.
-
-As in [ACD19, TripleRatchet], and contrary to [SPQR], we have a *fully Passive Adversary*:
-it can neither modify nor reorder sent messages.
-
-We define two games sharing the same oracles:
+We define two games:
 - **Correctness game**: adversary wins if receiver and sender keys don't agree.
-- **Security game**: adversary wind if it can distinguish a real from a random key.
+- **Security game**: adversary wins if it can distinguish a real from a random key.
+The correctness game does not use the challenge and corruption oracles.
 
 -/
 
@@ -112,8 +115,8 @@ structure GameState (St I Rho : Type) where
   lastAction : Option CKAAction
   tA : ℕ                 -- epoch counter for A (incremented on each send/chall by A)
   tB : ℕ                 -- epoch counter for B (incremented on each send/chall by B)
-  tStar : ℕ              -- challenge epoch (game parameter)
-  deltaCKA : ℕ            -- healing parameter (game parameter)
+  tStar : ℕ              -- epoch that adversary will challenge (game parameter)
+  deltaCKA : ℕ           -- healing delay after state corruption (game parameter)
 
 /-- Oracle spec for the CKA correctness game (send + recv only). -/
 def ckaCorrectnessSpec (Rho I : Type) :=
@@ -211,12 +214,14 @@ def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
 
 /-! ### Challenge oracles -/
 
-/-- `O-Chall-A`: like `O-Send-A` but `return (ρ, b ? $I : I)`. -/
+/-- `O-Chall-A`: like `O-Send-A` but `return (ρ, b ? $I : I)`.
+Only available at challenge epoch `tStar` fixed upfront [ACD19, Def. 13] -/
 def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .challA then -- alternate communication
+    -- check *Alternate Communication* and *Fixed Challenge*
+    if validStep state.lastAction .challA && state.tA == state.tStar then
       let (key, ρ, stA') ← liftM (cka.sendA state.stA)
       -- return real key or random key
       let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
@@ -229,12 +234,13 @@ def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
       return some (ρ, outKey) -- return message and key
     else pure none
 
-/-- `O-Chall-B`: like `O-Send-B` but `return (ρ, b ? $I : I)`. -/
+/-- `O-Chall-B`: like `O-Send-B` but `return (ρ, b ? $I : I)`.
+Only available at epoch `tStar` [ACD19, Def. 13]. -/
 def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .challB then -- alternate communication
+    if validStep state.lastAction .challB && state.tB == state.tStar then
       let (key, ρ, stB') ← liftM (cka.sendB state.stB) -- send message
       -- return real key or random key
       let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
@@ -249,7 +255,7 @@ def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
 
 /-! ### Corruption oracles
 
-Following [ACD19, Def. 13], corruption is allowed iff `allowCorr ∨ finished`:
+Following [ACD19, Def. 13, Fig. 3], corruption is allowed iff `allowCorr ∨ finished`:
 - `allowCorr` : `max(tA, tB) + 2 ≤ tStar` (before the challenge window)
 - `finishedP` : `tP ≥ tStar + ΔCKA` (state healed after the challenge)
 -/
@@ -325,7 +331,7 @@ def correctnessExp [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
 /-! ### Security game -/
 
 /-- Security game parameterized by challenge epoch `tStar` and healing delay `deltaCKA`
-[ACD19, Def. 13]. -/
+[ACD19, Def. 13, Fig. 3]. -/
 def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
     (adversary : SecurityAdversary St Rho I) (tStar deltaCKA : ℕ) : ProbComp Bool := do
   let ik ← cka.initKeyGen
@@ -335,6 +341,67 @@ def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK 
   let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run
     (initGameState stA stB b tStar deltaCKA)
   return (b == b')
+
+/-- Security experiment with a fixed challenge bit `b` (not sampled uniformly).
+Returns the adversary's raw guess `b'` (not `b == b'`). -/
+def securityExpFixedBit [SampleableType I] [DecidableEq I]
+    (cka : CKAScheme ProbComp IK St I Rho)
+    (adversary : SecurityAdversary St Rho I)
+    (b : Bool) (tStar deltaCKA : ℕ) : ProbComp Bool := do
+  let ik ← cka.initKeyGen
+  let stA ← cka.initA ik
+  let stB ← cka.initB ik
+  let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run
+    (initGameState stA stB b tStar deltaCKA)
+  return b'
+
+/-- The single-game CKA experiment can be decomposed as a uniform-bit branch over
+the two fixed-bit experiments. Proved by swapping `b ← $ᵗ Bool` past the three
+initialization steps using `probEvent_bind_bind_swap` (cf. `ddhExp_probOutput_eq_branch`
+for the analogous DDH result). -/
+private lemma securityExp_probOutput_eq_branch [SampleableType I] [DecidableEq I]
+    (cka : CKAScheme ProbComp IK St I Rho)
+    (adversary : SecurityAdversary St Rho I) (tStar deltaCKA : ℕ) :
+    Pr[= true | securityExp cka adversary tStar deltaCKA] =
+    Pr[= true | do
+      let b ← ($ᵗ Bool : ProbComp Bool)
+      let z ← if b then securityExpFixedBit cka adversary true tStar deltaCKA
+               else securityExpFixedBit cka adversary false tStar deltaCKA
+      pure (b == z)] := by
+  unfold securityExp
+  simp only [← probEvent_eq_eq_probOutput]
+  -- Swap b past stB (innermost): ik; stA; stB; b → ik; stA; b; stB
+  rw [probEvent_bind_congr fun ik _ =>
+    probEvent_bind_congr fun stA _ =>
+    probEvent_bind_bind_swap _ _ _ _]
+  -- Swap b past stA: ik; stA; b; stB → ik; b; stA; stB
+  rw [probEvent_bind_congr fun ik _ =>
+    probEvent_bind_bind_swap _ _ _ _]
+  -- Swap b past ik: ik; b; stA; stB → b; ik; stA; stB
+  rw [probEvent_bind_bind_swap]
+  simp only [probEvent_eq_eq_probOutput]
+  -- Both sides now start with b ← $ᵗ Bool. Case split on b.
+  refine probOutput_bind_congr' ($ᵗ Bool) true ?_
+  intro b; cases b <;> simp [securityExpFixedBit]
+
+/-- The security advantage decomposes into the difference of the two fixed-bit
+branch probabilities: `Pr[win] - 1/2 = (Pr[real=1] - Pr[rand=1]) / 2`. -/
+lemma securityExp_toReal_sub_half [SampleableType I] [DecidableEq I]
+    (cka : CKAScheme ProbComp IK St I Rho)
+    (adversary : SecurityAdversary St Rho I) (tStar deltaCKA : ℕ) :
+    (Pr[= true | securityExp cka adversary tStar deltaCKA]).toReal - 1 / 2 =
+    ((Pr[= true | securityExpFixedBit cka adversary true tStar deltaCKA]).toReal -
+     (Pr[= true | securityExpFixedBit cka adversary false tStar deltaCKA]).toReal) / 2 := by
+  rw [show (Pr[= true | securityExp cka adversary tStar deltaCKA]).toReal =
+      (Pr[= true | do
+        let b ← ($ᵗ Bool : ProbComp Bool)
+        let z ← if b then securityExpFixedBit cka adversary true tStar deltaCKA
+                 else securityExpFixedBit cka adversary false tStar deltaCKA
+        pure (b == z)]).toReal from by
+    congr 1; exact securityExp_probOutput_eq_branch cka adversary tStar deltaCKA]
+  exact probOutput_uniformBool_branch_toReal_sub_half
+    (securityExpFixedBit cka adversary true tStar deltaCKA)
+    (securityExpFixedBit cka adversary false tStar deltaCKA)
 
 /-- CKA security advantage: `|Pr[Win] - 1/2|`. -/
 noncomputable def securityAdvantage [SampleableType I] [DecidableEq I]
