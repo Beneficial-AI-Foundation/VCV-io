@@ -357,7 +357,14 @@ private theorem byteDecode_byteEncode_of_bound {d : Nat} (hd : 0 < d) (f : Rq)
     have hbitPos :
         bits[i * d + j.val] =
           (Nat.digitsAppend 2 d ((f[i]'hi : Coeff).val)).getD j.val 0 := by
-      simp [bits, hcoeffDiv, hcoeffMod, Nat.mod_eq_of_lt hcoeffBound]
+      have hcoeffModEq :
+          ((f[i]'hi : Coeff).val) % 2 ^ d = (f[i]'hi : Coeff).val := by
+        exact Nat.mod_eq_of_lt (by simpa using hcoeffBound)
+      have hbitPos' :
+          (Nat.digitsAppend 2 d (ZMod.val f[i] % 2 ^ d))[j.val]?.getD 0 =
+            (Nat.digitsAppend 2 d (ZMod.val f[i]))[j.val]?.getD 0 := by
+        rw [hcoeffModEq]
+      simpa [bits, hcoeffDiv, hcoeffMod] using hbitPos'
     rw [hleft]
     exact hbitsRoundtrip.trans hbitPos |>.trans hdigitElem
   have hdigits :
@@ -580,20 +587,19 @@ private theorem byteDecode12Poly_byteEncode12Poly (f : Tq) :
     have hb0 :
         (getByteD (byteEncode12Poly f) (3 * pair)).toNat = a % 256 := by
       rw [getByteD_byteEncode12Poly (f := f) (j := 3 * pair) (by omega)]
-      simp [byteEncode12PolyByte, a, hdiv0, hmod0]
+      simp [byteEncode12PolyByte, hdiv0, hmod0]
+      change ZMod.val f.coeffs[2 * pair] % 256 = ZMod.val f.coeffs[2 * pair] % 256
+      rfl
     have hb1 :
         (getByteD (byteEncode12Poly f) (3 * pair + 1)).toNat = a / 256 + 16 * (b % 16) := by
-      have hab' :
-          ZMod.val f.coeffs[2 * pair] / 256 + 16 * (ZMod.val f.coeffs[2 * pair + 1] % 16) < 256 :=
-        by simpa [a, b] using hab
       rw [getByteD_byteEncode12Poly (f := f) (j := 3 * pair + 1) (by omega)]
-      simpa [byteEncode12PolyByte, a, b, hdiv1, hmod1] using (Nat.mod_eq_of_lt hab')
+      simp [byteEncode12PolyByte, a, b, hdiv1, hmod1]
+      exact Nat.mod_eq_of_lt hab
     have hb2 :
         (getByteD (byteEncode12Poly f) (3 * pair + 2)).toNat = b / 16 := by
-      have hbDiv' : ZMod.val f.coeffs[2 * pair + 1] / 16 < 256 := by
-        simpa [b] using hbDiv
       rw [getByteD_byteEncode12Poly (f := f) (j := 3 * pair + 2) (by omega)]
-      simpa [byteEncode12PolyByte, b, hdiv2, hmod2] using (Nat.mod_eq_of_lt hbDiv')
+      simp [byteEncode12PolyByte, b, hdiv2, hmod2]
+      exact Nat.mod_eq_of_lt hbDiv
     by_cases hEven : idx.val % 2 = 0
     · have hidx : idx.val = 2 * pair := by
         dsimp [pair]
@@ -605,11 +611,10 @@ private theorem byteDecode12Poly_byteEncode12Poly (f : Tq) :
             = (a : Coeff) := by
                 rw [hb0, hb1]
                 exact congrArg (fun n : Nat => (n : Coeff)) (decode12Pair_fst (a := a) (b := b) ha)
-        _ = f.coeffs[idx.val] := by
-            have hidx' : idx = ⟨2 * pair, h0⟩ := by
-              apply Fin.ext
-              exact hidx
-            simp [hidx', a]
+      _ = f.coeffs[idx.val] := by
+            have hcast : (a : Coeff) = f.coeffs[(2 * pair)]'h0 := by
+              simpa [a] using ZMod.natCast_zmod_val (f.coeffs[(2 * pair)]'h0)
+            simpa [hidx] using hcast
     · have hmod : idx.val % 2 = 1 := by
         have hlt : idx.val % 2 < 2 := Nat.mod_lt _ (by decide)
         omega
@@ -623,11 +628,10 @@ private theorem byteDecode12Poly_byteEncode12Poly (f : Tq) :
             = (b : Coeff) := by
                 rw [hb1, hb2]
                 exact congrArg (fun n : Nat => (n : Coeff)) (decode12Pair_snd (a := a) (b := b) ha)
-        _ = f.coeffs[idx.val] := by
-            have hidx' : idx = ⟨2 * pair + 1, h1⟩ := by
-              apply Fin.ext
-              exact hidx
-            simp [hidx', b]
+      _ = f.coeffs[idx.val] := by
+            have hcast : (b : Coeff) = f.coeffs[(2 * pair + 1)]'h1 := by
+              simpa [b] using ZMod.natCast_zmod_val (f.coeffs[(2 * pair + 1)]'h1)
+            simpa [hidx] using hcast
   apply LatticeCrypto.TransformPoly.ext
   apply Vector.toArray_inj.mp
   unfold byteDecode12Poly
@@ -822,7 +826,8 @@ private theorem byteDecodeVec_byteEncodeVec_of_bound {d k : Nat} (hd : 0 < d) (v
         simpa [byteEncode_size] using hj
       simp only [Array.getElem_ofFn]
       rw [getByteD_byteEncodeVec (hd := hd) (v := v) (poly := i) (j := j) hi hj]
-      simpa [ByteArray.getElem_eq_getElem_data] using (getByteD_eq_getElem (bytes := byteEncode d (v[i]'hi)) hjEnc)
+      simpa [ByteArray.getElem_eq_getElem_data] using
+        (getByteD_eq_getElem (bytes := byteEncode d (v[i]'hi)) hjEnc)
   simp only [byteDecodeVec, Vector.getElem_ofFn]
   rw [hbytes]
   exact byteDecode_byteEncode_of_bound hd (f := v[i]'hi) (hbound := hbound ⟨i, hi⟩)
