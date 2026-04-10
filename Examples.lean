@@ -1,6 +1,7 @@
 import Examples.BR93
-import Examples.CKA.CKAfromDDH
 import Examples.CKA.Defs
+import Examples.CKA.FromDDH.Construction
+import Examples.CKA.FromDDH.Security
 import Examples.ElGamal.Basic
 import Examples.ElGamal.Common
 import Examples.ElGamal.Hash

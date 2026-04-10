@@ -3,7 +3,7 @@ import ToMathlib.Control.StateT
 import VCVio.CryptoFoundations.HardnessAssumptions.DiffieHellman
 
 /-!
-# CKA from DDH
+# CKA from DDH — Construction and Correctness
 
 Construction of a CKA scheme from the DDH assumption over a module `Module F G`,
 following [ACD19, Section 4.1].
@@ -162,10 +162,13 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
     all_goals (
       rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
-      have : z = ((),
-        ⟨.inl y, .inr (y • gen), none, none, none, none, b, true, some .recvB, epA, epB, ts, dc⟩) := by
-        simpa [CKAScheme.oracleRecvB, validStep, ddhCKA, ddhCKA.recv, smul_comm x y gen,
-          StateT.run_bind, StateT.run_get, pure_bind] using hz
+      have : z = ((), ⟨.inl y, .inr (y • gen),
+          none, none, none, none, b, true,
+          some .recvB, epA, epB, ts, dc⟩) := by
+        simpa [CKAScheme.oracleRecvB, validStep,
+          ddhCKA, ddhCKA.recv, smul_comm x y gen,
+          StateT.run_bind, StateT.run_get,
+          pure_bind] using hz
       subst this
       exact ⟨rfl, y, rfl, rfl, rfl, rfl, rfl, rfl⟩)
 
@@ -209,10 +212,13 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
     all_goals (
       rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
-      have : z = ((),
-        ⟨.inr (x • gen), .inl x, none, none, none, none, b, true, some .recvA, epA, epB, ts, dc⟩) := by
-        simpa [CKAScheme.oracleRecvA, validStep, ddhCKA, ddhCKA.recv, smul_comm y x gen,
-          StateT.run_bind, StateT.run_get, pure_bind] using hz
+      have : z = ((), ⟨.inr (x • gen), .inl x,
+          none, none, none, none, b, true,
+          some .recvA, epA, epB, ts, dc⟩) := by
+        simpa [CKAScheme.oracleRecvA, validStep,
+          ddhCKA, ddhCKA.recv, smul_comm y x gen,
+          StateT.run_bind, StateT.run_get,
+          pure_bind] using hz
       subst this
       exact ⟨rfl, x, rfl, rfl, rfl, rfl, rfl, rfl⟩)
 
