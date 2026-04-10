@@ -239,13 +239,15 @@ theorem functional_completeness {s : Skeleton}
   | ofLeft idxLeft ih =>
       cases leaf_data_tree with
       | internal left right =>
-          simp [LeafData.get_ofLeft, buildMerkleTreeWithHash, generateProof,
-            getPutativeRootWithHash, ih, FullData.internal_getRootValue]
+          simpa [LeafData.get_ofLeft, buildMerkleTreeWithHash, generateProof,
+            getPutativeRootWithHash, FullData.internal_getRootValue] using
+            congrArg (fun x => hash x (buildMerkleTreeWithHash right hash).getRootValue) (ih left)
   | ofRight idxRight ih =>
       cases leaf_data_tree with
       | internal left right =>
-          simp [LeafData.get_ofRight, buildMerkleTreeWithHash, generateProof,
-            getPutativeRootWithHash, ih, FullData.internal_getRootValue]
+          simpa [LeafData.get_ofRight, buildMerkleTreeWithHash, generateProof,
+            getPutativeRootWithHash, FullData.internal_getRootValue] using
+            congrArg (fun x => hash (buildMerkleTreeWithHash left hash).getRootValue x) (ih right)
 
 
 /--
