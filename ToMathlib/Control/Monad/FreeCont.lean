@@ -153,13 +153,13 @@ instance [Monad m] [LawfulMonad m] : LawfulMonadLift m (FreeContT f m) where
     dsimp [instMonadLift, instMonad]
     funext r handleEff handlePure
     change Pure.pure a >>= handlePure = handlePure a
-    simpa using (pure_bind a handlePure)
+    simp
   monadLift_bind := by
     intros α β ma g
     dsimp [instMonadLift, instMonad]
     funext r handleEff handlePure
     change (ma >>= g) >>= handlePure = ma >>= fun x => g x >>= handlePure
-    simpa using (bind_assoc ma g handlePure)
+    simp
 
 instance {n : Type u → Type v} [MonadLiftT m n] : MonadLiftT (FreeContT f m) (FreeContT f n) where
   monadLift := fun x => fun handleEff handlePure => by

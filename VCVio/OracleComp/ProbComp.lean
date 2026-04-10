@@ -227,7 +227,7 @@ instance hasUniformSelect_of_hasUniformSelect!
 TODO: I think we probably want to `simp` in the other direction when possible? -/
 @[simp, grind =] lemma liftM_uniformSelect! [HasUniformSelect! cont β]
     (xs : cont) : (liftM ($! xs) : OptionT ProbComp β) = $ xs := by
-  simp [hasUniformSelect_of_hasUniformSelect!, OptionT.liftM_def]
+  simp [OptionT.liftM_def]
   rfl
 
 lemma uniformSelect_eq_liftM_uniformSelect! [HasUniformSelect! cont β]

@@ -65,7 +65,7 @@ noncomputable instance (ε : Type u) (m : Type u → Type v) [Monad m] [HasEvalS
           exact ⟨a, hr, by simpa [ExceptT.bindCont] using hx⟩
       | error e =>
           exfalso
-          simpa [ExceptT.bindCont, support_pure] using hx
+          simp at hx
     · intro h
       change x ∈ (⋃ a ∈ Except.ok ⁻¹' support mx.run, Except.ok ⁻¹' support (f a).run) at h
       simp only [Set.mem_iUnion, Set.mem_preimage] at h

@@ -256,7 +256,7 @@ end gap
 
 theorem bind_eq_pmf_bind {p : SPMF α} {f : α → SPMF β} :
     (p >>= f) = PMF.bind p (fun a => match a with | some a' => f a' | none => PMF.pure none) := by
-  simp [bind, OptionT.bind, PMF.instMonad, OptionT.mk]
+  simp [bind, OptionT.bind, OptionT.mk]
   rfl
 
 @[simp] lemma PMF.map_some_apply_some (p : PMF α) (x : α) : (some <$> p) (some x) = p x := by
