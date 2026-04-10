@@ -16,11 +16,9 @@ at most `ε`, then for any CKA adversary `𝒜` and any `tStar : ℕ`:*
   `securityAdvantage(ddhCKA, 𝒜, tStar, ΔCKA := 1) ≤ ε`
 
 *where `securityAdvantage = |Pr[b = b' | securityExp] - 1/2|`.
-More precisely, there are explicit DDH adversaries
-`ℬA = securityReductionA 𝒜 tStar` (for challA) and
-`ℬB = securityReductionB 𝒜 tStar` (for challB) such that
-`securityAdvantage(ddhCKA, 𝒜, tStar, 1)
-  ≤ max(ddhGuessAdvantage(gen, ℬA), ddhGuessAdvantage(gen, ℬB))`,
+More precisely, there is an explicit DDH adversary
+`ℬ = securityReduction 𝒜 tStar` such that
+`securityAdvantage(ddhCKA, 𝒜, tStar, 1) ≤ ddhGuessAdvantage(gen, ℬ)`,
 with no multiplicative loss.*
 
 ## Proof overview — reduction diagram (challA case)
@@ -138,7 +136,7 @@ private noncomputable def reductionSendB (gen gA : G) :
         -- still seeds B's state so subsequent epochs use a fresh exponent.
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
-          stB := .inl y, lastRhoB := some gA, lastKeyB := some (xA • gA),
+          stB := (.inl y : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
           lastAction := some .sendB, tB := state.tB + 1 }
         return some (gA, xA • gA)
       else
@@ -175,7 +173,7 @@ private noncomputable def reductionSendA (gen gA : G) :
         -- still seeds A's state so subsequent epochs use a fresh exponent.
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
-          stA := .inl y, lastRhoA := some gA, lastKeyA := some (xB • gA),
+          stA := (.inl y : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
           lastAction := some .sendA, tA := state.tA + 1 }
         return some (gA, xB • gA)
       else
@@ -190,9 +188,9 @@ private noncomputable def reductionSendA (gen gA : G) :
 /-- Modified A-challenge oracle for the challA reduction.
 
 Replaces the honest send computation with the DDH challenge: returns
-`(gB, gT)` as `(message, key)`. The state is set to a dummy `.inl 0`
-(overwritten at the next `recv` to `.inr gB`, which is correct for
-subsequent honest sends).
+`(gB, gT)` as `(message, key)`. A fresh scalar `z` seeds A's
+post-challenge state `.inl z`, matching the honest game's distribution
+(important for corruption safety with `ΔCKA = 1`).
 
 When the DDH triple is real (`gT = (a * b) • gen`), the returned pair
 `(gB, gT) = (b • gen, (a * b) • gen)` matches the honest distribution
@@ -203,8 +201,11 @@ private noncomputable def reductionChallA (gB gT : G) :
   fun () => do
     let state ← get
     if validStep state.lastAction .challA && state.tA == state.tStar then
+      -- Fresh scalar for A's post-challenge state, so corruption reveals a
+      -- uniform value matching the honest game (where sendA samples internally).
+      let z ← liftM ($ᵗ F : ProbComp F)
       set { state with
-        stA := (.inl (0 : F) : F ⊕ G),
+        stA := (.inl z : F ⊕ G),
         lastRhoA := some gB, lastKeyA := some gT,
         lastAction := some .challA, tA := state.tA + 1 }
       return some (gB, gT)
@@ -220,83 +221,50 @@ private noncomputable def reductionChallB (gB gT : G) :
   fun () => do
     let state ← get
     if validStep state.lastAction .challB && state.tB == state.tStar then
+      let z ← liftM ($ᵗ F : ProbComp F)
       set { state with
-        stB := (.inl (0 : F) : F ⊕ G),
+        stB := (.inl z : F ⊕ G),
         lastRhoB := some gB, lastKeyB := some gT,
         lastAction := some .challB, tB := state.tB + 1 }
       return some (gB, gT)
     else pure none
 
-/-- Oracle implementation for the challA DDH reduction. Identical to the standard
-`ckaSecurityImpl` except:
-- `oracleSendB` is replaced by `reductionSendB` (embeds `gA` at `tStar - 1`)
-- `oracleChallA` is replaced by `reductionChallA` (embeds `gB, gT` at `tStar`)
+/-- Oracle implementation for the DDH reduction. Replaces all four
+send/challenge oracles with their DDH-embedding variants:
+- `oracleSendA` → `reductionSendA` (embeds `gA` at the send before challB)
+- `oracleSendB` → `reductionSendB` (embeds `gA` at the send before challA)
+- `oracleChallA` → `reductionChallA` (embeds `gB, gT` at `tStar`)
+- `oracleChallB` → `reductionChallB` (embeds `gB, gT` at `tStar`)
 
-All other oracles (sendA, recvA, recvB, challB, corruptA, corruptB, uniform)
-are unchanged.
-
-After the challenge, B's state is updated to `.inr gB` by the standard recv
-oracle, so `oracleSendB` at `tStar` computes `x' • gB` honestly. -/
-private noncomputable def reductionImplA (gen gA gB gT : G) :
-    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  (oracleUnif (F ⊕ G) G G
-    + oracleSendA (ddhCKA F G gen)
-    + oracleRecvA (ddhCKA F G gen)
-    + reductionSendB (F := F) gen gA
-    + oracleRecvB (ddhCKA F G gen))
-  + reductionChallA (F := F) gB gT
-  + oracleChallB (ddhCKA F G gen)
-  + oracleCorruptA (F ⊕ G) G G
-  + oracleCorruptB (F ⊕ G) G G
-
-/-- Symmetric oracle implementation for the challB DDH reduction.
-- `oracleSendA` is replaced by `reductionSendA` (embeds `gA` at `tStar`)
-- `oracleChallB` is replaced by `reductionChallB` (embeds `gB, gT` at `tStar`)
-
-All other oracles are unchanged.
-
-After the challenge, A's state is updated to `.inr gB` by the standard recv
-oracle, so `oracleSendA` at `tStar + 1` computes `x' • gB` honestly. -/
-private noncomputable def reductionImplB (gen gA gB gT : G) :
+Only one challenge oracle fires (the adversary calls either challA or challB
+at epoch `tStar`). -/
+private noncomputable def reductionImpl (gen gA gB gT : G) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
     + reductionSendA (F := F) gen gA
     + oracleRecvA (ddhCKA F G gen)
-    + oracleSendB (ddhCKA F G gen)
+    + reductionSendB (F := F) gen gA
     + oracleRecvB (ddhCKA F G gen))
-  + oracleChallA (ddhCKA F G gen)
+  + reductionChallA (F := F) gB gT
   + reductionChallB (F := F) gB gT
   + oracleCorruptA (F ⊕ G) G G
   + oracleCorruptB (F ⊕ G) G G
 
-/-- DDH adversary for the challA case [ACD19, Theorem 3].
+/-- DDH adversary obtained by reduction from a CKA security adversary
+[ACD19, Theorem 3].
 
 Given a DDH triple `(gen, gA, gB, gT)`, the reduction:
 1. Initialises the CKA game honestly: `x₀ ← $ᵗ F`.
-2. Runs the adversary against `reductionImplA`, which modifies two oracles:
-   - B-send at `tB = tStar - 1`: message `= gA`, key `= xA • gA`.
-   - A-chall at `tA = tStar`: message `= gB`, key `= gT`.
+2. Runs the adversary against `reductionImpl`, which embeds `gA` into
+   the send oracles and `(gB, gT)` into the challenge oracles for both
+   parties A and B.
 3. Outputs `!b'` (negated CKA guess) to align bit conventions. -/
-noncomputable def securityReductionA
+noncomputable def securityReduction
     (adversary : SecurityAdversary (F ⊕ G) G G)
     (tStar : ℕ) : DDHAdversary F G :=
   fun gen gA gB gT => do
     let x₀ ← $ᵗ F
-    let (b', _) ← (simulateQ (reductionImplA gen gA gB gT) adversary).run
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false tStar 1)
-    return !b'
-
-/-- DDH adversary for the challB case, symmetric to `securityReductionA`.
-
-Embeds the DDH challenge into:
-- A-send at `tA = tStar`: message `= gA`, key `= xB • gA`.
-- B-chall at `tB = tStar`: message `= gB`, key `= gT`. -/
-noncomputable def securityReductionB
-    (adversary : SecurityAdversary (F ⊕ G) G G)
-    (tStar : ℕ) : DDHAdversary F G :=
-  fun gen gA gB gT => do
-    let x₀ ← $ᵗ F
-    let (b', _) ← (simulateQ (reductionImplB gen gA gB gT) adversary).run
+    let (b', _) ← (simulateQ (reductionImpl gen gA gB gT) adversary).run
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false tStar 1)
     return !b'
 
@@ -305,13 +273,13 @@ noncomputable def securityReductionB
 Using the generic `securityExpFixedBit` (defined in `Defs.lean`), we show
 that the two branches of the DDH experiment (real and random) correspond
 exactly to the two branches of the CKA security game (`b = false` and
-`b = true`). Each reduction (A and B) has its own pair of branch lemmas:
+`b = true`):
 
-- **Real DDH → CKA with `b = false`** (`securityReductionA_real` / `B_real`):
+- **Real DDH → CKA with `b = false`** (`securityReduction_real`):
   When the DDH triple is real, the reduction's oracle simulation produces
   exactly the same output distribution as the CKA game with real keys.
 
-- **Random DDH → CKA with `b = true`** (`securityReductionA_rand` / `B_rand`):
+- **Random DDH → CKA with `b = true`** (`securityReduction_rand`):
   When the DDH triple is random, the simulation matches the CKA game with
   random keys (using bijectivity of `· • gen` to equate `c • gen` with `$ᵗ G`).
 
@@ -320,62 +288,43 @@ Combined with the standard decomposition of both games over a fair coin
 this yields `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, tStar, 1)`.
 -/
 
-/-- **Real-branch lemma (challA).** With a real DDH triple, `securityReductionA`
-perfectly simulates the CKA game with `b = false` (real key).
+/-- **Real-branch lemma.**
+`Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`.
 
-The key identity is at stage ③: `gT = (a·b) • gen = b • (a • gen) = b • gA`
-by `smul_comm`, which matches the honest CKA key `x • gA` for the "effective
-exponent" `x = b`.
-
-`Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]` -/
-lemma securityReductionA_real
+Proof outline: (1) handle `!b'` via `probOutput_not_map`, (2) reorder DDH
+samples past `x₀` via `probOutput_bind_bind_swap`, (3) apply
+`evalDist_simulateQ_run'_eq_of_bisim` with a state relation coupling the
+reduction's DDH-embedded oracles to the honest game's oracles, using
+`smul_comm` for the per-query coupling at the modified send/challenge epochs. -/
+lemma securityReduction_real
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
-    Pr[= true | ddhExpReal gen (securityReductionA adversary tStar)] =
+    Pr[= true | ddhExpReal gen (securityReduction adversary tStar)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false tStar 1] := by
   sorry
 
-/-- **Random-branch lemma (challA).** With a random DDH triple,
-`securityReductionA` perfectly simulates the CKA game with `b = true`
-(random key).
+/-- **Random-branch lemma.**
+`Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]`.
 
-Bijectivity of `· • gen` is needed here: the DDH random branch provides
-`c • gen` for `c ← $ᵗ F`, while the CKA game samples the random challenge
-key from `$ᵗ G` directly. Bijectivity ensures these have the same distribution.
-
-`Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]` -/
-lemma securityReductionA_rand
+Same structure as `securityReduction_real`, but uses bijectivity of `· • gen`
+to couple the DDH random element `c • gen` with `$ᵗ G`. -/
+lemma securityReduction_rand
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
-    Pr[= true | ddhExpRand gen (securityReductionA adversary tStar)] =
-    Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary true tStar 1] := by
-  sorry
-
-/-- **Real-branch lemma (challB).** Symmetric to `securityReductionA_real`. -/
-lemma securityReductionB_real
-    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
-    Pr[= true | ddhExpReal gen (securityReductionB adversary tStar)] =
-    Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false tStar 1] := by
-  sorry
-
-/-- **Random-branch lemma (challB).** Symmetric to `securityReductionA_rand`. -/
-lemma securityReductionB_rand
-    (hg : Function.Bijective (· • gen : F → G))
-    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
-    Pr[= true | ddhExpRand gen (securityReductionB adversary tStar)] =
+    Pr[= true | ddhExpRand gen (securityReduction adversary tStar)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary true tStar 1] := by
   sorry
 
 /-! ### Main security theorems
 
-From the branch lemmas above, we derive the security bound. The adversary
-may challenge through either party A (`challA`) or party B (`challB`);
-the corresponding reduction (`securityReductionA` or `securityReductionB`)
-handles each case. The proof combines the real and random branch equalities
-with the standard decomposition of both games over a fair coin:
+From the branch lemmas above, we derive the security bound. The proof
+combines the real and random branch equalities with the standard
+decomposition of both games over a fair coin:
 
   `Pr[DDH win] - 1/2 = (Pr[ℬ=1|real] - Pr[ℬ=1|rand]) / 2`
                       `= (Pr[𝒜=0|b=0] - Pr[𝒜=0|b=1]) / 2`
                       `= Pr[CKA win] - 1/2`
+
+Hence `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, tStar, 1)`.
 
 **Corruption safety** (`ΔCKA = 1`). After the challenge:
 - The challenged party's state at `tStar + 1` is `.inl x'` (fresh, independent of `a,b`).
@@ -384,18 +333,15 @@ with the standard decomposition of both games over a fair coin:
 
 /-- **DDH-CKA security (per-adversary form)** [ACD19, Theorem 3].
 
-For any CKA adversary `𝒜`, the CKA advantage is bounded by the maximum of
-the DDH guess-advantages of the two reductions
-`ℬA = securityReductionA 𝒜 tStar` and `ℬB = securityReductionB 𝒜 tStar`:
+For any CKA adversary `𝒜`, the CKA advantage is bounded by the DDH
+guess-advantage of the reduction `ℬ = securityReduction 𝒜 tStar`:
 
-  `securityAdvantage(ddhCKA, 𝒜, tStar, 1)
-    ≤ max(ddhGuessAdvantage(gen, ℬA), ddhGuessAdvantage(gen, ℬB))` -/
+  `securityAdvantage(ddhCKA, 𝒜, tStar, 1) ≤ ddhGuessAdvantage(gen, ℬ)` -/
 theorem security
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
     securityAdvantage (ddhCKA F G gen) adversary tStar 1 ≤
-      max (ddhGuessAdvantage gen (securityReductionA adversary tStar))
-          (ddhGuessAdvantage gen (securityReductionB adversary tStar)) := by
+      ddhGuessAdvantage gen (securityReduction adversary tStar) := by
   sorry
 
 /-- **DDH-CKA security (quantitative form)** [ACD19, Theorem 3].
@@ -412,9 +358,8 @@ theorem ddhCKA_security
       ddhGuessAdvantage gen adv ≤ ε) :
     securityAdvantage (ddhCKA F G gen) adversary tStar 1 ≤ ε :=
   calc securityAdvantage (ddhCKA F G gen) adversary tStar 1
-      ≤ max (ddhGuessAdvantage gen (securityReductionA adversary tStar))
-            (ddhGuessAdvantage gen (securityReductionB adversary tStar)) :=
+      ≤ ddhGuessAdvantage gen (securityReduction adversary tStar) :=
         security hg adversary tStar
-    _ ≤ ε := max_le (hddh _) (hddh _)
+    _ ≤ ε := hddh _
 
 end ddhCKA
