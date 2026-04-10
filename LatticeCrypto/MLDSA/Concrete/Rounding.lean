@@ -36,21 +36,6 @@ local instance : NeZero modulus := by
   unfold modulus
   exact ⟨by decide⟩
 
--- In Lean 4.29, the `+`/`-` on `Rq` (via `NegacyclicRing`) is no longer
--- definitionally reducible enough for `simp [Vector.get_eq_getElem]` to bridge
--- between `getElem`-based goals and `Fin`-based helper lemmas.  These two
--- wrappers expose the pointwise equations directly.
-set_option maxRecDepth 800 in
-private theorem rq_add_get (f g : Rq) (j : Fin ringDegree) :
-    (f + g).get j = f.get j + g.get j := by
-  have : (f + g) = coeffRing.add f g := rfl
-  rw [this]; exact vectorRing_add_get f g j
-
-set_option maxRecDepth 800 in
-private theorem rq_sub_get (f g : Rq) (j : Fin ringDegree) :
-    (f - g).get j = f.get j - g.get j := by
-  have : (f - g) = coeffRing.sub f g := rfl
-  rw [this]; exact vectorRing_sub_get f g j
 
 /-- The high-order representative type used by `HighBits`. -/
 abbrev High := Rq
@@ -168,6 +153,17 @@ local instance : Add Rq := Vector.instAdd
 local instance : Zero Rq := Vector.instZero
 local instance : Sub Rq := Vector.instSub
 local instance : Neg Rq := Vector.instNeg
+
+-- Pointwise `.get` lemmas for the local `Vector.inst*` instances above.
+@[simp]
+private theorem rq_add_get (f g : Rq) (j : Fin ringDegree) :
+    (f + g).get j = f.get j + g.get j :=
+  Vector.getElem_add f g j.val j.isLt
+
+@[simp]
+private theorem rq_sub_get (f g : Rq) (j : Fin ringDegree) :
+    (f - g).get j = f.get j - g.get j :=
+  Vector.getElem_sub f g j.val j.isLt
 
 /-- Casting `centeredRepr` back into `ZMod q` recovers the original coefficient. -/
 private theorem centeredRepr_cast (x : Coeff) :
@@ -432,27 +428,30 @@ private theorem power2RoundLow_get (r : Rq) (i : Fin ringDegree) :
     (power2RoundLow r).get i = intToCoeff ((power2RoundCoeff (r.get i)).2) := by
   simp [power2RoundLow]
 
-theorem concretePower2Round_high_low_decomp (r : Rq) :
-    power2RoundShift (power2RoundHigh r) + power2RoundLow r = r := by
-  apply Vector.ext
-  intro i hi
-  let j : Fin ringDegree := ⟨i, hi⟩
-  show (power2RoundShift (power2RoundHigh r) + power2RoundLow r).get j = r.get j
+set_option maxRecDepth 4000 in
+private theorem power2Round_high_low_decomp_get (r : Rq) (j : Fin ringDegree) :
+    (power2RoundShift (power2RoundHigh r) + power2RoundLow r).get j = r.get j := by
   rw [rq_add_get, power2RoundShift_high_get, power2RoundLow_get]
   exact power2RoundCoeff_eq (r.get j)
 
+theorem concretePower2Round_high_low_decomp (r : Rq) :
+    power2RoundShift (power2RoundHigh r) + power2RoundLow r = r := by
+  apply Vector.ext; intro i hi
+  change (power2RoundShift (power2RoundHigh r) + power2RoundLow r).get ⟨i, hi⟩ = r.get ⟨i, hi⟩
+  exact power2Round_high_low_decomp_get r ⟨i, hi⟩
+
+private theorem power2Round_remainder_eq_low_get (r : Rq) (j : Fin ringDegree) :
+    (r - power2RoundShift (power2RoundHigh r)).get j = (power2RoundLow r).get j := by
+  have h := power2Round_high_low_decomp_get r j
+  rw [rq_add_get] at h
+  rw [rq_sub_get, ← h, add_sub_cancel_left]
+
 theorem concretePower2Round_remainder_eq_low (r : Rq) :
     r - power2RoundShift (power2RoundHigh r) = power2RoundLow r := by
-  apply Vector.ext
-  intro i hi
-  let j : Fin ringDegree := ⟨i, hi⟩
-  show (r - power2RoundShift (power2RoundHigh r)).get j = (power2RoundLow r).get j
-  have hsub : (r - power2RoundShift (power2RoundHigh r)).get j =
-      r.get j - (power2RoundShift (power2RoundHigh r)).get j := by
-    show ((vectorNegacyclicRing Coeff ringDegree).sub _ _).get j = _
-    exact vectorRing_sub_get _ _ j
-  rw [hsub, power2RoundShift_high_get, power2RoundLow_get]
-  rw [← power2RoundCoeff_eq (r.get j), add_sub_cancel_left]
+  apply Vector.ext; intro i hi
+  change (r - power2RoundShift (power2RoundHigh r)).get ⟨i, hi⟩ =
+    (power2RoundLow r).get ⟨i, hi⟩
+  exact power2Round_remainder_eq_low_get r ⟨i, hi⟩
 
 theorem concretePower2Round_bound (r : Rq) :
     LatticeCrypto.cInfNorm (r - power2RoundShift (power2RoundHigh r)) ≤ 2 ^ (droppedBits - 1) := by
@@ -472,18 +471,17 @@ private theorem lowBits_get (p : Params) (r : Rq) (i : Fin ringDegree) :
     (lowBits p r).get i = intToCoeff (lowBitsCoeff (r.get i) p.gamma2) := by
   simp [lowBits]
 
+private theorem rounding_high_low_decomp_get (p : Params) (hγ : 0 < p.gamma2) (r : Rq)
+    (j : Fin ringDegree) :
+    (highBitsShift p (highBits p r) + lowBits p r).get j = r.get j := by
+  rw [rq_add_get, highBitsShift_high_get, lowBits_get]
+  exact decomposeCoeff_eq (r.get j) hγ
+
 theorem concreteRounding_high_low_decomp (p : Params) (hγ : 0 < p.gamma2) (r : Rq) :
     highBitsShift p (highBits p r) + lowBits p r = r := by
-  apply Vector.ext
-  intro i hi
-  let j : Fin ringDegree := ⟨i, hi⟩
-  show (highBitsShift p (highBits p r) + lowBits p r).get j = r.get j
-  have hadd : (highBitsShift p (highBits p r) + lowBits p r).get j =
-      (highBitsShift p (highBits p r)).get j + (lowBits p r).get j := by
-    show ((vectorNegacyclicRing Coeff ringDegree).add _ _).get j = _
-    exact vectorRing_add_get _ _ j
-  rw [hadd, highBitsShift_high_get, lowBits_get]
-  exact decomposeCoeff_eq (r.get j) hγ
+  apply Vector.ext; intro i hi
+  change (highBitsShift p (highBits p r) + lowBits p r).get ⟨i, hi⟩ = r.get ⟨i, hi⟩
+  exact rounding_high_low_decomp_get p hγ r ⟨i, hi⟩
 
 theorem concreteRounding_lowBits_bound (p : Params)
     (hγ : 0 < p.gamma2) (hq : 2 * p.gamma2 < modulus) (r : Rq) :
@@ -1790,48 +1788,65 @@ private theorem makeHint_get (p : Params) (z r : Rq) (i : Fin ringDegree) :
     (makeHint p z r).get i = makeHintCoeff (z.get i) (r.get i) p.gamma2 := by
   simp [makeHint]
 
+private theorem useHint_correct_get (p : Params) (hp : p.isApproved)
+    (z r : Rq) (hz : LatticeCrypto.cInfNorm z ≤ p.gamma2)
+    (j : Fin ringDegree) :
+    (useHint p (makeHint p z r) r).get j = (highBits p (r + z)).get j := by
+  have hzj : (LatticeCrypto.centeredRepr (z.get j)).natAbs ≤ p.gamma2 :=
+    (LatticeCrypto.cInfNorm_le_iff.mp hz) j
+  rw [useHint_get, makeHint_get, highBits, Vector.get_ofFn, rq_add_get]
+  exact congrArg (fun n : ℕ => (n : Coeff))
+    (useHintCoeff_correct_of_small_of_isApproved p hp (z := z.get j) (r := r.get j) hzj)
+
 theorem concreteRounding_useHint_correct_of_isApproved (p : Params)
     (hp : p.isApproved) (z r : Rq) :
     LatticeCrypto.cInfNorm z ≤ p.gamma2 →
     useHint p (makeHint p z r) r = highBits p (r + z) := by
   intro hz
-  apply Vector.ext
-  intro i hi
-  let j : Fin ringDegree := ⟨i, hi⟩
-  have hzj : (LatticeCrypto.centeredRepr (z.get j)).natAbs ≤ p.gamma2 := by
-    exact (LatticeCrypto.cInfNorm_le_iff.mp hz) j
-  have hcoef :
-      (useHint p (makeHint p z r) r).get j = (highBits p (r + z)).get j := by
-    rw [useHint_get]
-    rw [makeHint_get]
-    rw [highBits, Vector.get_ofFn]
-    have hadd : (r + z).get j = r.get j + z.get j := by
-      show ((vectorNegacyclicRing Coeff ringDegree).add r z).get j = _
-      exact vectorRing_add_get r z j
-    rw [hadd]
-    exact congrArg (fun n : ℕ => (n : Coeff))
-      (useHintCoeff_correct_of_small_of_isApproved p hp (z := z.get j) (r := r.get j) hzj)
-  exact hcoef
+  apply Vector.ext; intro i hi
+  change (useHint p (makeHint p z r) r).get ⟨i, hi⟩ = (highBits p (r + z)).get ⟨i, hi⟩
+  exact useHint_correct_get p hp z r hz ⟨i, hi⟩
+
+private theorem useHint_bound_get (p : Params) (hp : p.isApproved)
+    (r : Rq) (h : Hint) (j : Fin ringDegree) :
+    (LatticeCrypto.centeredRepr ((r - highBitsShift p (useHint p h r)).get j)).natAbs ≤
+      2 * p.gamma2 + 1 := by
+  have hcoeff : (r - highBitsShift p (useHint p h r)).get j =
+      r.get j -
+        (((2 * p.gamma2 : ℕ) : Coeff) *
+          (useHintCoeff (h.get j) (r.get j) p.gamma2 : Coeff)) := by
+    rw [rq_sub_get]; congr 1
+    exact highBitsShift_useHint_get p h r j
+  rw [hcoeff]
+  exact useHintCoeff_shift_sub_bound_of_isApproved p hp (h.get j) (r.get j)
 
 theorem concreteRounding_useHint_bound_of_isApproved (p : Params)
     (hp : p.isApproved) (r : Rq) (h : Hint) :
     LatticeCrypto.cInfNorm (r - highBitsShift p (useHint p h r)) ≤ 2 * p.gamma2 + 1 := by
   apply LatticeCrypto.cInfNorm_le_iff.mpr
-  intro j
-  have hcoeff : (r - highBitsShift p (useHint p h r)).get j =
-      r.get j -
-        (((2 * p.gamma2 : ℕ) : Coeff) *
-          (useHintCoeff (h.get j) (r.get j) p.gamma2 : Coeff)) := by
-    have hsub : (r - highBitsShift p (useHint p h r)).get j =
-        r.get j - (highBitsShift p (useHint p h r)).get j := by
-      show ((vectorNegacyclicRing Coeff ringDegree).sub r
-        (highBitsShift p (useHint p h r))).get j = _
-      exact vectorRing_sub_get r (highBitsShift p (useHint p h r)) j
-    rw [hsub]
-    congr 1
-    exact highBitsShift_useHint_get p h r j
-  rw [hcoeff]
-  exact useHintCoeff_shift_sub_bound_of_isApproved p hp (h.get j) (r.get j)
+  exact useHint_bound_get p hp r h
+
+private theorem hide_low_get (p : Params) (hp : p.isApproved)
+    (r s : Rq) (b : ℕ)
+    (hs : LatticeCrypto.cInfNorm s ≤ b)
+    (hlow : LatticeCrypto.cInfNorm (lowBits p r) + b < p.gamma2)
+    (j : Fin ringDegree) :
+    (highBits p (r + s)).get j = (highBits p r).get j := by
+  have hsj : (LatticeCrypto.centeredRepr (s.get j)).natAbs ≤ b :=
+    (LatticeCrypto.cInfNorm_le_iff.mp hs) j
+  have hlowj0 :
+      (LatticeCrypto.centeredRepr ((lowBits p r).get j)).natAbs < p.gamma2 - b := by
+    have hcoeff := LatticeCrypto.coeff_le_cInfNorm (lowBits p r) j
+    omega
+  have hlowj : (lowBitsCoeff (r.get j) p.gamma2).natAbs < p.gamma2 - b := by
+    have hq := gamma2_double_lt_modulus_of_isApproved hp
+    rw [lowBits_get, lowBits_centeredRepr (r := r.get j)
+      (hγ := gamma2_pos_of_isApproved hp) (hq := hq)] at hlowj0
+    exact hlowj0
+  rw [highBits, Vector.get_ofFn, highBits, Vector.get_ofFn, rq_add_get]
+  exact congrArg (fun n : ℕ => (n : Coeff))
+    (highBitsCoeff_add_eq_of_small_of_isApproved p hp (r := r.get j)
+      (s := s.get j) (b := b) hsj hlowj)
 
 theorem concreteRounding_hide_low_of_isApproved (p : Params)
     (hp : p.isApproved) (r s : Rq) (b : ℕ) :
@@ -1839,30 +1854,9 @@ theorem concreteRounding_hide_low_of_isApproved (p : Params)
     LatticeCrypto.cInfNorm (lowBits p r) + b < p.gamma2 →
     highBits p (r + s) = highBits p r := by
   intro hs hlow
-  have hfin : ∀ j : Fin ringDegree, (highBits p (r + s)).get j = (highBits p r).get j := by
-    intro j
-    have hsj : (LatticeCrypto.centeredRepr (s.get j)).natAbs ≤ b := by
-      exact (LatticeCrypto.cInfNorm_le_iff.mp hs) j
-    have hlowj0 :
-        (LatticeCrypto.centeredRepr ((lowBits p r).get j)).natAbs < p.gamma2 - b := by
-      have hcoeff := LatticeCrypto.coeff_le_cInfNorm (lowBits p r) j
-      omega
-    have hlowj : (lowBitsCoeff (r.get j) p.gamma2).natAbs < p.gamma2 - b := by
-      have hq := gamma2_double_lt_modulus_of_isApproved hp
-      rw [lowBits_get, lowBits_centeredRepr (r := r.get j)
-        (hγ := gamma2_pos_of_isApproved hp) (hq := hq)] at hlowj0
-      exact hlowj0
-    rw [highBits, Vector.get_ofFn, highBits, Vector.get_ofFn]
-    have hadd : (r + s).get j = r.get j + s.get j := by
-      show ((vectorNegacyclicRing Coeff ringDegree).add r s).get j = _
-      exact vectorRing_add_get r s j
-    rw [hadd]
-    exact congrArg (fun n : ℕ => (n : Coeff))
-      (highBitsCoeff_add_eq_of_small_of_isApproved p hp (r := r.get j)
-        (s := s.get j) (b := b) hsj hlowj)
-  apply Vector.ext
-  intro i hi
-  exact hfin ⟨i, hi⟩
+  apply Vector.ext; intro i hi
+  change (highBits p (r + s)).get ⟨i, hi⟩ = (highBits p r).get ⟨i, hi⟩
+  exact hide_low_get p hp r s b hs hlow ⟨i, hi⟩
 
 theorem concreteRounding_useHint_bound_field_of_isApproved (p : Params)
     (hp : p.isApproved) (r : Rq) (h : Hint) :
@@ -1894,12 +1888,12 @@ theorem concreteRounding_hide_low_field_of_isApproved (p : Params)
   change highBits p (r + s) = highBits p r
   exact concreteRounding_hide_low_of_isApproved p hp r s b hs (by simpa [hhalf] using hlow)
 
-theorem concretePower2RoundLaws :
+theorem concretePower2RoundLaws [AddCommGroup Rq] :
     LatticeCrypto.Power2RoundOps.Laws (ring := coeffRing)
       concretePower2RoundOps LatticeCrypto.cInfNorm := by
   sorry
 
-theorem concreteRoundingLaws_of_isApproved (p : Params) (hp : p.isApproved) :
+theorem concreteRoundingLaws_of_isApproved (p : Params) (hp : p.isApproved) [AddCommGroup Rq] :
     LatticeCrypto.RoundingOps.Laws (ring := coeffRing)
       (concreteRoundingOps p) LatticeCrypto.cInfNorm := by
   sorry
