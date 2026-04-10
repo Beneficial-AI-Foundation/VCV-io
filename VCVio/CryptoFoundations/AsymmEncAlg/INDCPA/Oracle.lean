@@ -182,9 +182,10 @@ lemma IND_CPA_queryImpl'_counted_counter_le_succ
       clear hp
       revert hp'
       rcases hcache : st.1 mm with _ | c <;> intro hp
-      · simp [IND_CPA_challengeOracle'_counted, IND_CPA_countedChallengeOracle, hcache,
-          StateT.run_bind, StateT.run_get, pure_bind, StateT.run_set, StateT.run_pure,
-          StateT.run_liftM, mem_support_bind_iff, mem_support_pure_iff] at hp
+      · simp only [IND_CPA_challengeOracle'_counted, IND_CPA_countedChallengeOracle,
+          bind_pure_comp, StateT.run_bind, StateT.run_get, pure_bind, hcache,
+          StateT.run_monadLift, monadLift_eq_self, StateT.run_map, StateT.run_set,
+          map_pure, Functor.map_map, support_map] at hp
         rcases hp with ⟨c, _, hp⟩
         have hp2 : p.2.2 = st.2 + 1 := by
           cases hp
@@ -192,7 +193,7 @@ lemma IND_CPA_queryImpl'_counted_counter_le_succ
         omega
       · simp only [IND_CPA_challengeOracle'_counted, IND_CPA_countedChallengeOracle, hcache,
           StateT.run_bind, StateT.run_get, pure_bind,
-          StateT.run_pure, mem_support_pure_iff] at hp
+          StateT.run_pure] at hp
         have := congrArg (fun x => x.2.2) hp
         simp at this
         omega
@@ -245,7 +246,7 @@ lemma IND_CPA_queryImpl'_counted_proj_eq_queryImpl'
             (cache, n)) =
         ((StateT.lift mx : StateT encAlg'.IND_CPA_Cache ProbComp (unifSpec.Range tu)).run cache)
       rw [StateT.run_lift, StateT.run_lift]
-      simp [map_bind]
+      simp
   | inr mm =>
       simpa [IND_CPA_queryImpl'_counted, IND_CPA_queryImpl', IND_CPA_queryImplFromChallenge]
         using
@@ -271,7 +272,7 @@ lemma IND_CPA_queryImpl_hybridLR_counted_proj_eq_queryImpl'_false
             (cache, n)) =
         ((StateT.lift mx : StateT encAlg'.IND_CPA_Cache ProbComp (unifSpec.Range tu)).run cache)
       rw [StateT.run_lift, StateT.run_lift]
-      simp [map_bind]
+      simp
   | inr mm =>
       simpa [IND_CPA_queryImpl_hybridLR_counted, IND_CPA_queryImpl',
         IND_CPA_queryImplFromChallenge] using
@@ -345,7 +346,8 @@ theorem IND_CPA_run'_evalDist_eq_queryImpl'_of_bounded_eq
             simp only [IND_CPA_queryImpl'_counted, IND_CPA_queryImplFromChallenge,
               QueryImpl.add_apply_inl, QueryImpl.liftTarget_apply, QueryImpl.ofLift_apply] at hz
             change z ∈ support
-              (($ᵗ (unifSpec.Range tu) : ProbComp (unifSpec.Range tu)) >>= fun a => pure (a, st)) at hz
+              (($ᵗ (unifSpec.Range tu) : ProbComp (unifSpec.Range tu)) >>=
+                fun a => pure (a, st)) at hz
             rcases (mem_support_bind_iff _ _ _).1 hz with ⟨a, _, ha⟩
             have ha' : z = (a, st) := by simpa using ha
             have hst : z.2 = st := by
@@ -471,27 +473,24 @@ theorem IND_CPA_LR_hybridGame_q_evalDist_eq_left_of_MakesAtMostQueries
             | false =>
                 simp [IND_CPA_queryImpl'_counted, IND_CPA_challengeOracle'_counted,
                   IND_CPA_queryImpl_hybridLR_counted, IND_CPA_hybridChallengeOracleLR_counted,
-                  IND_CPA_queryImplFromChallenge, IND_CPA_countedChallengeOracle,
-                  StateT.run_bind, StateT.run_get, pure_bind, StateT.run_set, StateT.run_pure,
-                  StateT.run_liftM, hcache]
+                  IND_CPA_queryImplFromChallenge, IND_CPA_countedChallengeOracle]
             | true =>
                 have hlt : st.2 < realUntil := by simpa using hcond
                 change (encAlg'.IND_CPA_challengeOracle'_counted pk true mm).run st =
                   (encAlg'.IND_CPA_hybridChallengeOracleLR_counted pk realUntil mm).run st
-                simpa [IND_CPA_challengeOracle'_counted, IND_CPA_hybridChallengeOracleLR_counted,
+                simp [IND_CPA_challengeOracle'_counted, IND_CPA_hybridChallengeOracleLR_counted,
                   IND_CPA_countedChallengeOracle, hcache, hlt, StateT.run_bind,
-                  StateT.run_get, pure_bind, StateT.run_set, StateT.run_pure]
+                  StateT.run_get, pure_bind, StateT.run_set]
           · cases b with
             | false =>
                 simp [IND_CPA_queryImpl'_counted, IND_CPA_challengeOracle'_counted,
                   IND_CPA_queryImpl_hybridLR_counted, IND_CPA_hybridChallengeOracleLR_counted,
-                  IND_CPA_queryImplFromChallenge, IND_CPA_countedChallengeOracle,
-                  StateT.run_bind, StateT.run_get, pure_bind, StateT.run_pure, hcache]
+                  IND_CPA_queryImplFromChallenge, IND_CPA_countedChallengeOracle]
             | true =>
                 have hlt : st.2 < realUntil := by simpa using hcond
                 change (encAlg'.IND_CPA_challengeOracle'_counted pk true mm).run st =
                   (encAlg'.IND_CPA_hybridChallengeOracleLR_counted pk realUntil mm).run st
-                simpa [IND_CPA_challengeOracle'_counted, IND_CPA_hybridChallengeOracleLR_counted,
+                simp [IND_CPA_challengeOracle'_counted, IND_CPA_hybridChallengeOracleLR_counted,
                   IND_CPA_countedChallengeOracle, hcache, StateT.run_bind,
                   StateT.run_get, pure_bind, StateT.run_pure])
     pk true q (adversary pk) q (hq pk) ∅ 0 (by omega)
@@ -671,15 +670,16 @@ lemma IND_CPA_hybridLR_counted_counter_le
       revert hp'
       simp only [IND_CPA_hybridChallengeOracleLR_counted, IND_CPA_countedChallengeOracle]
       rcases hcache : st.1 mm with _ | c <;> intro hp
-      · simp [hcache, StateT.run_bind, StateT.run_get, pure_bind, StateT.run_set,
-          StateT.run_pure, StateT.run_liftM, mem_support_bind_iff, mem_support_pure_iff] at hp
+      · simp only [bind_pure_comp, StateT.run_bind, StateT.run_get, pure_bind, hcache,
+          StateT.run_monadLift, monadLift_eq_self, StateT.run_map, StateT.run_set,
+          map_pure, Functor.map_map, support_map] at hp
         rcases hp with ⟨c, _, hp⟩
         have hp2 : p.2.2 = st.2 + 1 := by
           cases hp
           rfl
         omega
       · simp only [hcache, StateT.run_bind, StateT.run_get, pure_bind,
-          StateT.run_pure, mem_support_pure_iff] at hp
+          StateT.run_pure] at hp
         have := congrArg (fun x => x.2.2) hp
         simp at this
         omega

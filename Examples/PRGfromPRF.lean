@@ -117,10 +117,10 @@ private lemma simulateQ_prfReal_oracleOutputs (k : K) (n : ℕ) (s : S) :
       OracleQuery.cont_query, id_map, OracleQuery.input_query]
     rw [show prf.prfRealQueryImpl k (Sum.inr s) = pure (prf.eval k s) by
       simp [prfRealQueryImpl, QueryImpl.add_apply_inr]]
-    simp
+    simp only [bind_pure_comp, bind_eq_pure_iff]
     refine ⟨prf.eval k s, rfl, ?_⟩
     rw [simulateQ_map, ih]
-    simp [streamOutputs]
+    simp
 
 /-- Applying the real PRF query implementation to the full reduction body simplifies to
 sampling a seed and running the adversary on deterministic output. -/

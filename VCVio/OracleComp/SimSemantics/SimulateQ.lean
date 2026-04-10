@@ -37,8 +37,7 @@ lemma simulateQ_pure (x : α) :
 lemma simulateQ_bind [LawfulMonad r] (mx : OracleComp spec α) (my : α → OracleComp spec β) :
     simulateQ impl (mx >>= my) = simulateQ impl mx >>= fun x => simulateQ impl (my x) := by
   change PFunctor.FreeM.mapM impl (PFunctor.FreeM.bind mx my) = _
-  simpa [simulateQ] using
-    (PFunctor.FreeM.mapM_bind (s := impl) (x := mx) (y := my))
+  simp [simulateQ, PFunctor.FreeM.mapM_bind]
 
 /-- Version of `simulateQ` that bundles into a monad hom. -/
 @[reducible]

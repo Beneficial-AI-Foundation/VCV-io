@@ -237,7 +237,7 @@ theorem IND_CPA_Game_eq_IND_CCA_Game_toIND_CCA
               adversary.postChallenge st cStar kStar
             exact simulateQ_ofLift_eq_self (mx := adversary.postChallenge st cStar kStar)
   apply congrArg (runtime.evalDist)
-  simp only [IND_CPA_Game, IND_CCA_Game, IND_CPA_Adversary.toIND_CCA]
+  simp only [IND_CPA_Adversary.toIND_CCA]
   simp_rw [hpre, hpost]
 
 end IND_CCA

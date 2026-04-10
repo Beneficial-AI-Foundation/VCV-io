@@ -142,7 +142,7 @@ def monadOfId (M : RelativeMonad C _ (𝟭 _)) : Monad C where
                 _ = M.η := by simp
             exact congrArg M.μ hinner
       _ = 𝟙 (M.T X) := by
-            simpa using (M.left_unit (X := X))
+            simp
   assoc := by
     intro X
     calc
@@ -304,11 +304,11 @@ class RelativeMonad (j : Type u → Type w) (m : Type u → Type v)
 
 -- bind f fun y => Functor.map y (x ())
 
-def instFunctorOfRelativeMonad {j : Type u → Type w} [Functor j] {m : Type u → Type v}
+@[reducible] def instFunctorOfRelativeMonad {j : Type u → Type w} [Functor j] {m : Type u → Type v}
     [RelativeMonad j m] : Functor m where
   map f x := bindᵣ (j := j) x (pureᵣ ∘ (Functor.map f))
 
-def instSeqOfRelativeMonadOfSeq {j : Type u → Type w} [Seq j] {m : Type u → Type v}
+@[reducible] def instSeqOfRelativeMonadOfSeq {j : Type u → Type w} [Seq j] {m : Type u → Type v}
     [RelativeMonad j m] : Seq m where
   seq f x := bindᵣ (j := j) (m := m) f (fun y => mapᵣ (y <*> ·) (x ()))
 

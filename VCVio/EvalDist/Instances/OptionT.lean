@@ -42,7 +42,7 @@ noncomputable instance (m : Type u → Type v) [Monad m] [HasEvalSet m] :
       simpa [Set.mem_singleton_iff] using hx
     · intro h
       have hx : x = mx := by simpa [Set.mem_singleton_iff] using h
-      simpa [support_pure, hx]
+      simp [support_pure, hx]
   toSet.toFun_bind' mx my := Set.ext fun x => by
     constructor
     · intro h
@@ -53,7 +53,7 @@ noncomputable instance (m : Type u → Type v) [Monad m] [HasEvalSet m] :
       cases r with
       | none =>
           exfalso
-          simpa [Option.elimM, support_pure] using hx
+          simp at hx
       | some a =>
           change x ∈ (⋃ a ∈ some ⁻¹' support mx.run, some ⁻¹' support (my a).run)
           simp only [Set.mem_iUnion, Set.mem_preimage]

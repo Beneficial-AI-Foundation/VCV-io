@@ -112,7 +112,7 @@ namespace Spec
     Std.Do.Triple (OracleComp.query t : OracleComp spec (spec.Range t))
       (⌜wpProp (spec := spec) (OracleComp.query t) (fun a => (Q.1 a).down)⌝)
       Q := by
-  simpa [Std.Do.Triple, Std.Do.WP.wp, PredTrans.apply]
+  simp [Std.Do.Triple, Std.Do.WP.wp, PredTrans.apply]
 
 /-- Bind-chain specification shape for `mspec`/`mvcgen` in OracleComp do-blocks. -/
 @[spec] theorem query_bind (t : spec.Domain) {f : spec.Range t → OracleComp spec α}
@@ -121,7 +121,7 @@ namespace Spec
       (⌜wpProp (spec := spec)
         ((OracleComp.query t : OracleComp spec (spec.Range t)) >>= f) (fun a => (Q.1 a).down)⌝)
       Q := by
-  simpa [Std.Do.Triple, Std.Do.WP.wp, PredTrans.apply]
+  simp [Std.Do.Triple, Std.Do.WP.wp, PredTrans.apply]
 
 end Spec
 
