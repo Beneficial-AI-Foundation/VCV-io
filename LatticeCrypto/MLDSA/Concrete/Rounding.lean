@@ -36,6 +36,22 @@ local instance : NeZero modulus := by
   unfold modulus
   exact ⟨by decide⟩
 
+-- In Lean 4.29, the `+`/`-` on `Rq` (via `NegacyclicRing`) is no longer
+-- definitionally reducible enough for `simp [Vector.get_eq_getElem]` to bridge
+-- between `getElem`-based goals and `Fin`-based helper lemmas.  These two
+-- wrappers expose the pointwise equations directly.
+set_option maxRecDepth 800 in
+private theorem rq_add_get (f g : Rq) (j : Fin ringDegree) :
+    (f + g).get j = f.get j + g.get j := by
+  have : (f + g) = coeffRing.add f g := rfl
+  rw [this]; exact vectorRing_add_get f g j
+
+set_option maxRecDepth 800 in
+private theorem rq_sub_get (f g : Rq) (j : Fin ringDegree) :
+    (f - g).get j = f.get j - g.get j := by
+  have : (f - g) = coeffRing.sub f g := rfl
+  rw [this]; exact vectorRing_sub_get f g j
+
 /-- The high-order representative type used by `HighBits`. -/
 abbrev High := Rq
 
@@ -421,16 +437,22 @@ theorem concretePower2Round_high_low_decomp (r : Rq) :
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  simpa [Vector.get_eq_getElem, power2RoundShift_high_get, power2RoundLow_get]
-    using power2RoundCoeff_eq (r.get j)
+  show (power2RoundShift (power2RoundHigh r) + power2RoundLow r).get j = r.get j
+  rw [rq_add_get, power2RoundShift_high_get, power2RoundLow_get]
+  exact power2RoundCoeff_eq (r.get j)
 
 theorem concretePower2Round_remainder_eq_low (r : Rq) :
     r - power2RoundShift (power2RoundHigh r) = power2RoundLow r := by
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  simpa [Vector.get_eq_getElem, power2RoundShift_high_get, power2RoundLow_get]
-    using sub_eq_iff_eq_add'.2 (power2RoundCoeff_eq (r.get j)).symm
+  show (r - power2RoundShift (power2RoundHigh r)).get j = (power2RoundLow r).get j
+  have hsub : (r - power2RoundShift (power2RoundHigh r)).get j =
+      r.get j - (power2RoundShift (power2RoundHigh r)).get j := by
+    show ((vectorNegacyclicRing Coeff ringDegree).sub _ _).get j = _
+    exact vectorRing_sub_get _ _ j
+  rw [hsub, power2RoundShift_high_get, power2RoundLow_get]
+  rw [← power2RoundCoeff_eq (r.get j), add_sub_cancel_left]
 
 theorem concretePower2Round_bound (r : Rq) :
     LatticeCrypto.cInfNorm (r - power2RoundShift (power2RoundHigh r)) ≤ 2 ^ (droppedBits - 1) := by
@@ -455,8 +477,13 @@ theorem concreteRounding_high_low_decomp (p : Params) (hγ : 0 < p.gamma2) (r : 
   apply Vector.ext
   intro i hi
   let j : Fin ringDegree := ⟨i, hi⟩
-  simpa [Vector.get_eq_getElem, highBitsShift_high_get, lowBits_get, highBitsCoeff, lowBitsCoeff]
-    using decomposeCoeff_eq (r.get j) hγ
+  show (highBitsShift p (highBits p r) + lowBits p r).get j = r.get j
+  have hadd : (highBitsShift p (highBits p r) + lowBits p r).get j =
+      (highBitsShift p (highBits p r)).get j + (lowBits p r).get j := by
+    show ((vectorNegacyclicRing Coeff ringDegree).add _ _).get j = _
+    exact vectorRing_add_get _ _ j
+  rw [hadd, highBitsShift_high_get, lowBits_get]
+  exact decomposeCoeff_eq (r.get j) hγ
 
 theorem concreteRounding_lowBits_bound (p : Params)
     (hγ : 0 < p.gamma2) (hq : 2 * p.gamma2 < modulus) (r : Rq) :
@@ -1779,12 +1806,12 @@ theorem concreteRounding_useHint_correct_of_isApproved (p : Params)
     rw [makeHint_get]
     rw [highBits, Vector.get_ofFn]
     have hadd : (r + z).get j = r.get j + z.get j := by
-      show (r + z)[j.val] = r[j.val] + z[j.val]
-      simpa using (Vector.getElem_add (xs := r) (ys := z) (i := j.val) (h := j.isLt))
+      show ((vectorNegacyclicRing Coeff ringDegree).add r z).get j = _
+      exact vectorRing_add_get r z j
     rw [hadd]
     exact congrArg (fun n : ℕ => (n : Coeff))
       (useHintCoeff_correct_of_small_of_isApproved p hp (z := z.get j) (r := r.get j) hzj)
-  simpa [Vector.get_eq_getElem] using hcoef
+  exact hcoef
 
 theorem concreteRounding_useHint_bound_of_isApproved (p : Params)
     (hp : p.isApproved) (r : Rq) (h : Hint) :
@@ -1797,10 +1824,9 @@ theorem concreteRounding_useHint_bound_of_isApproved (p : Params)
           (useHintCoeff (h.get j) (r.get j) p.gamma2 : Coeff)) := by
     have hsub : (r - highBitsShift p (useHint p h r)).get j =
         r.get j - (highBitsShift p (useHint p h r)).get j := by
-      show (r - highBitsShift p (useHint p h r))[j.val] =
-          r[j.val] - (highBitsShift p (useHint p h r))[j.val]
-      simpa using (Vector.getElem_sub (xs := r) (ys := highBitsShift p (useHint p h r))
-        (i := j.val) (h := j.isLt))
+      show ((vectorNegacyclicRing Coeff ringDegree).sub r
+        (highBitsShift p (useHint p h r))).get j = _
+      exact vectorRing_sub_get r (highBitsShift p (useHint p h r)) j
     rw [hsub]
     congr 1
     exact highBitsShift_useHint_get p h r j
@@ -1828,8 +1854,8 @@ theorem concreteRounding_hide_low_of_isApproved (p : Params)
       exact hlowj0
     rw [highBits, Vector.get_ofFn, highBits, Vector.get_ofFn]
     have hadd : (r + s).get j = r.get j + s.get j := by
-      show (r + s)[j.val] = r[j.val] + s[j.val]
-      simpa using (Vector.getElem_add (xs := r) (ys := s) (i := j.val) (h := j.isLt))
+      show ((vectorNegacyclicRing Coeff ringDegree).add r s).get j = _
+      exact vectorRing_add_get r s j
     rw [hadd]
     exact congrArg (fun n : ℕ => (n : Coeff))
       (highBitsCoeff_add_eq_of_small_of_isApproved p hp (r := r.get j)
