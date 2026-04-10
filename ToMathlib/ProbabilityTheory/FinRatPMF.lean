@@ -1037,7 +1037,8 @@ lemma toPMF_injective : Function.Injective (toPMF (α := α)) := by
   intro a b hpq
   change toPMF (mk a) = toPMF (mk b) at hpq
   rw [toPMF_mk, toPMF_mk] at hpq
-  rw [Quotient.eq]
+  change mk a = mk b
+  rw [eq_iff]
   intro x
   have hfun :
       (@Raw.toPMF _ (Classical.decEq _) a : PMF α) x =

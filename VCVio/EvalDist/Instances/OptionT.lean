@@ -34,8 +34,38 @@ full `HasEvalSPMF m` — only `HasEvalSet m` is needed (e.g., for `support_liftM
 noncomputable instance (m : Type u → Type v) [Monad m] [HasEvalSet m] :
     HasEvalSet (OptionT m) where
   toSet.toFun α mx := some ⁻¹' (support (OptionT.run mx))
-  toSet.toFun_pure' mx := Set.ext fun x => by simp
-  toSet.toFun_bind' mx my := Set.ext fun x => by simp [Option.elimM, Option.exists]
+  toSet.toFun_pure' mx := Set.ext fun x => by
+    change some x ∈ support (pure (some mx) : m (Option _)) ↔ x ∈ (Set.singleton mx : Set _)
+    constructor
+    · intro h
+      have hx : x = mx := by simpa [support_pure] using h
+      simpa [Set.mem_singleton_iff] using hx
+    · intro h
+      have hx : x = mx := by simpa [Set.mem_singleton_iff] using h
+      simp [support_pure, hx]
+  toSet.toFun_bind' mx my := Set.ext fun x => by
+    constructor
+    · intro h
+      rw [Set.mem_preimage, OptionT.run_bind] at h
+      change some x ∈ support (mx.run >>= fun o => o.elim (pure none) fun a => (my a).run) at h
+      rw [mem_support_bind_iff] at h
+      rcases h with ⟨r, hr, hx⟩
+      cases r with
+      | none =>
+          exfalso
+          simp at hx
+      | some a =>
+          change x ∈ (⋃ a ∈ some ⁻¹' support mx.run, some ⁻¹' support (my a).run)
+          simp only [Set.mem_iUnion, Set.mem_preimage]
+          exact ⟨a, hr, by simpa [Option.elimM] using hx⟩
+    · intro h
+      change x ∈ (⋃ a ∈ some ⁻¹' support mx.run, some ⁻¹' support (my a).run) at h
+      simp only [Set.mem_iUnion, Set.mem_preimage] at h
+      rcases h with ⟨a, ha, hx⟩
+      rw [Set.mem_preimage, OptionT.run_bind]
+      change some x ∈ support (mx.run >>= fun o => o.elim (pure none) fun a => (my a).run)
+      rw [mem_support_bind_iff]
+      exact ⟨some a, ha, by simpa [Option.elimM] using hx⟩
 
 variable [HasEvalSet m]
 

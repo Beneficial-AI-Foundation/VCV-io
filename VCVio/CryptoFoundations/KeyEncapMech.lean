@@ -172,22 +172,73 @@ theorem IND_CPA_Game_eq_IND_CCA_Game_toIND_CCA
     (runtime : ProbCompRuntime (OracleComp spec))
     (adversary : kem.IND_CPA_Adversary) :
     kem.IND_CPA_Game runtime adversary = kem.IND_CCA_Game runtime adversary.toIND_CCA := by
-  simp only [IND_CPA_Game, IND_CCA_Game, IND_CPA_Adversary.toIND_CCA,
-    IND_CCA_preChallengeImpl, IND_CCA_postChallengeImpl]
-  congr 1
-  simp only [← QueryImpl.simulateQ_compose]
-  have h : ∀ (impl₂ : QueryImpl (C →ₒ Option K) (OracleComp spec)),
-      ((HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec)) + impl₂) ∘ₛ
-        (HasQuery.toQueryImpl (spec := spec) (m := OracleComp (spec + (C →ₒ Option K)))) =
-      QueryImpl.id' spec := by
-    intro impl₂
-    ext t
-    simp only [QueryImpl.compose, QueryImpl.id']
-    change simulateQ (QueryImpl.id' spec + impl₂)
-      (liftM (liftM (OracleQuery.query (spec := spec) t) :
-        OracleQuery (spec + (C →ₒ Option K)) _)) = _
-    simp [simulateQ_query]
-  simp only [h, simulateQ_id']
+  have hpre (pk : PK) (sk : SK) :
+      simulateQ (kem.IND_CCA_preChallengeImpl sk)
+        (simulateQ
+          (HasQuery.toQueryImpl (spec := spec)
+            (m := OracleComp (spec + (C →ₒ Option K))))
+          (adversary.preChallenge pk)) =
+      adversary.preChallenge pk := by
+    change
+      simulateQ
+        ((HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec)) +
+          (fun c => kem.decaps sk c))
+        (OracleComp.liftComp (adversary.preChallenge pk) (spec + (C →ₒ Option K))) =
+      adversary.preChallenge pk
+    calc
+      simulateQ
+          ((HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec)) +
+            (fun c : C => kem.decaps sk c))
+          (OracleComp.liftComp (adversary.preChallenge pk) (spec + (C →ₒ Option K))) =
+        simulateQ (HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec))
+          (adversary.preChallenge pk) := by
+            simpa [IND_CCA_preChallengeImpl] using
+              (QueryImpl.simulateQ_add_liftComp_left
+                (impl₁' := HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec))
+                (impl₂' := fun c : C => kem.decaps sk c)
+                (oa := adversary.preChallenge pk))
+      _ = adversary.preChallenge pk := by
+            change
+              simulateQ (QueryImpl.ofLift spec (OracleComp spec))
+                (adversary.preChallenge pk) =
+              adversary.preChallenge pk
+            exact simulateQ_ofLift_eq_self (mx := adversary.preChallenge pk)
+  have hpost (st : adversary.State) (cStar : C) (kStar : K) (sk : SK) :
+      simulateQ (kem.IND_CCA_postChallengeImpl sk cStar)
+        (simulateQ
+          (HasQuery.toQueryImpl (spec := spec)
+            (m := OracleComp (spec + (C →ₒ Option K))))
+          (adversary.postChallenge st cStar kStar)) =
+      adversary.postChallenge st cStar kStar := by
+    change
+      simulateQ
+        ((HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec)) +
+          (fun c => if c = cStar then return none else kem.decaps sk c))
+        (OracleComp.liftComp
+          (adversary.postChallenge st cStar kStar) (spec + (C →ₒ Option K))) =
+      adversary.postChallenge st cStar kStar
+    calc
+      simulateQ
+          ((HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec)) +
+            (fun c : C => if c = cStar then return none else kem.decaps sk c))
+          (OracleComp.liftComp
+            (adversary.postChallenge st cStar kStar) (spec + (C →ₒ Option K))) =
+        simulateQ (HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec))
+          (adversary.postChallenge st cStar kStar) := by
+            simpa [IND_CCA_postChallengeImpl] using
+              (QueryImpl.simulateQ_add_liftComp_left
+                (impl₁' := HasQuery.toQueryImpl (spec := spec) (m := OracleComp spec))
+                (impl₂' := fun c : C => if c = cStar then return none else kem.decaps sk c)
+                (oa := adversary.postChallenge st cStar kStar))
+      _ = adversary.postChallenge st cStar kStar := by
+            change
+              simulateQ (QueryImpl.ofLift spec (OracleComp spec))
+                (adversary.postChallenge st cStar kStar) =
+              adversary.postChallenge st cStar kStar
+            exact simulateQ_ofLift_eq_self (mx := adversary.postChallenge st cStar kStar)
+  apply congrArg (runtime.evalDist)
+  simp only [IND_CPA_Adversary.toIND_CCA]
+  simp_rw [hpre, hpost]
 
 end IND_CCA
 

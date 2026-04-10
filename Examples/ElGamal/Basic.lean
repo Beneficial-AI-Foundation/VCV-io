@@ -29,12 +29,41 @@ payloads (for example elliptic-curve points), and `gen : G` is a fixed public ge
 
 ## Proof structure
 
+**Security games**
+
+**IND-CPA₁ instantiated for ElGamal** (`AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp`):
+  sample `b ← {0,1}` and `(pk, sk) ← KeyGen`;
+  adversary chooses `(m₀, m₁)`; compute `c := (c₁, c₂) ← Encrypt(pk, m_b)`;
+  adversary receives `(c₁, c₂)` and outputs `b'`; wins if `b' = b`.
+**DDH** (`DiffieHellman.ddhExp`):
+  sample `a, b ← F` and a bit `β`; let `A = a•g`, `B = b•g`;
+  set `T = (a·b)•g` if `β = 1`, else `T = c•g` with `c ← F`;
+  adversary receives `(g, A, B, T)` and outputs `β'`; wins if `β' = β`.
+  The two branches are also defined separately (adversary outputs a bit; no built-in win check):
+  - **DDH_real** (`ddhExpReal`): `a, b ← F`; adversary gets `(g, a•g, b•g, (a·b)•g)`.
+  - **DDH_rand** (`ddhExpRand`): `a, b, c ← F`; adversary gets `(g, a•g, b•g, c•g)`.
+
 1. ElGamal definition and correctness.
 2. One-time DDH bridge:
-   `IND_CPA_OneTime_DDHReduction`,
-   `IND_CPA_OneTime_game_evalDist_eq_ddhExpReal`,
-   `IND_CPA_OneTime_DDHReduction_rand_half`, and
-   `elGamal_oneTime_signedAdvantageReal_abs_eq_two_mul_ddhGuessAdvantage`.
+   Write `R(adv)` for the DDH adversary (reduction) built from a one-time IND-CPA₁ adversary `adv`.
+   Write `D(X)` for `evalDist(X)`, the output distribution (over `Bool`) of game `X`.
+
+   `IND_CPA_OneTime_DDHReduction` - defines `R(adv)`: given challenge DDH tuple `(g, A, B, T)`,
+      set `pk = A`, challenge IND-CPA₁ ciphertext `(c₁, c₂) = (B, T + m_b)`, run `adv`,
+      and output `b == b'` (IND-CPA guess) as the DDH guess.
+   `IND_CPA_OneTime_game_evalDist_eq_ddhExpReal` -
+      `D(IND_CPA₁(adv)) = D(DDH_real(R(adv)))`: in the real branch `T = (a·b)•g`, so the
+      ciphertext `(B, T + m_b) = (b•g, m_b + (a·b)•g)` is a valid ElGamal encryption of
+      `m_b` under `pk = a•g` with randomness `b` — identical to the IND-CPA₁ game.
+   `IND_CPA_OneTime_DDHReduction_rand_half` -
+      `Pr[DDH_rand(R(adv)) = true] = 1/2` (uniform mask hides the challenge bit).
+   `elGamal_oneTime_signedAdvantageReal_abs_eq_two_mul_ddhGuessAdvantage` -
+      `|Adv^{IND-CPA₁}(adv)| = 2 · Adv^{DDH}(R(adv))`.
+      Combines the two previous results:
+      `|Adv^{IND-CPA₁}| = |Pr[IND_CPA₁=true] - 1/2|`  (definition)
+                        `= |Pr[DDH_real(R)=true] - 1/2|`  (by `evalDist_eq_ddhExpReal`)
+                        `= |Pr[DDH_real(R)=true] - Pr[DDH_rand(R)=true]|`  (by `rand_half`)
+                        `= 2 · Adv^{DDH}(R)`  (by `ddhDistAdvantage_eq_two_mul_ddhGuessAdvantage`).
 3. Final theorem:
    `elGamal_IND_CPA_le_q_mul_ddh` is a direct instantiation of
    `AsymmEncAlg.IND_CPA_advantage_toReal_le_q_mul_of_oneTime_signedAdvantageReal_bound`
@@ -104,50 +133,79 @@ def IND_CPA_OneTime_DDHReduction
 omit [DecidableEq G] in
 /-- Real-branch identification for the one-time ElGamal reduction. After unfolding
 `IND_CPA_OneTime_Game_ProbComp`, `elGamalAsymmEnc`, `DiffieHellman.ddhExpReal`, and
-`IND_CPA_OneTime_DDHReduction`, both sides normalize to the same sample space. -/
+`IND_CPA_OneTime_DDHReduction`, both sides normalize to the same sample space.
+
+**`D(IND_CPA₁(adv)) = D(DDH_real(R(adv)))`**.
+In the real branch, `T = (a·b)•g`, so the reduction's ciphertext
+`(B, T + m_b) = (b•g, m_b + (a·b)•g)` is a valid ElGamal encryption of `m_b`
+under `pk = a•g` with randomness `b`. -/
 private lemma IND_CPA_OneTime_game_evalDist_eq_ddhExpReal
     (adv : AsymmEncAlg.IND_CPA_Adv (elGamalAsymmEnc F G gen)) :
     evalDist
       (AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp
         (encAlg := elGamalAsymmEnc F G gen) adv) =
-      evalDist
-        (DiffieHellman.ddhExpReal (F := F) gen
-          (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)) := by
+    evalDist
+      (DiffieHellman.ddhExpReal (F := F) gen
+        (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)) := by
+  -- Unfold all definitions to expose the raw sampling sequences on both sides.
   simp only [AsymmEncAlg.IND_CPA_OneTime_Game_ProbComp,
-    DiffieHellman.ddhExpReal, IND_CPA_OneTime_DDHReduction, elGamalAsymmEnc]
+    DiffieHellman.ddhExpReal, IND_CPA_OneTime_DDHReduction,
+    elGamalAsymmEnc]
+  -- Goal: D₁ = D₂ (two PMFs). Reduce to pointwise: ∀ z, D₁(z) = D₂(z).
   ext z
+  -- Rewrite D₁(z) = D₂(z) as Pr[= z | comp₁] = Pr[= z | comp₂] (probOutput form).
   change Pr[= z | _] = Pr[= z | _]
+  -- Normalize: unfold <$> as >>= and simplify map/bind.
   simp only [bind_pure_comp, bind_map_left]
-  -- Step 1: swap $ᵗ Bool past $ᵗ F in LHS
+  -- The proof now reorders independent samples on both sides to a common order,
+  -- peeling off matching outer binds with `probOutput_bind_congr'` (which says:
+  -- if both sides start with the same bind `mx`, fix one sample and prove the rest).
+  -- `refine ... (fun x => ?_)` applies the lemma and leaves the continuation as a new goal
+  -- with `x` fixed in scope.
+  --
+  -- LHS sampling order: b; sk; (m₀,m₁,st); r   (IND-CPA game)
+  -- RHS sampling order: sk; r; (m₀,m₁,st); b   (DDH real with reduction)
+  -- Target order:       sk; (m₀,m₁,st); r; b
+  --
+  -- Step 1: LHS: swap b past sk → sk; b; (m₀,m₁,st); r
   rw [probOutput_bind_bind_swap ($ᵗ Bool) ($ᵗ F)]
-  -- Now LHS starts with $ᵗ F. Use congr under $ᵗ F.
+  -- Both now start with sk ← $ᵗF. Fix sk.
   refine probOutput_bind_congr' ($ᵗ F) z (fun sk => ?_)
-  -- Step 2: swap $ᵗ Bool past chooseMessages in LHS
+  -- Step 2: LHS: swap b past chooseMessages → sk; (m₀,m₁,st); b; r
   rw [probOutput_bind_bind_swap ($ᵗ Bool) (adv.chooseMessages (sk • gen))]
-  -- Step 3: swap chooseMessages past $ᵗ F in RHS
+  -- Step 3: RHS: swap r past chooseMessages → sk; (m₀,m₁,st); r; b
   conv_rhs => rw [probOutput_bind_bind_swap ($ᵗ F) (adv.chooseMessages (sk • gen))]
-  -- Now both start with chooseMessages. Congr under it.
+  -- Both now start with chooseMessages. Fix (m₀, m₁, st).
   refine probOutput_bind_congr' (adv.chooseMessages (sk • gen)) z (fun cm => ?_)
-  -- Step 4: swap $ᵗ Bool past $ᵗ F in LHS
+  -- Step 4: LHS: swap b past r → sk; (m₀,m₁,st); r; b
   rw [probOutput_bind_bind_swap ($ᵗ Bool) ($ᵗ F)]
-  -- Now both: $ᵗ F >>= fun r => $ᵗ Bool >>= fun bit => ...
+  -- Both now: r ← $ᵗF; b ← $ᵗBool; ... Fix r and b.
   refine probOutput_bind_congr' ($ᵗ F) z (fun r => ?_)
   refine probOutput_bind_congr' ($ᵗ Bool) z (fun bit => ?_)
-  -- Now need to show the ciphertext expressions match
-  -- LHS: (r•gen, (if bit then cm.1 else cm.2.1) + r • (sk • gen))
-  -- RHS: (r•gen, (sk * r)•gen + (if bit then cm.1 else cm.2.1))
+  -- All samples fixed. Show the ciphertext expressions match:
+  -- LHS: (r•gen, m_b + r • (sk • gen))     (ElGamal encryption)
+  -- RHS: (r•gen, (sk * r)•gen + m_b)        (DDH real tuple)
+  -- These are equal by: r•(sk•gen) = (sk*r)•gen (smul_smul) and commutativity of + and *.
   congr 2
   rw [smul_smul, add_comm, mul_comm]
 
 omit [DecidableEq G] in
 /-- Random-branch half lemma for the one-time ElGamal reduction. Under bijectivity of `(· • gen)`,
 the DDH-random branch gives a uniform additive mask independent of the challenge bit, so the
-adversary can do no better than random guessing. -/
+adversary can do no better than random guessing.
+
+**`Pr[DDH_rand(R(adv)) = true] = 1/2`**.
+Recall `R(adv)` internally samples `b`, builds ciphertext `(B, T + m_b)`, runs `adv`, and
+outputs `b == b'`. In the random branch `T = c•g` with independent `c ← F`, so `T + m_b`
+is uniform (one-time pad). Thus `adv`'s guess `b'` is independent of `b`, giving
+`Pr[b == b'] = 1/2`, i.e. `R(adv)` outputs `true` with probability `1/2`. -/
 private lemma IND_CPA_OneTime_DDHReduction_rand_half
     (hg : Function.Bijective (· • gen : F → G))
     (adv : AsymmEncAlg.IND_CPA_Adv (elGamalAsymmEnc F G gen)) :
     Pr[= true | DiffieHellman.ddhExpRand (F := F) gen
       (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)] = 1 / 2 := by
+  -- `inner pk`: DDH_rand(R(adv)) restated with uniform samples over G instead of F.
+  -- (Bijectivity of `(· • gen)` justifies this equivalence later in the `calc` block.)
   let inner : G → ProbComp Bool := fun pk => do
     let head ← ($ᵗ G : ProbComp G)
     let mask ← ($ᵗ G : ProbComp G)
@@ -155,11 +213,14 @@ private lemma IND_CPA_OneTime_DDHReduction_rand_half
     let bit ← ($ᵗ Bool : ProbComp Bool)
     let bit' ← adv.distinguish st (head, mask + if bit then m₁ else m₂)
     pure (decide (bit = bit'))
+  -- `f pk bit`: `inner` with `bit` externalized and `mask` moved after `chooseMessages`.
+  -- Same distribution, but now we can apply the OTP lemma to show `D(f pk true) = D(f pk false)`.
   let f : G → Bool → ProbComp Bool := fun pk bit => do
     let head ← ($ᵗ G : ProbComp G)
     let (m₁, m₂, st) ← adv.chooseMessages pk
     let mask ← ($ᵗ G : ProbComp G)
     adv.distinguish st (head, mask + if bit then m₁ else m₂)
+  -- OTP: uniform `mask` hides the bit, so D(f pk true) = D(f pk false).
   have hf : ∀ pk, evalDist (f pk true) = evalDist (f pk false) := by
     intro pk
     unfold f
@@ -170,15 +231,28 @@ private lemma IND_CPA_OneTime_DDHReduction_rand_half
     congr 1
     funext x
     rcases x with ⟨m₁, m₂, st⟩
+    -- Goal: D(mask ← $G; adv.distinguish st (head, mask + m₁))
+    --     = D(mask ← $G; adv.distinguish st (head, mask + m₂))
+    -- Apply `uniformMaskedCipher_bind_dist_indep` (from Common.lean):
+    --   for any h, m₁, m₂, cont: D(y ← U; cont(h, m₁+y)) = D(y ← U; cont(h, m₂+y))
+    -- with cont := adv.distinguish st.
     simpa [add_comm] using
       ElGamalExamples.uniformMaskedCipher_bind_dist_indep
         (head := head) (m₁ := m₁) (m₂ := m₂) (cont := adv.distinguish st)
+  -- Rewrite `inner pk` as: bit ← $Bool; bit' ← f pk bit; pure (bit == bit').
+  -- This just reorders samples in `inner` to isolate `bit` at the outermost level.
   have hrepr : ∀ pk, Pr[= true | inner pk] =
       Pr[= true | do
         let bit ← ($ᵗ Bool : ProbComp Bool)
         let bit' ← f pk bit
         pure (decide (bit = bit'))] := by
     intro pk
+    -- Use transitivity through an intermediate reordering:
+    --   A (inner):        head; mask; choose; bit; ...
+    --   B (intermediate): head; choose; bit; mask; ...  (mask moved after bit)
+    --   C (target):       bit; head; choose; mask; ...  (bit moved to front)
+    -- A = B by swapping mask past choose and bit.
+    -- B = C by swapping bit past head and choose.
     trans Pr[= true | do
       let head ← ($ᵗ G : ProbComp G)
       let x ← adv.chooseMessages pk
@@ -188,6 +262,14 @@ private lemma IND_CPA_OneTime_DDHReduction_rand_half
       pure (decide (bit = bit'))]
     · refine probOutput_bind_congr' ($ᵗ G : ProbComp G) true ?_
       intro head
+      -- A → B (under fixed head): swap mask past (choose, bit).
+      -- Goal LHS: mask ← $G; choose; bit ← $Bool; ...
+      -- Goal RHS: choose; bit ← $Bool; mask ← $G; ...
+      -- `probOutput_bind_bind_swap mx my f z` swaps `mx; my` → `my; mx`:
+      --   mx = $ᵗG                              (sampling mask)
+      --   my = do x ← choose pk; bit ← $Bool; pure (x, bit)  (choose + bit, bundled)
+      --   f  = fun mask ⟨x, bit⟩ => ...         (continuation)
+      --   z  = true
       simpa [inner, bind_assoc, map_eq_bind_pure_comp] using
         (probOutput_bind_bind_swap
           ($ᵗ G : ProbComp G)
@@ -211,10 +293,15 @@ private lemma IND_CPA_OneTime_DDHReduction_rand_half
             let bit' ← adv.distinguish x.2.2 (head, mask + if bit then x.1 else x.2.1)
             pure (decide (bit = bit')))
           true)
+  -- Combine hrepr and hf: since inner pk ≡ (bit ← $Bool; bit' ← f pk bit; bit == bit')
+  -- and D(f pk true) = D(f pk false), the outcome bit == bit' is uniform, so Pr[true] = 1/2.
+  -- `probOutput_decide_eq_uniformBool_half` is the generic lemma for this pattern.
   have hhalf : ∀ pk, Pr[= true | inner pk] = 1 / 2 := by
     intro pk
     rw [hrepr pk]
     exact probOutput_decide_eq_uniformBool_half (f pk) (hf pk)
+  -- Final chain: DDH_rand(R(adv)) ≡ pk ← $G; inner pk (by bijectivity of (· • gen)),
+  -- and ∀ pk, Pr[inner pk = true] = 1/2 (by hhalf), so the whole thing equals 1/2.
   calc
     Pr[= true | DiffieHellman.ddhExpRand (F := F) gen
       (IND_CPA_OneTime_DDHReduction (F := F) (G := G) (gen := gen) adv)] =
@@ -277,29 +364,19 @@ private lemma IND_CPA_OneTime_DDHReduction_rand_half
           ($ᵗ Bool : ProbComp Bool)] :=
       probOutput_bind_congr' ($ᵗ G) true (fun pk => by
         simpa [probOutput_uniformSample] using hhalf pk)
+    -- `pk` is unused, so drop it: Pr[= true | pk ← $G; $Bool] = Pr[= true | $Bool] = 1/2.
     _ = 1 / 2 := by
-      rw [probOutput_bind_eq_tsum]
-      have hbool : Pr[= true | ($ᵗ Bool : ProbComp Bool)] = (1 / 2 : ℝ≥0∞) := by
-        simp [probOutput_uniformSample]
-      simp_rw [hbool]
-      have hsum : ∑' x : G, Pr[= x | ($ᵗ G : ProbComp G)] = 1 :=
-        HasEvalPMF.tsum_probOutput_eq_one ($ᵗ G : ProbComp G)
-      calc
-        ∑' x, Pr[= x | ($ᵗ G : ProbComp G)] * (1 / 2 : ℝ≥0∞) =
-            ∑' x, (1 / 2 : ℝ≥0∞) * Pr[= x | ($ᵗ G : ProbComp G)] := by
-              refine tsum_congr ?_
-              intro x
-              rw [mul_comm]
-        _ = (1 / 2 : ℝ≥0∞) * ∑' x, Pr[= x | ($ᵗ G : ProbComp G)] := by
-              rw [ENNReal.tsum_mul_left]
-        _ = (1 / 2 : ℝ≥0∞) * 1 := by rw [hsum]
-        _ = 1 / 2 := by simp
+      simp [probOutput_bind_const, probOutput_uniformSample]
 
 omit [DecidableEq G] in
 /-- The absolute one-time signed IND-CPA advantage of ElGamal is exactly twice the DDH guess
 advantage of the reduction above. The factor `2` is essential because the DDH guess advantage is
 defined from the mixed experiment, while the one-time IND-CPA game compares the real and random
-branches directly. -/
+branches directly.
+
+**`|Adv^{IND-CPA₁}(adv)| = 2 · Adv^{DDH}(R(adv))`**.
+Combines `D(IND_CPA₁(adv)) = D(DDH_real(R(adv)))` and `Pr[DDH_rand(R(adv))=true] = 1/2`
+with `ddhDistAdvantage_eq_two_mul_ddhGuessAdvantage` (see proof outline above). -/
 theorem elGamal_oneTime_signedAdvantageReal_abs_eq_two_mul_ddhGuessAdvantage
     (hg : Function.Bijective (· • gen : F → G))
     (adv : AsymmEncAlg.IND_CPA_Adv (elGamalAsymmEnc F G gen)) :

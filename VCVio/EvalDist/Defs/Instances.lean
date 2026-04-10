@@ -84,12 +84,13 @@ noncomputable instance : HasEvalPMF Id where
   support_eq mx := by grind
   toSPMF_eq mx := by aesop
 
-instance : HasEvalFinset Id where
-  finSupport x := {x}
-  coe_finSupport x := by aesop
-
 @[simp, grind =]
 lemma support_eq_singleton (x : Id α) : support x = {x.run} := rfl
+
+instance : HasEvalFinset Id where
+  finSupport x := {x.run}
+  coe_finSupport x := by
+    rw [Finset.coe_singleton, support_eq_singleton]
 
 @[simp, grind =]
 lemma finSupport_eq_singleton [DecidableEq α] (x : Id α) : finSupport x = {x.run} := rfl

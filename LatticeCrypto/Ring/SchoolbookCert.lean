@@ -39,15 +39,18 @@ theorem mk_X_pow_n :
     (Ideal.Quotient.mk (Ideal.span ({negacyclicModulus R n} : Set (Polynomial R))))
       ((X : Polynomial R) ^ n) = -1 := by
   have h := mk_negacyclicModulus_eq_zero (R := R) (n := n)
-  simp only [negacyclicModulus] at h
-  rwa [map_add, map_one, add_eq_zero_iff_eq_neg] at h
+  exact eq_neg_of_add_eq_zero_left (by simpa [negacyclicModulus, map_add, map_one] using h)
 
 /-- In `R[X]/(X^n + 1)`, `X^(k + n) = -X^k`. -/
 theorem mk_X_pow_add_n (k : Nat) :
     (Ideal.Quotient.mk (Ideal.span ({negacyclicModulus R n} : Set (Polynomial R))))
       ((X : Polynomial R) ^ (k + n)) =
     -(Ideal.Quotient.mk _ (X ^ k)) := by
-  rw [pow_add, map_mul, mk_X_pow_n]; ring
+  rw [pow_add, map_mul, mk_X_pow_n]
+  exact
+    mul_neg_one
+      ((Ideal.Quotient.mk (Ideal.span ({negacyclicModulus R n} : Set (Polynomial R))))
+        ((X : Polynomial R) ^ k))
 
 /-- In `R[X]/(X^n + 1)`, `monomial (k + n) c = -monomial k c`. -/
 theorem mk_monomial_add_n (k : Nat) (c : R) :
@@ -139,7 +142,10 @@ theorem mk_double_sum_eq_mk_negacyclicConv (hn : 0 < n) (f g : Fin n → R) :
               intro hEq
               apply hne
               exact Fin.ext hEq.symm
+            have hne'' : y.val ≠ (x.1.val + x.2.val) % n := by
+              simpa [eq_comm] using hne'
             simp [hne']
+            rfl
           · intro hnot
             exact (hnot (Finset.mem_univ _)).elim
     _ =

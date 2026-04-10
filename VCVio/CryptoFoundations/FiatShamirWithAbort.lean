@@ -671,6 +671,7 @@ private lemma signLoop_queryCountDist_succ
   | none =>
       simp [HasQuery.queryCountDist, HasQuery.queryCostDist, HasQuery.withUnitCost,
         HasQuery.withAddCost, AddWriterT.costs, add_comm]
+      rfl
 
 end
 

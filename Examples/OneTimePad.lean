@@ -41,13 +41,45 @@ namespace oneTimePad
 
 /-- Encryption and decryption are inverses for any OTP key. -/
 lemma complete : (oneTimePad).Complete := by
-  simp [oneTimePad, SymmEncAlg.Complete, SymmEncAlg.CompleteExp]
+  intro sp m
+  let comp : OptionT ProbComp (BitVec sp) :=
+    simulateQ oneTimePad.impl (SymmEncAlg.CompleteExp oneTimePad m)
+  have hkey : (support (($ᵗ BitVec sp) : ProbComp (BitVec sp))).Nonempty := by
+    simp
+  have hstep :
+      (do
+        let k ← liftM (($ᵗ BitVec sp) : ProbComp (BitVec sp))
+        let σ ← liftM (pure (k ^^^ m) : ProbComp (BitVec sp))
+        pure (k ^^^ σ) : OptionT ProbComp (BitVec sp)) =
+      (do
+        let k ← liftM (($ᵗ BitVec sp) : ProbComp (BitVec sp))
+        pure m : OptionT ProbComp (BitVec sp)) := by
+    simp [liftM_pure, BitVec.xor_self_xor]
+  have hsupp0 :
+      support
+        (OptionT.run
+          (do
+            let k ← liftM (($ᵗ BitVec sp) : ProbComp (BitVec sp))
+            let σ ← liftM (pure (k ^^^ m) : ProbComp (BitVec sp))
+            pure (k ^^^ σ) : OptionT ProbComp (BitVec sp))) =
+        ({some m} : Set (Option (BitVec sp))) := by
+    rw [hstep, OptionT.run_bind]
+    simp [support_map]
+  have hsupp :
+      support (simulateQ oneTimePad.impl (SymmEncAlg.CompleteExp oneTimePad m).run) =
+        ({some m} : Set (Option (BitVec sp))) := by
+    simp only [oneTimePad, SymmEncAlg.CompleteExp, simulateQ_id']
+    exact hsupp0
+  refine probOutput_eq_one ?_
+  exact ⟨by simp, hsupp⟩
 
 lemma probOutput_cipher_uniform (sp : ℕ)
     (mgen : OracleComp oneTimePad.spec (BitVec sp)) (σ : BitVec sp) :
     Pr[= σ | oneTimePad.PerfectSecrecyCipherExp sp mgen] =
       (Fintype.card (BitVec sp) : ℝ≥0∞)⁻¹ := by
-  simpa [SymmEncAlg.PerfectSecrecyCipherExp, SymmEncAlg.PerfectSecrecyExp, oneTimePad] using
+  rw [oneTimePad.PerfectSecrecyCipherExp_eq_bind sp mgen]
+  simpa [SymmEncAlg.PerfectSecrecyPriorExp, SymmEncAlg.PerfectSecrecyCipherGivenMsgExp,
+    oneTimePad] using
     probOutput_cipher_from_pair_uniform sp (mx := simulateQ oneTimePad.impl mgen) σ
 
 /-- The one-time pad is perfectly secret in the canonical independence form. -/

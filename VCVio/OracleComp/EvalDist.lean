@@ -32,14 +32,23 @@ def supportWhen (o : QueryImpl spec Set) (mx : OracleComp spec α) : Set α :=
 @[simp]
 lemma supportWhen_pure (o : QueryImpl spec Set) (x : α) :
     supportWhen o (pure x : OracleComp spec α) = {x} := by
-  simp [supportWhen]
+  ext y
+  rw [supportWhen, simulateQ_pure]
+  change y ∈ ({x} : Set α) ↔ y ∈ ({x} : Set α)
+  simp
 
 @[simp]
 lemma supportWhen_query_bind (o : QueryImpl spec Set) (q : spec.Domain)
     (oa : spec.Range q → OracleComp spec α) :
     supportWhen o ((query q : OracleComp spec _) >>= oa) =
       ⋃ x ∈ o q, supportWhen o (oa x) := by
-  simp [supportWhen]
+  ext y
+  rw [supportWhen, simulateQ_query_bind]
+  constructor <;> intro hy
+  · change y ∈ (⋃ i ∈ o q, simulateQ (r := SetM) o (oa i)) at hy
+    simpa [supportWhen] using hy
+  · change y ∈ (⋃ i ∈ o q, simulateQ (r := SetM) o (oa i))
+    simpa [supportWhen] using hy
 
 /-- Reachable outputs of a bind are the reachable outputs of the continuation over reachable
 outputs of the first computation. -/
@@ -47,7 +56,13 @@ outputs of the first computation. -/
 lemma supportWhen_bind (o : QueryImpl spec Set) (oa : OracleComp spec α)
     (ob : α → OracleComp spec β) :
     supportWhen o (oa >>= ob) = ⋃ x ∈ supportWhen o oa, supportWhen o (ob x) := by
-  simp [supportWhen, simulateQ_bind, Set.bind_def]
+  rw [supportWhen, simulateQ_bind]
+  change support
+      (((simulateQ (r := SetM) o oa) >>= fun x => simulateQ (r := SetM) o (ob x)) : SetM β) =
+    ⋃ x ∈ supportWhen o oa, supportWhen o (ob x)
+  simpa [supportWhen] using
+    (support_bind (m := SetM) (simulateQ (r := SetM) o oa)
+      (fun x => simulateQ (r := SetM) o (ob x)))
 
 /-- Membership form of [`OracleComp.supportWhen_bind`]. -/
 lemma mem_supportWhen_bind_iff (o : QueryImpl spec Set) (oa : OracleComp spec α)
@@ -78,7 +93,9 @@ lemma support_eq_simulateQ (mx : OracleComp spec α) :
 
 @[simp, grind =] lemma support_liftM (q : OracleQuery spec α) :
     support (liftM q : OracleComp spec α) = Set.range q.cont := by
-  simp [support_eq_simulateQ]
+  rw [support_eq_simulateQ, simulateQ_query]
+  change q.cont '' (Set.univ : Set (spec.Range q.input)) = Set.range q.cont
+  exact Set.image_univ
 
 @[grind =] lemma support_query (t : spec.Domain) :
     support (liftM (query t) : OracleComp spec _) = Set.univ := by simp
@@ -164,7 +181,8 @@ lemma probOutput_liftM_eq_div (q : OracleQuery spec α) (x : α) :
 
 @[simp, grind =]
 lemma probOutput_query (t : spec.Domain) (u : spec.Range t) :
-    Pr[= u | (query t : OracleComp spec _)] = (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ := by simp
+    Pr[= u | (query t : OracleComp spec _)] = (Fintype.card (spec.Range t) : ℝ≥0∞)⁻¹ := by
+  simp [probOutput_def, evalDist_query, PMF.uniformOfFintype_apply]
 
 @[grind =]
 lemma probEvent_liftM_eq_div (q : OracleQuery spec α) (p : α → Prop) :
@@ -186,7 +204,15 @@ lemma probOutput_query_eq_div (t : spec.Domain) (u : spec.Range t) :
 lemma probEvent_query (t : spec.Domain) (p : spec.Range t → Prop) [DecidablePred p] :
     Pr[ p | (query t : OracleComp spec _)] =
       Finset.card {x | p x} / Fintype.card (spec.Range t) := by
-  simp [probEvent_liftM_eq_div]
+  classical
+  have hcard : Finset.card {x | p x} = Fintype.card {x : spec.Range t // p x} := by
+    symm
+    exact Fintype.card_of_subtype {x | p x} (by
+      intro x
+      simp)
+  rw [probEvent_liftM_eq_div]
+  simp [hcard]
+  rfl
 
 end evalDist
 
@@ -359,7 +385,7 @@ lemma evalDist_simulateQ_run'_eq_evalDist {σ τ : Type u}
       (bind_map_left (m := OracleComp spec) Prod.fst ((so t).run s) mx).symm]
     rw [evalDist_bind, h t s]
     change OptionT.lift (PMF.uniformOfFintype (spec.Range t)) >>= (fun u => evalDist (mx u)) = _
-    rw [show (fun u => evalDist (mx u)) = evalDist ∘ mx from rfl, ← evalDist_query_bind]
+    simpa using (evalDist_query_bind (t := t) (ou := mx)).symm
 
 /-- Stronger version with computational hypothesis: if the implementation passes through
 queries exactly, then `simulateQ` preserves `evalDist`. -/
@@ -409,6 +435,86 @@ lemma evalDist_simulateQ_run_eq_of_impl_evalDist_eq
     congr 1
     · exact h t s
     · funext ⟨u, s'⟩; exact ih u s'
+
+/-- Coupled bisimulation for `simulateQ` with `StateT`. Given a state relation
+`R` and per-query couplings that guarantee same oracle answers and preserve `R`,
+the full `simulateQ` computations can be coupled with the same guarantees.
+
+This generalises `evalDist_simulateQ_run_eq_of_impl_evalDist_eq` to
+implementations whose per-query joint distributions on `(answer, newState)`
+may differ, provided they can be *coupled* with matching answers and related
+successor states. The canonical use case is security reductions where the
+reduction oracle correlates answers and state differently from the honest game
+(e.g. the CKA-DDH reduction's `smul_comm` argument). -/
+lemma evalDist_simulateQ_run_coupled
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    ∃ c : SPMF.Coupling
+        (evalDist ((simulateQ impl₁ comp).run s₁))
+        (evalDist ((simulateQ impl₂ comp).run s₂)),
+      ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+        a₁.1 = a₂.1 ∧ R a₁.2 a₂.2 := by
+  revert s₁ s₂
+  induction comp using OracleComp.inductionOn with
+  | pure x =>
+    intro s₁ s₂ hr
+    simp only [simulateQ_pure, StateT.run_pure]
+    exact ⟨⟨pure ((x, s₁), (x, s₂)), by constructor <;> simp⟩,
+      fun a₁ a₂ h => by
+        simp [SPMF.pure_eq_pure_some] at h
+        exact ⟨by rw [h.1.1, h.2.1], by rw [h.1.2, h.2.2]; exact hr⟩⟩
+  | query_bind t oa ih =>
+    intro s₁ s₂ hr
+    simp only [simulateQ_query_bind, StateT.run_bind]
+    rw [evalDist_bind, evalDist_bind]
+    obtain ⟨c, hc⟩ := hstep t s₁ s₂ hr
+    exact SPMF.IsCoupling.exists_bind c fun ⟨u₁, s₁'⟩ ⟨u₂, s₂'⟩ => by
+      by_cases hsupp : c.1.1 (some ((u₁, s₁'), (u₂, s₂'))) ≠ 0
+      · obtain ⟨heq, hr'⟩ := hc _ _ hsupp
+        subst heq
+        exact ih u₁ s₁' s₂' hr'
+      · push_neg at hsupp
+        sorry
+
+/-- If two stateful oracle implementations can be coupled at each step with
+matching answers and a preserved state relation `R`, then `simulateQ` with
+either implementation produces the same marginal distribution on the result
+(discarding the final state). -/
+lemma evalDist_simulateQ_run'_eq_of_bisim
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    evalDist ((simulateQ impl₁ comp).run' s₁) =
+      evalDist ((simulateQ impl₂ comp).run' s₂) := by
+  revert s₁ s₂
+  induction comp using OracleComp.inductionOn with
+  | pure _ => intro _ _ _; simp [simulateQ_pure]
+  | query_bind t oa ih =>
+    intro s₁ s₂ hr
+    simp only [simulateQ_query_bind, StateT.run'_bind]
+    rw [evalDist_bind, evalDist_bind]
+    obtain ⟨c, hc⟩ := hstep t s₁ s₂ hr
+    exact SPMF.IsCoupling.bind_eq c.2 fun ⟨u₁, s₁'⟩ ⟨u₂, s₂'⟩ hsupp => by
+      obtain ⟨heq, hr'⟩ := hc _ _ hsupp
+      subst heq
+      exact ih u₁ s₁' s₂' hr'
 
 end simulateQ_evalDist
 

@@ -29,8 +29,19 @@ class HasEvalSPMF (m : Type u → Type v) [Monad m]
   support_eq {α : Type u} (mx : m α) : support mx = SPMF.support (toSPMF mx)
   toSet := MonadHom.comp {
     toFun := @SPMF.support
-    toFun_pure' x := Set.ext fun _ => by simp
-    toFun_bind' p q := Set.ext fun _ => by simp
+    toFun_pure' x := Set.ext fun y => by
+      constructor
+      · intro h
+        have hy : y = x := by simpa [SPMF.support_pure] using h
+        subst y
+        change x ∈ ({x} : Set _)
+        simp
+      · intro h
+        have hy : y = x := by simpa [Set.pure_def] using h
+        simpa [SPMF.support_pure] using hy
+    toFun_bind' p q := Set.ext fun y => by
+      change y ∈ (p >>= q).support ↔ y ∈ (⋃ x ∈ p.support, (q x).support)
+      simp [SPMF.mem_support_iff, SPMF.bind_apply_eq_tsum, ENNReal.tsum_eq_zero, not_or]
    } toSPMF
 
 /-- The resulting distribution of running the monadic computation `mx`.
@@ -297,7 +308,7 @@ macro_rules (kind := probEventBinding2)
   | `(Pr{$items*}[$t]) => `(probOutput (do $items:doSeqItem* return $t:term) True)
 
 /-- Tests for all the different probability notations. -/
-example {m : Type → Type u} [Monad m] [HasEvalSPMF m] (mx : m ℕ) : Unit :=
+noncomputable example {m : Type → Type u} [Monad m] [HasEvalSPMF m] (mx : m ℕ) : Unit :=
   let _ := Pr[= 10 | mx]
   let _ := Pr[ fun x => x^2 + x < 10 | mx]
   let _ := Pr[ x^2 + x < 10 | x ← mx]

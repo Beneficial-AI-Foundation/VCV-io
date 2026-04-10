@@ -224,8 +224,8 @@ and the second computation does something pure with the result. -/
 @[simp] lemma bind_eq_pure_iff (oa : OracleComp spec α) (ob : α → OracleComp spec β) (y : β) :
     oa >>= ob = pure y ↔ ∃ x : α, oa = pure x ∧ ob x = pure y := by
   refine ⟨fun h ↦ ?_, fun h ↦ let ⟨x, ⟨h, h'⟩⟩ := h; h ▸ h'⟩
-  simp only [PFunctor.FreeM.monad_bind_def, OracleComp.pure_def] at h
-  rwa [PFunctor.FreeM.bind_eq_pure_iff] at h
+  change PFunctor.FreeM.bind oa ob = PFunctor.FreeM.pure y at h
+  exact (PFunctor.FreeM.bind_eq_pure_iff (x := oa) (y := ob) (y' := y)).1 h
 
 /-- Binding two computations gives a pure operation iff the first computation is pure
 and the second computation does something pure with the result. -/
