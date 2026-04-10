@@ -3,6 +3,7 @@ Copyright (c) 2026 BAIF. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import DoubleRatchet.CKA.Defs
+import VCVio.CryptoFoundations.SecExp
 import VCVio.OracleComp.SimSemantics.Append
 import VCVio.OracleComp.HasQuery
 import VCVio.EvalDist.Bool
@@ -461,8 +462,71 @@ noncomputable def figure3Advantage
     (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
     (tStar delta : ℕ)
     (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState) : ℝ :=
-  |(Pr[= true | figure3Exp cka tStar delta false adversary]).toReal -
-    (Pr[= true | figure3Exp cka tStar delta true adversary]).toReal|
+  (figure3Exp cka tStar delta false adversary).boolDistAdvantage
+    (figure3Exp cka tStar delta true adversary)
+
+/-- Paper-style hidden-bit Figure 3 experiment.
+
+This packages the two-game real/random experiment into the single guessing game
+shown in Figure 3: sample the hidden bit `b` during initialization, answer the
+challenge oracle using the corresponding branch, and return whether the
+adversary guessed `b` correctly. -/
+def figure3GuessExp
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (tStar delta : ℕ)
+    (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState) :
+    ProbComp Bool := do
+  let b ← ($ᵗ Bool : ProbComp Bool)
+  let b' ← if b then
+    figure3Exp cka tStar delta true adversary
+  else
+    figure3Exp cka tStar delta false adversary
+  pure (b == b')
+
+/-- Paper-style Figure 3 advantage: bias in the hidden-bit guessing game.
+
+This is equivalent to `figure3Advantage` by the standard hidden-bit /
+two-game equivalence for Boolean-valued games. -/
+noncomputable def figure3GuessAdvantage
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (tStar delta : ℕ)
+    (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState) : ℝ :=
+  (figure3GuessExp cka tStar delta adversary).boolBiasAdvantage
+
+/-- The paper-style hidden-bit advantage equals the existing two-game
+distinguishing advantage. -/
+lemma figure3GuessAdvantage_eq_figure3Advantage
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (tStar delta : ℕ)
+    (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState) :
+    figure3GuessAdvantage cka tStar delta adversary =
+      figure3Advantage cka tStar delta adversary := by
+  let realExp := figure3Exp cka tStar delta false adversary
+  let randExp := figure3Exp cka tStar delta true adversary
+  calc
+    figure3GuessAdvantage cka tStar delta adversary
+        = (do
+            let b ← ($ᵗ Bool : ProbComp Bool)
+            let z ← if b then randExp else realExp
+            pure (b == z)).boolBiasAdvantage := by
+              unfold figure3GuessAdvantage figure3GuessExp
+              simp [realExp, randExp]
+    _ = randExp.boolDistAdvantage realExp := by
+          exact ProbComp.boolBiasAdvantage_eq_boolDistAdvantage_uniformBool_branch randExp realExp
+    _ = realExp.boolDistAdvantage randExp := by
+          unfold ProbComp.boolDistAdvantage
+          rw [abs_sub_comm]
+    _ = figure3Advantage cka tStar delta adversary := by
+          rfl
 
 /-- A CKA scheme is `(Δ, ε)`-secure in the Figure 3 game if every adaptive
 adversary has distinguishing advantage at most `ε`, for all choices of
@@ -478,6 +542,32 @@ def Figure3CKASecure
     (delta : ℕ) (ε : ℝ) : Prop :=
   ∀ (tStar : ℕ) (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState),
     figure3Advantage cka tStar delta adversary ≤ ε
+
+/-- Paper-style security predicate using the hidden-bit Figure 3 experiment.
+
+This packages the challenge epoch together with the hidden bit exactly as in
+the paper; it is equivalent to `Figure3CKASecure`. -/
+def Figure3CKASecurePaper
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (delta : ℕ) (ε : ℝ) : Prop :=
+  ∀ (tStar : ℕ) (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState),
+    figure3GuessAdvantage cka tStar delta adversary ≤ ε
+
+theorem figure3CKASecurePaper_iff
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (delta : ℕ) (ε : ℝ) :
+    Figure3CKASecurePaper cka delta ε ↔ Figure3CKASecure cka delta ε := by
+  constructor <;> intro h tStar adversary
+  · simpa [Figure3CKASecurePaper, Figure3CKASecure,
+      figure3GuessAdvantage_eq_figure3Advantage] using h tStar adversary
+  · simpa [Figure3CKASecurePaper, Figure3CKASecure,
+      figure3GuessAdvantage_eq_figure3Advantage] using h tStar adversary
 
 end Game
 
