@@ -28,13 +28,13 @@ DoubleRatchet/
   CKA/
     Defs.lean              Definition 12: CKAScheme + CKASchemeWithCoins
     SecurityGame.lean      Single-epoch real-or-random game
-    Security.lean          Definition 13: CKASecure predicate (single-epoch)
-    Figure3Game.lean       Figure 3: adaptive oracle game, Figure3CKASecure with Δ
+    Security.lean          Auxiliary single-epoch warmup security predicate
+    Figure3Game.lean       Figure 3: adaptive oracle game, Figure3CKASecurePaper / helper Figure3CKASecure
     MultiEpochGame.lean    Restricted multi-epoch game (auxiliary only, not Figure 3)
   Constructions/
     DDHCKA.lean            DDH-based CKA + ddhCKAWithCoins (Section 4.1.2)
   Theorems/
-    Theorem3.lean          Single-epoch warmup + concrete/paper-form/Figure 3 theorem statements
+    Theorem3.lean          Single-epoch warmup + Figure 3 theorem surface
     Reduction.lean         Executable Figure 3 DDH reduction + simulation lemmas/invariant
     AsymptoticSecurity.lean  Single-epoch and Figure 3 SecurityGame wrappers
 doc/
@@ -59,7 +59,7 @@ lake build           # compile — expect sorry warnings, no errors
 
 ## Future Work
 
-- **Prove the admitted declarations**: 13 local declarations currently use
+- **Prove the admitted declarations**: 14 local declarations currently use
   `sorry`, spread across `DDHCKA.lean`, `MultiEpochGame.lean`, `Theorem3.lean`,
   `Reduction.lean`, and `AsymptoticSecurity.lean`. See `doc/TODO.md` for the
   current breakdown and proof order.

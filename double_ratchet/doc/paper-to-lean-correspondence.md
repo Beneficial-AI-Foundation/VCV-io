@@ -11,12 +11,12 @@ for the Signal Protocol" to the Lean 4 formalization in this project.
 | `g^a` | `a • g` | Scalar multiplication (additive/EC notation, via `Module F G`) |
 | `x ←$ S` | `x ← $ᵗ S` | Uniform random sampling from finite set/type `S` |
 | `ε` (epsilon) | Not explicit | The advantage bound; see [Epsilon section](#where-is-epsilon) below |
-| `Δ_CKA` | `delta : ℕ` in `Figure3CKASecure` (paper-faithful) / `CKASecureDelta` (auxiliary) | Healing delay parameter; = 1 for DDH-CKA |
+| `Δ_CKA` | `delta : ℕ` in `Figure3CKASecurePaper` (paper-facing) / `Figure3CKASecure` (helper) / `CKASecureDelta` (auxiliary) | Healing delay parameter; = 1 for DDH-CKA |
 | `t` (runtime) | `isPPT` predicate in `AsymptoticSecurity.lean` | Asymptotic: PPT adversary class; concrete: quantify over all adversaries |
 | `t ≈ t'` | `hreduce` hypothesis in `ddh_implies_cka_security_asymptotic` | Reduction preserves PPT-ness (B runs A as black box with O(1) overhead) |
 | `allow-corr` | `allowCorrFig3 st` (Figure 3) / `allowCorr epoch tStar` (auxiliary) | Corruption allowed when `max(t_A,t_B) + 2 ≤ t*` |
 | `finished_P` | `finishedParty st p` (Figure 3) / `epochFinished epoch tStar delta` (auxiliary) | Party P done when `t_P ≥ t* + Δ` |
-| `Adv^CKA_{ror,Δ}(A)` | `figure3Advantage` (paper-faithful) / `ckaDistAdvantage` (single-epoch) | CKA real-or-random advantage |
+| `Adv^CKA_{ror,Δ}(A)` | `figure3GuessAdvantage` (paper-facing hidden-bit) / `figure3Advantage` (helper two-game) / `ckaDistAdvantage` (single-epoch) | CKA distinguishing advantage |
 | `Adv^DDH(B)` | `ddhDistAdvantage g adversary` | DDH distinguishing advantage |
 | `send-P'(r)` | `CKAQueryIdx.sendBadRand p r` | Send with adversary-chosen coins |
 | `CKA-S` deterministic core | `CKASchemeWithCoins.sendDet` | Pure send given explicit coins |
@@ -91,7 +91,7 @@ surface is `ddh_implies_figure3_cka_security`; its executable reduction lives in
 
 | Paper | Lean |
 |-------|------|
-| (t, Δ, ε)-secure (Figure 3) | `Figure3CKASecure cka delta ε` (paper-faithful) |
+| (t, Δ, ε)-secure (Figure 3) | `Figure3CKASecurePaper cka delta ε` (paper-facing) / `Figure3CKASecure cka delta ε` (equivalent helper) |
 | Adaptive adversary | `Figure3Adversary` = `OracleComp (unifSpec + ckaOracleSpec) Bool` |
 | `send-P` | `CKAQueryIdx.sendHonest p` → returns `Option (Msg × Output)` |
 | `send-P'(r)` | `CKAQueryIdx.sendBadRand p r` → returns `Option (Msg × Output)` |
@@ -105,7 +105,7 @@ surface is `ddh_implies_figure3_cka_security`; its executable reduction lives in
 | Ping-pong ordering | `GamePhase` in `CKAGameState` — explicit turn discipline |
 | End-of-game | `gameEnded` — both parties corrupted post-challenge |
 | Explicit sender coins | `CKASchemeWithCoins.sendDet` — deterministic send core |
-| Adv^CKA_{ror,Δ}(A) | `figure3Advantage cka tStar delta adversary` |
+| Adv^CKA_{ror,Δ}(A) | `figure3GuessAdvantage cka tStar delta adversary` (paper-facing) / `figure3Advantage cka tStar delta adversary` (helper) |
 
 ### Definition 13: CKA Security — restricted game (auxiliary only, `CKA/MultiEpochGame.lean`)
 
@@ -141,7 +141,7 @@ Definition 13. For the canonical formalization, see Level 2 / Figure 3 above.
 | Adv^CKA(A) ≤ Adv^DDH(B) (single-epoch) | `ddh_implies_cka_security` — per-adversary concrete bound |
 | (t, Δ=1, ε)-secure (restricted game) | `ddh_implies_cka_security_delta` — restricted multi-epoch |
 | **(t, Δ=1, ε)-secure (Figure 3)** | **`ddh_implies_figure3_cka_security`** — paper-faithful |
-| Paper-form: ∀B, Adv^DDH(B) ≤ ε ⟹ CKASecure ε | `ddh_implies_cka_security_paper_form` |
+| Paper-form: ∀B, Adv^DDH(B) ≤ ε ⟹ CKASecure ε | `ddh_implies_cka_security_single_epoch` |
 | DDH hard ⟹ CKA secure (single-epoch asymptotic) | `ddh_implies_cka_security_asymptotic` |
 | DDH hard ⟹ CKA secure (Figure 3 asymptotic) | `ddh_implies_figure3_cka_security_asymptotic` |
 | G = ⟨g⟩ cyclic of prime order | `hg : Function.Bijective (· • g : F → G)` |
@@ -192,8 +192,10 @@ The full adaptive oracle game from the paper, parameterized by Δ:
 - `allowCorrFig3` / `finishedParty` / `corruptionPermittedFig3`: party-specific
   corruption predicates using `max(epochA, epochB)`
 - `GamePhase`: explicit ping-pong turn discipline (`awaitingSend` / `awaitingReceive`)
-- `figure3Advantage`: `|Pr[A=1 | real] - Pr[A=1 | random]|`
-- `Figure3CKASecure cka delta ε`: `∀ tStar adversary, figure3Advantage ≤ ε`
+- `figure3GuessAdvantage`: paper-facing hidden-bit advantage
+- `Figure3CKASecurePaper cka delta ε`: `∀ tStar adversary, figure3GuessAdvantage ≤ ε`
+- `figure3Advantage`: equivalent helper real-vs-random advantage used by reductions
+- `Figure3CKASecure cka delta ε`: helper two-game security predicate
 
 Used for the paper-faithful theorem (`ddh_implies_figure3_cka_security` with Δ=1).
 The Figure 3 DDH reduction itself lives in `Theorems/Reduction.lean`.

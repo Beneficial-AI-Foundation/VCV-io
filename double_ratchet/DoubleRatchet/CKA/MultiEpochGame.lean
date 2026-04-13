@@ -169,8 +169,9 @@ The adversary commits to a challenge epoch `tStar` and total epoch count
 corrupted states), outputs a bit guess.
 
 This is a non-adaptive model. The paper's Figure 3 allows fully adaptive
-oracle interaction; for DDH-CKA with Δ=1, the two models are equivalent
-because the reduction simulates all non-challenge epochs independently. -/
+oracle interaction. This file is kept only as auxiliary restricted
+infrastructure; the paper-faithful theorem path goes through
+`CKA/Figure3Game.lean` and `Theorems/Reduction.lean`. -/
 structure MultiEpochCKAAdversary
     (Msg Output SenderState ReceiverState : Type) where
   /-- Challenge epoch `t*` (1-indexed). -/
