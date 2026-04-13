@@ -6,6 +6,7 @@ import DoubleRatchet.CKA.Security
 import DoubleRatchet.CKA.MultiEpochGame
 import DoubleRatchet.CKA.Figure3Game
 import DoubleRatchet.Constructions.DDHCKA
+import DoubleRatchet.Theorems.Reduction
 
 /-!
 # Theorem 3: DDH Security Implies CKA Security
@@ -25,7 +26,7 @@ and forwards `(bG, cG)` directly to the CKA adversary:
 
 - `ckaRealExp_eq_ddhExpReal` / `ckaRandExp_eq_ddhExpRand` — distribution equality
 - `ddh_implies_cka_security` — concrete per-adversary bound
-- `ddh_implies_cka_security_paper_form` — epsilon form
+- `ddh_implies_cka_security_single_epoch` — epsilon-form warmup wrapper
 - `ddh_implies_cka_security_delta` — restricted multi-epoch auxiliary form
 
 ## Layer 2: Figure 3 adaptive theorem surface
@@ -35,6 +36,9 @@ interaction, party-specific corruption, and bad-randomness oracles. The
 reduction logic lives in `Theorems/Reduction.lean`; this file only states the
 theorem:
 
+- `figure3Advantage_le_ddhAdvantage` — helper two-game Figure 3 bound
+- `figure3GuessAdvantage_le_ddhAdvantage` — paper-facing hidden-bit Figure 3 bound
+- `ddh_implies_figure3_cka_security_two_game` — auxiliary two-game wrapper
 - `ddh_implies_figure3_cka_security` — paper-faithful Theorem 3
 
 For the asymptotic wrapper, see `Theorems/AsymptoticSecurity.lean`.
@@ -117,7 +121,7 @@ by instantiation.
 **Note**: This targets `CKASecure` (single-epoch game), not the full
 Figure 3 adaptive game. For the paper-faithful Figure 3 statement, see
 `ddh_implies_figure3_cka_security`. -/
-theorem ddh_implies_cka_security_paper_form (g : G)
+theorem ddh_implies_cka_security_single_epoch (g : G)
     (hg : Function.Bijective (· • g : F → G))
     (ε : ℝ)
     (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
@@ -142,18 +146,54 @@ theorem ddh_implies_cka_security_delta (g : G)
 
 /-- **Theorem 3** (Figure 3 formulation with adaptive oracles):
 
-If G is (t,ε)-DDH-secure, then the DDH-based CKA scheme is (t, Δ=1, ε)-secure
-in the full Figure 3 game with adaptive oracle interaction, party-specific
-corruption, and bad-randomness oracles.
+Helper two-game bound for the concrete Figure 3 reduction. This is the
+real-vs-random presentation used internally for reductions; the paper-facing
+hidden-bit consequence is `figure3GuessAdvantage_le_ddhAdvantage`. -/
+theorem figure3Advantage_le_ddhAdvantage (g : G)
+    (hg : Function.Bijective (· • g : F → G))
+    (tStar : ℕ)
+    (A : Figure3.Figure3Adversary F G G G F) :
+    Figure3.figure3Advantage (ddhCKAWithCoins (F := F) g) tStar 1 A ≤
+      ddhDistAdvantage (F := F) g (figure3AdvToDDHAdv (tStar, A)) := by
+  sorry
 
-This is the paper-faithful statement over the upgraded game model. The proof
-(when filled in) embeds the DDH challenge at epoch `t*` and simulates all
-other epochs honestly. -/
-theorem ddh_implies_figure3_cka_security (g : G)
+/-- Paper-facing hidden-bit bound for the concrete Figure 3 reduction. -/
+theorem figure3GuessAdvantage_le_ddhAdvantage (g : G)
+    (hg : Function.Bijective (· • g : F → G))
+    (tStar : ℕ)
+    (A : Figure3.Figure3Adversary F G G G F) :
+    Figure3.figure3GuessAdvantage (ddhCKAWithCoins (F := F) g) tStar 1 A ≤
+      ddhDistAdvantage (F := F) g (figure3AdvToDDHAdv (tStar, A)) := by
+  simpa [Figure3.figure3GuessAdvantage_eq_figure3Advantage] using
+    figure3Advantage_le_ddhAdvantage g hg tStar A
+
+/-- Auxiliary Figure 3 wrapper in the derived two-game presentation.
+
+This keeps the real-vs-random surface available for reduction-oriented proofs;
+the primary paper-facing theorem is `ddh_implies_figure3_cka_security`. -/
+theorem ddh_implies_figure3_cka_security_two_game (g : G)
     (hg : Function.Bijective (· • g : F → G))
     (ε : ℝ)
     (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
     Figure3.Figure3CKASecure (ddhCKAWithCoins (F := F) g) 1 ε := by
-  sorry
+  intro tStar A
+  exact le_trans (figure3Advantage_le_ddhAdvantage g hg tStar A) (hDDH _)
+
+/-- **Theorem 3** (Figure 3 formulation with adaptive oracles):
+
+If G is (t,ε)-DDH-secure, then the DDH-based CKA scheme is (t, Δ=1, ε)-secure
+in the full Figure 3 game with adaptive oracle interaction, party-specific
+corruption, and bad-randomness oracles.
+
+This is the paper-faithful hidden-bit statement over the upgraded game model.
+The concrete reduction is captured by `figure3GuessAdvantage_le_ddhAdvantage`,
+and the theorem packages that pointwise bound into the Definition 13 surface. -/
+theorem ddh_implies_figure3_cka_security (g : G)
+    (hg : Function.Bijective (· • g : F → G))
+    (ε : ℝ)
+    (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
+    Figure3.Figure3CKASecurePaper (ddhCKAWithCoins (F := F) g) 1 ε := by
+  intro tStar A
+  exact le_trans (figure3GuessAdvantage_le_ddhAdvantage g hg tStar A) (hDDH _)
 
 end CKA

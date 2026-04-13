@@ -7,12 +7,11 @@ import DoubleRatchet.CKA.SecurityGame
 /-!
 # CKA Security Definition
 
-Definition 13 from Alwen-Coretti-Dodis (2020):
-A CKA scheme is `(t, Δ, ε)`-secure if for all `t`-attackers `A`,
-`Adv^CKA_{ror,Δ}(A) ≤ ε`.
+Auxiliary single-epoch security definition for the warmup DDH → CKA reduction.
 
-In the concrete (non-asymptotic) formulation used here, we quantify over
-all adversaries without an explicit time bound `t`.
+This file packages the single-epoch game from `CKA/SecurityGame.lean`. It is
+useful for the warmup reduction layer, but it is not the paper-faithful
+Definition 13 surface; that lives in `CKA/Figure3Game.lean`.
 -/
 
 set_option autoImplicit false
@@ -21,8 +20,7 @@ namespace CKA
 
 variable {SharedKey SenderState ReceiverState Msg Output : Type}
 
-/-- A CKA scheme is `ε`-secure if every adversary has distinguishing
-advantage at most `ε`. This is the concrete version of Definition 13. -/
+/-- Auxiliary single-epoch `ε`-security predicate for the warmup game. -/
 def CKASecure [SampleableType SharedKey] [SampleableType Output]
     (cka : CKAScheme SharedKey SenderState ReceiverState Msg Output)
     (ε : ℝ) : Prop :=

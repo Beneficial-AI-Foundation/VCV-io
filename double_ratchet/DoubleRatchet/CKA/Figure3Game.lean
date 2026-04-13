@@ -452,9 +452,11 @@ def figure3Exp
   let guess ← (simulateQ (unifImpl + gameImpl) adversary).run' initState
   pure guess
 
-/-- Figure 3 CKA distinguishing advantage.
-`Adv^CKA_{ror,Δ}(A) = |Pr[A=1 | real] - Pr[A=1 | random]|`
-(Definition 13, Alwen-Coretti-Dodis 2020.) -/
+/-- Derived two-game Figure 3 distinguishing advantage.
+
+This is the real-vs-random helper presentation of the Figure 3 game. The
+paper-facing notion is the hidden-bit bias `figure3GuessAdvantage`; the two are
+equivalent by `figure3GuessAdvantage_eq_figure3Advantage`. -/
 noncomputable def figure3Advantage
     [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
     [Inhabited Msg] [Inhabited Output]
@@ -528,12 +530,24 @@ lemma figure3GuessAdvantage_eq_figure3Advantage
     _ = figure3Advantage cka tStar delta adversary := by
           rfl
 
-/-- A CKA scheme is `(Δ, ε)`-secure in the Figure 3 game if every adaptive
-adversary has distinguishing advantage at most `ε`, for all choices of
-challenge epoch `t*`.
+/-- The derived two-game and paper-facing hidden-bit Figure 3 advantages are
+definitionally interchangeable. -/
+lemma figure3Advantage_eq_figure3GuessAdvantage
+    [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
+    [Inhabited Msg] [Inhabited Output]
+    [Inhabited SenderState] [Inhabited ReceiverState]
+    (cka : CKASchemeWithCoins SharedKey SenderState ReceiverState Msg Output SendCoins)
+    (tStar delta : ℕ)
+    (adversary : Figure3Adversary SendCoins Msg Output SenderState ReceiverState) :
+    figure3Advantage cka tStar delta adversary =
+      figure3GuessAdvantage cka tStar delta adversary := by
+  symm
+  exact figure3GuessAdvantage_eq_figure3Advantage cka tStar delta adversary
 
-This is Definition 13 from Alwen-Coretti-Dodis (2020) with adaptive
-oracle interaction, party-specific corruption, and bad-randomness oracles. -/
+/-- Helper two-game security predicate for the Figure 3 game.
+
+This keeps the real-vs-random view exposed for reduction proofs and wrappers.
+The paper-facing Definition 13 surface is `Figure3CKASecurePaper`. -/
 def Figure3CKASecure
     [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
     [Inhabited Msg] [Inhabited Output]
@@ -545,8 +559,9 @@ def Figure3CKASecure
 
 /-- Paper-style security predicate using the hidden-bit Figure 3 experiment.
 
-This packages the challenge epoch together with the hidden bit exactly as in
-the paper; it is equivalent to `Figure3CKASecure`. -/
+This is the primary paper-facing Definition 13 surface: the challenger samples
+the hidden bit during initialization and the adversary is scored by guessing it
+correctly. It is equivalent to the helper predicate `Figure3CKASecure`. -/
 def Figure3CKASecurePaper
     [SampleableType SharedKey] [SampleableType SendCoins] [SampleableType Output]
     [Inhabited Msg] [Inhabited Output]

@@ -9,14 +9,15 @@ import VCVio.OracleComp.Constructions.SampleableType
 /-!
 # CKA Security Game
 
-Single-epoch real-or-random security game for CKA, corresponding to Figure 3
-from Alwen-Coretti-Dodis (2020).
+Auxiliary single-epoch real-or-random security game for CKA.
 
 For Theorem 3 (DDH → CKA security with Δ=1), the single-epoch game suffices:
 the DDH reduction is a single-step embedding. The full multi-epoch game with
 corruption oracles (needed for the composition Theorem 6) is left as a future
 extension.
--/
+
+This file is not the paper-faithful Figure 3 formalization. The canonical
+Definition 13 surface lives in `CKA/Figure3Game.lean`. -/
 
 set_option autoImplicit false
 
@@ -57,8 +58,8 @@ def ckaRandExp
   let randOutput ← $ᵗ Output
   adversary msg randOutput
 
-/-- CKA distinguishing advantage: `|Pr[output 1 | real] - Pr[output 1 | random]|`.
-Corresponds to `Adv^CKA_{ror,Δ}(A)` from Definition 13 in ACD 2020. -/
+/-- Auxiliary single-epoch distinguishing advantage:
+`|Pr[output 1 | real] - Pr[output 1 | random]|`. -/
 noncomputable def ckaDistAdvantage
     (cka : CKAScheme SharedKey SenderState ReceiverState Msg Output)
     (adversary : CKAAdversary Msg Output) : ℝ :=

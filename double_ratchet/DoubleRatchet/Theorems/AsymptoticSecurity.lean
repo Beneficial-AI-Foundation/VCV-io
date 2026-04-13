@@ -37,9 +37,11 @@ security parameter `sp : ℕ`. We model this abstractly: the user supplies
 - A PPT predicate for each adversary class
 
 This keeps `F` and `G` fixed (as in the concrete formulation) — the security
-parameter selects the generator within a fixed group family. For a fully
-concrete instantiation (e.g., `F = ZMod p(sp)`), one would parameterize
-the types as well; we leave this for future work.
+parameter selects the generator within a fixed group family. This is an
+auxiliary asymptotic wrapper around the concrete theorem chain, not the primary
+paper-facing semantics. For a fully concrete instantiation (e.g.,
+`F = ZMod p(sp)`), one would parameterize the types as well; we leave this for
+future work.
 -/
 
 set_option autoImplicit false
@@ -115,33 +117,29 @@ lemma ckaAdvantage_le_ddhAdvantage_ennreal
 
 /-- Figure 3 CKA security game indexed by security parameter.
 The adversary is a pair `(tStar, A)` where `tStar` is the challenge epoch
-and `A` is an adaptive `Figure3Adversary`. Uses DDH-CKA with `Δ = 1`.
+and `A` is an adaptive `Figure3Adversary`. Uses DDH-CKA with `Δ = 1` and the
+paper-facing hidden-bit Figure 3 advantage.
 
 For DDH-CKA, the type parameters are: `SendCoins = F`, `Msg = G`,
 `Output = G`, `SenderState = G`, `ReceiverState = F`. -/
 noncomputable def figure3CkaSecurityGame (gFamily : ℕ → G) :
     SecurityGame (ℕ × Figure3.Figure3Adversary F G G G F) where
   advantage AtStar sp :=
-    ENNReal.ofReal (Figure3.figure3Advantage
+    ENNReal.ofReal (Figure3.figure3GuessAdvantage
       (ddhCKAWithCoins (F := F) (gFamily sp)) AtStar.1 1 AtStar.2)
 
-/-- Per-adversary concrete bound: Figure 3 advantage ≤ DDH advantage of
-the reduced adversary. This is the pointwise inequality needed by
-`SecurityGame.secureAgainst_of_reduction`.
-
-Once `figure3AdvToDDHAdv` is defined and `ddh_implies_figure3_cka_security`
-is proved, the proof is:
-```
-exact le_trans (by sorry /- game equivalence -/) (le_refl _)
-``` -/
-theorem figure3Advantage_le_ddhAdvantage
+/-- Lift the concrete paper-facing Figure 3 bound into the `ℝ≥0∞`-valued
+asymptotic wrapper. -/
+lemma figure3GuessAdvantage_le_ddhAdvantage_ennreal
     (g : G)
     (hg : Function.Bijective (· • g : F → G))
     (tStar : ℕ)
     (A : Figure3.Figure3Adversary F G G G F) :
-    Figure3.figure3Advantage (ddhCKAWithCoins (F := F) g) tStar 1 A ≤
-      ddhDistAdvantage (F := F) g (figure3AdvToDDHAdv (tStar, A)) := by
-  sorry
+    ENNReal.ofReal (Figure3.figure3GuessAdvantage
+      (ddhCKAWithCoins (F := F) g) tStar 1 A) ≤
+      ENNReal.ofReal (ddhDistAdvantage (F := F) g (figure3AdvToDDHAdv (tStar, A))) := by
+  exact ENNReal.ofReal_le_ofReal
+    (figure3GuessAdvantage_le_ddhAdvantage g hg tStar A)
 
 /-- **Theorem 3, asymptotic form over Figure 3 game**: If DDH is hard, then
 DDH-CKA is secure in the full Figure 3 adaptive game for all PPT adversaries.
@@ -150,7 +148,7 @@ The adversary type is `ℕ × Figure3Adversary` — the `ℕ` component is the
 challenge epoch `t*`, matching Definition 13's universal quantification.
 
 Uses the concrete uniform reduction `figure3AdvToDDHAdv` and the pointwise
-bound `figure3Advantage_le_ddhAdvantage`. -/
+paper-facing bound `figure3GuessAdvantage_le_ddhAdvantage`. -/
 theorem ddh_implies_figure3_cka_security_asymptotic
     (gFamily : ℕ → G)
     (hg : ∀ sp, Function.Bijective (· • gFamily sp : F → G))
@@ -162,8 +160,7 @@ theorem ddh_implies_figure3_cka_security_asymptotic
     (figure3CkaSecurityGame (F := F) gFamily).secureAgainst isPPT_Fig3 := by
   apply SecurityGame.secureAgainst_of_reduction hreduce _ hDDH
   intro AtStar sp
-  -- Lift the per-adversary ℝ bound to ℝ≥0∞
-  exact ENNReal.ofReal_le_ofReal
-    (figure3Advantage_le_ddhAdvantage (gFamily sp) (hg sp) AtStar.1 AtStar.2)
+  exact figure3GuessAdvantage_le_ddhAdvantage_ennreal
+    (gFamily sp) (hg sp) AtStar.1 AtStar.2
 
 end CKA

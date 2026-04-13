@@ -30,7 +30,7 @@ This serves as an auxiliary intermediate formalization used for:
 - `CKASecureDelta_implies_CKASecure`: bridge from multi-epoch to single-epoch
 
 For the paper-faithful Definition 13 with adaptive oracles and Δ, see
-`Figure3CKASecure` in `CKA/Figure3Game.lean`.
+`Figure3CKASecurePaper` in `CKA/Figure3Game.lean`.
 
 ## Δ parameter semantics
 

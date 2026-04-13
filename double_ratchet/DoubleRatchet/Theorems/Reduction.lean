@@ -216,53 +216,84 @@ def RedState.incRedEpoch (st : RedState F) (p : Party) : RedState F :=
 
 end StateAccess
 
-/-! ## Guard predicates -/
+/-! ## Shared Figure 3 guard semantics -/
 
 section Guards
 
 variable {F : Type}
 
+/-- Forget the DDH-specific interpretation and reuse the Figure 3 control-state
+semantics on symbolic states directly. The `challengeIsRandom` field does not
+affect the guard predicates and is fixed to `false`. -/
+def RedState.toFigure3State (st : RedState F) :
+    Figure3.CKAGameState (RedPub F) (RedRecv F) (RedPub F) :=
+  { stateA := st.stateA
+    stateB := st.stateB
+    epochA := st.epochA
+    epochB := st.epochB
+    tStar := st.tStar
+    delta := st.delta
+    challengeIsRandom := false
+    phase := st.phase
+    pendingMsg := st.pendingMsg
+    challengeUsed := st.challengeUsed
+    corruptedPostChalA := st.corruptedPostChalA
+    corruptedPostChalB := st.corruptedPostChalB }
+
+@[simp] theorem RedState.toFigure3State_incRedEpoch (st : RedState F) (p : Party) :
+    (st.incRedEpoch p).toFigure3State = (st.toFigure3State).incEpoch p := by
+  cases p <;> rfl
+
 /-- End-of-game: challenge used and both parties corrupted post-challenge. -/
 def RedState.gameEnded (st : RedState F) : Bool :=
-  st.challengeUsed && st.corruptedPostChalA && st.corruptedPostChalB
+  st.toFigure3State.gameEnded
 
-/-- `allow-corr`: corruption allowed before the challenge window. -/
+/-- Shared `allow-corr` predicate imported from the Figure 3 game. -/
 def RedState.allowCorr (st : RedState F) : Prop :=
-  max st.epochA st.epochB + 2 ≤ st.tStar
+  Figure3.allowCorrFig3 st.toFigure3State
 
-/-- `finished_P`: party P has healed past the challenge. -/
+/-- Shared `finished_P` predicate imported from the Figure 3 game. -/
 def RedState.finishedParty (st : RedState F) (p : Party) : Prop :=
-  match p with
-  | .A => st.epochA ≥ st.tStar + st.delta
-  | .B => st.epochB ≥ st.tStar + st.delta
+  Figure3.finishedParty st.toFigure3State p
 
-/-- Corruption permitted: `allow-corr ∨ finished_P`. -/
+/-- Shared corruption-permission predicate imported from the Figure 3 game. -/
 def RedState.corruptionPermitted (st : RedState F) (p : Party) : Prop :=
-  st.allowCorr ∨ st.finishedParty p
+  Figure3.corruptionPermittedFig3 st.toFigure3State p
 
-/-- `allow-corr` against the post-increment epoch for `send-P'(r)`. -/
+/-- Shared post-increment corruption check imported from the Figure 3 game. -/
 def RedState.allowCorrPostIncrement (st : RedState F) (p : Party) : Prop :=
-  (st.incRedEpoch p).allowCorr
+  Figure3.allowCorrPostIncrement st.toFigure3State p
 
 instance (st : RedState F) : Decidable st.allowCorr :=
-  inferInstanceAs (Decidable (_ ≤ _))
+  by
+    unfold RedState.allowCorr
+    exact inferInstanceAs (Decidable (Figure3.allowCorrFig3 _))
 
 instance (st : RedState F) (p : Party) : Decidable (st.finishedParty p) := by
-  unfold RedState.finishedParty; cases p <;> exact inferInstanceAs (Decidable (_ ≥ _))
+  unfold RedState.finishedParty
+  exact inferInstanceAs (Decidable (Figure3.finishedParty _ p))
 
 instance (st : RedState F) (p : Party) : Decidable (st.corruptionPermitted p) :=
-  inferInstanceAs (Decidable (_ ∨ _))
+  by
+    unfold RedState.corruptionPermitted
+    exact inferInstanceAs (Decidable (Figure3.corruptionPermittedFig3 _ p))
 
 instance (st : RedState F) (p : Party) :
     Decidable (st.allowCorrPostIncrement p) := by
   unfold RedState.allowCorrPostIncrement
-  exact inferInstanceAs (Decidable (RedState.allowCorr _))
+  exact inferInstanceAs (Decidable (Figure3.allowCorrPostIncrement _ p))
 
 /-- Mark that party `p` was corrupted post-challenge. -/
 def RedState.setCorruptedPostChal (st : RedState F) (p : Party) : RedState F :=
   match p with
   | .A => { st with corruptedPostChalA := true }
   | .B => { st with corruptedPostChalB := true }
+
+@[simp] theorem RedState.toFigure3State_setCorruptedPostChal
+    (st : RedState F) (p : Party) :
+    (st.setCorruptedPostChal p).toFigure3State =
+      (st.toFigure3State).setCorruptedPostChal p := by
+  cases p <;> rfl
 
 end Guards
 
@@ -353,8 +384,8 @@ private def redHandleSend (g aG bG : G) (p : Party) (coins : F) :
 /-- Reduction oracle implementation. Simulates the Figure 3 CKA game for
 an adaptive adversary, embedding DDH challenge values at the challenge window.
 
-Guard logic is copied from `Figure3.ckaGameQueryImpl`. Only the state
-transitions and output computations change to use symbolic state. -/
+The guard logic is shared via `RedState.toFigure3State`; only the symbolic
+state transitions and DDH-specific output computations are reduction-specific. -/
 def redQueryImpl (g aG bG cG : G) :
     QueryImpl (ckaOracleSpec F G G G F)
       (StateT (RedState F) ProbComp)
