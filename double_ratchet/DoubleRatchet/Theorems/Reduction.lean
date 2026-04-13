@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 import DoubleRatchet.CKA.Figure3Game
 import DoubleRatchet.Constructions.DDHCKA
 import VCVio.OracleComp.SimSemantics.PreservesInv
+import VCVio.ProgramLogic.Relational.SimulateQ
 
 /-!
 # DDH → CKA Reduction (Theorem 3, Core)
@@ -43,7 +44,7 @@ window. This is formalized separately via `QueryImpl.PreservesInv`.
 
 set_option autoImplicit false
 
-open OracleComp DiffieHellman
+open OracleComp DiffieHellman OracleComp.ProgramLogic.Relational
 
 namespace CKA
 
@@ -469,6 +470,38 @@ def redQueryImpl (g aG bG cG : G) :
 
 end OracleImpl
 
+/-! ## Combined oracle implementations -/
+
+/-- Full oracle implementation seen by the DDH reduction: private randomness
+from `unifSpec` plus the symbolic Figure 3 game oracles. -/
+def reductionFigure3Impl
+    {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F] [Inhabited F]
+    {G : Type} [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G] [Inhabited G]
+    (g aG bG cG : G) :
+    QueryImpl (Figure3.Figure3OracleSpec F G G G F)
+      (StateT (RedState F) ProbComp) :=
+  let unifImpl :=
+    (HasQuery.toQueryImpl (spec := unifSpec) (m := ProbComp)).liftTarget
+      (StateT (RedState F) ProbComp)
+  unifImpl + redQueryImpl (F := F) g aG bG cG
+
+/-- Full concrete oracle implementation used by the adaptive Figure 3
+adversary. The real or random branch is selected by the
+`challengeIsRandom` flag stored in the concrete game state. -/
+def concreteFigure3Impl
+    {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F] [Inhabited F]
+    {G : Type} [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G] [Inhabited G]
+    (g : G) :
+    QueryImpl (Figure3.Figure3OracleSpec F G G G F)
+      (StateT (Figure3.CKAGameState G F G) ProbComp) :=
+  let unifImpl :=
+    (HasQuery.toQueryImpl (spec := unifSpec) (m := ProbComp)).liftTarget
+      (StateT (Figure3.CKAGameState G F G) ProbComp)
+  unifImpl + Figure3.ckaGameQueryImpl
+    (SharedKey := F) (SenderState := G) (ReceiverState := F)
+    (Msg := G) (Output := G) (SendCoins := F)
+    (ddhCKAWithCoins (F := F) g)
+
 /-! ## Simulation relation -/
 
 /-- The symbolic reduction state matches a concrete `CKAGameState` under
@@ -492,6 +525,85 @@ def redStateMatches (g : G) (a b : F) (rst : RedState F)
   rst.challengeUsed = cst.challengeUsed ∧
   rst.corruptedPostChalA = cst.corruptedPostChalA ∧
   rst.corruptedPostChalB = cst.corruptedPostChalB
+
+/-! ## Phase 1 bridge lemmas -/
+
+section Scaffold
+
+variable {F : Type} [Field F]
+variable {G : Type} [AddCommGroup G] [Module F G]
+
+/-- The generic reduction initial state matches the canonical Figure 3 initial
+state for DDH-CKA. The hidden-bit branch may be either value because
+`redStateMatches` intentionally abstracts over `challengeIsRandom`. -/
+theorem initRedState_matches_initialState
+    (g : G) (k : F) (tStar : ℕ) (challengeIsRandom : Bool) :
+    redStateMatches g k k (initRedState k tStar)
+      (Figure3.initialState (SenderState := G) (ReceiverState := F) (Msg := G)
+        (k • g) k tStar 1 challengeIsRandom) := by
+  simp [redStateMatches, initRedState, Figure3.initialState, ghostInterpPartyState,
+    redPubToConc, redRecvToConc]
+
+/-- The special `t* = 1` reduction initial state matches the canonical
+Figure 3 initial state obtained by embedding the DDH value `a • g` directly
+into the starting configuration. -/
+theorem initRedStateEmbedInit_matches_initialState
+    (g : G) (a b : F) (challengeIsRandom : Bool) :
+    redStateMatches g a b initRedStateEmbedInit
+      (Figure3.initialState (SenderState := G) (ReceiverState := F) (Msg := G)
+        (a • g) a 1 1 challengeIsRandom) := by
+  simp [redStateMatches, initRedStateEmbedInit, Figure3.initialState, ghostInterpPartyState,
+    redPubToConc, redRecvToConc]
+
+/-- `redStateMatches` transports `allow-corr` between the symbolic reduction
+state and the concrete Figure 3 state. -/
+lemma redStateMatches_allowCorr_iff
+    (g : G) (a b : F) (rst : RedState F) (cst : Figure3.CKAGameState G F G)
+    (hMatch : redStateMatches g a b rst cst) :
+    rst.allowCorr ↔ Figure3.allowCorrFig3 cst := by
+  rcases hMatch with ⟨_, _, hA, hB, ht, _, _, _, _, _, _⟩
+  simp [RedState.allowCorr, Figure3.allowCorrFig3, RedState.toFigure3State, hA, hB, ht]
+
+/-- `redStateMatches` transports `finished_P` between the symbolic reduction
+state and the concrete Figure 3 state. -/
+lemma redStateMatches_finishedParty_iff
+    (g : G) (a b : F) (rst : RedState F) (cst : Figure3.CKAGameState G F G)
+    (p : Party) (hMatch : redStateMatches g a b rst cst) :
+    rst.finishedParty p ↔ Figure3.finishedParty cst p := by
+  rcases hMatch with ⟨_, _, hA, hB, ht, hd, _, _, _, _, _⟩
+  cases p <;>
+    simp [RedState.finishedParty, Figure3.finishedParty, RedState.toFigure3State, hA, hB, ht, hd]
+
+/-- `redStateMatches` transports corruption permission between the symbolic
+reduction state and the concrete Figure 3 state. -/
+lemma redStateMatches_corruptionPermitted_iff
+    (g : G) (a b : F) (rst : RedState F) (cst : Figure3.CKAGameState G F G)
+    (p : Party) (hMatch : redStateMatches g a b rst cst) :
+    rst.corruptionPermitted p ↔ Figure3.corruptionPermittedFig3 cst p := by
+  constructor
+  · intro h
+    cases h with
+    | inl hAllow =>
+        exact Or.inl ((redStateMatches_allowCorr_iff g a b rst cst hMatch).mp hAllow)
+    | inr hFinished =>
+        exact Or.inr ((redStateMatches_finishedParty_iff g a b rst cst p hMatch).mp hFinished)
+  · intro h
+    cases h with
+    | inl hAllow =>
+        exact Or.inl ((redStateMatches_allowCorr_iff g a b rst cst hMatch).mpr hAllow)
+    | inr hFinished =>
+        exact Or.inr ((redStateMatches_finishedParty_iff g a b rst cst p hMatch).mpr hFinished)
+
+/-- `redStateMatches` also transports the end-of-game flag. -/
+lemma redStateMatches_gameEnded_eq
+    (g : G) (a b : F) (rst : RedState F) (cst : Figure3.CKAGameState G F G)
+    (hMatch : redStateMatches g a b rst cst) :
+    rst.gameEnded = cst.gameEnded := by
+  rcases hMatch with ⟨_, _, _, _, _, _, _, _, hChallenge, hCorrA, hCorrB⟩
+  simp [RedState.gameEnded, Figure3.CKAGameState.gameEnded, RedState.toFigure3State,
+    hChallenge, hCorrA, hCorrB]
+
+end Scaffold
 
 /-! ## Reduction invariant -/
 
@@ -557,10 +669,7 @@ def figure3AdvToDDHAdv
       else do
         let k ← $ᵗ F
         pure (Reduction.initRedState k AtStar.1)
-    let unifImpl :=
-      (HasQuery.toQueryImpl (spec := unifSpec) (m := ProbComp)).liftTarget
-        (StateT (Reduction.RedState F) ProbComp)
-    let guess ← (simulateQ (unifImpl + Reduction.redQueryImpl (F := F) g aG bG cG)
+    let guess ← (simulateQ (Reduction.reductionFigure3Impl (F := F) g aG bG cG)
       AtStar.2).run' initSt
     pure guess
 
@@ -571,11 +680,13 @@ CKA game. Proved via `relTriple_simulateQ_run` with `R_state := redStateMatches`
 and per-query `RelTriple` correspondence for each oracle handler.
 
 The proof chain is:
-1. Per-query `RelTriple`: each handler of `redQueryImpl` matches
-   `ckaGameQueryImpl` under `redStateMatches g a b`
-2. `relTriple_simulateQ_run'` lifts per-query to full simulation
-3. Distribution equalities follow from the coupling
-4. `figure3Advantage_le_ddhAdvantage` follows from the equalities
+1. `reductionFigure3Impl_real_relTriple` handles the real-branch per-query
+   correspondence.
+2. `reductionFigure3Sim_real_run'_relTriple` lifts that correspondence through
+   `simulateQ`.
+3. `figure3Exp_real_eq_ddhExpReal` and `figure3Exp_rand_eq_ddhExpRand` package
+   the real and random branches as distribution equalities.
+4. `figure3Advantage_le_ddhAdvantage` follows from those equalities.
 -/
 
 section DistributionEquality
@@ -584,6 +695,47 @@ variable {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
   [Inhabited F]
 variable {G : Type} [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G]
   [Inhabited G]
+
+/-- Phase-1 scaffold theorem: real-branch query-by-query correspondence between
+the full reduction oracle implementation and the concrete Figure 3 oracle
+implementation. This is the main local theorem later consumed by
+`relTriple_simulateQ_run'`. -/
+theorem reductionFigure3Impl_real_relTriple
+    (g : G) (a b : F)
+    (t : (Figure3.Figure3OracleSpec F G G G F).Domain)
+    (rst : Reduction.RedState F)
+    (cst : Figure3.CKAGameState G F G)
+    (hMatch : Reduction.redStateMatches g a b rst cst)
+    (hInv : Reduction.RedInv g (a • g) (b • g) rst)
+    (hReal : cst.challengeIsRandom = false) :
+    RelTriple
+      (((Reduction.reductionFigure3Impl (F := F) g (a • g) (b • g) ((a * b) • g)) t).run rst)
+      (((Reduction.concreteFigure3Impl (F := F) g) t).run cst)
+      (fun p₁ p₂ =>
+        p₁.1 = p₂.1 ∧
+        Reduction.redStateMatches g a b p₁.2 p₂.2 ∧
+        Reduction.RedInv g (a • g) (b • g) p₁.2) := by
+  sorry
+
+/-- Phase-1 scaffold theorem: lifting the real-branch per-query correspondence
+through `simulateQ` yields equality of the adversary output bit. The final
+distribution-equality theorem `figure3Exp_real_eq_ddhExpReal` will later be
+obtained by combining this theorem with the initial-state bridge lemmas and
+the DDH sampling wrapper. -/
+theorem reductionFigure3Sim_real_run'_relTriple
+    (g : G) (a b : F)
+    (A : Figure3.Figure3Adversary F G G G F)
+    (rst : Reduction.RedState F)
+    (cst : Figure3.CKAGameState G F G)
+    (hMatch : Reduction.redStateMatches g a b rst cst)
+    (hInv : Reduction.RedInv g (a • g) (b • g) rst)
+    (hReal : cst.challengeIsRandom = false) :
+    RelTriple
+      ((simulateQ (Reduction.reductionFigure3Impl (F := F) g (a • g) (b • g) ((a * b) • g))
+        A).run' rst)
+      ((simulateQ (Reduction.concreteFigure3Impl (F := F) g) A).run' cst)
+      (EqRel Bool) := by
+  sorry
 
 /-- Real DDH experiment with the reduction equals the real Figure 3 game.
 

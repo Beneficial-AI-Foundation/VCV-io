@@ -287,6 +287,35 @@ def CKAGameState.setCorruptedPostChal
 
 end EndOfGame
 
+/-! ## Initial challenger state -/
+
+section InitialState
+
+variable {SenderState ReceiverState Msg : Type}
+
+/-- Canonical initial challenger state for the Figure 3 game.
+
+Party A starts in sender state, party B starts in receiver state, the phase is
+`awaitingSend A`, and no challenge, pending message, or post-challenge
+corruption has occurred yet. -/
+def initialState (ss : SenderState) (rs : ReceiverState)
+    (tStar delta : ℕ) (challengeIsRandom : Bool) :
+    CKAGameState SenderState ReceiverState Msg :=
+  { stateA := .inl ss
+    stateB := .inr rs
+    epochA := 0
+    epochB := 0
+    tStar := tStar
+    delta := delta
+    challengeIsRandom := challengeIsRandom
+    phase := .awaitingSend .A
+    pendingMsg := none
+    challengeUsed := false
+    corruptedPostChalA := false
+    corruptedPostChalB := false }
+
+end InitialState
+
 /-! ## Oracle implementation -/
 
 section OracleImpl
@@ -433,18 +462,8 @@ def figure3Exp
   let k ← $ᵗ SharedKey
   let (ss, rs) ← cka.init k
   let initState : CKAGameState SenderState ReceiverState Msg :=
-    { stateA := .inl ss
-      stateB := .inr rs
-      epochA := 0
-      epochB := 0
-      tStar := tStar
-      delta := delta
-      challengeIsRandom := challengeIsRandom
-      phase := .awaitingSend .A
-      pendingMsg := none
-      challengeUsed := false
-      corruptedPostChalA := false
-      corruptedPostChalB := false }
+    initialState (SenderState := SenderState) (ReceiverState := ReceiverState) (Msg := Msg)
+      ss rs tStar delta challengeIsRandom
   let unifImpl :=
     (HasQuery.toQueryImpl (spec := unifSpec) (m := ProbComp)).liftTarget
       (StateT (CKAGameState SenderState ReceiverState Msg) ProbComp)
