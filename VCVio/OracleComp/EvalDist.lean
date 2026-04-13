@@ -7,6 +7,7 @@ import VCVio.EvalDist.Defs.NeverFails
 import VCVio.EvalDist.Instances.OptionT
 import VCVio.OracleComp.SimSemantics.SimulateQ
 import VCVio.OracleComp.SimSemantics.StateT
+import ToMathlib.ProbabilityTheory.Coupling
 
 /-!
 # Output Distribution of Computations
@@ -435,6 +436,74 @@ lemma evalDist_simulateQ_run_eq_of_impl_evalDist_eq
     congr 1
     · exact h t s
     · funext ⟨u, s'⟩; exact ih u s'
+
+/-- Coupled bisimulation for `simulateQ` with `StateT`. Given a state relation
+`R` and per-query couplings that guarantee same oracle answers and preserve `R`,
+the full `simulateQ` computations can be coupled with the same guarantees.
+
+This generalises `evalDist_simulateQ_run_eq_of_impl_evalDist_eq` to
+implementations whose per-query joint distributions on `(answer, newState)`
+may differ, provided they can be *coupled* with matching answers and related
+successor states. The canonical use case is security reductions where the
+reduction oracle correlates answers and state differently from the honest game
+(e.g. the CKA-DDH reduction's `smul_comm` argument). -/
+lemma evalDist_simulateQ_run_coupled
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    ∃ c : SPMF.Coupling
+        (evalDist ((simulateQ impl₁ comp).run s₁))
+        (evalDist ((simulateQ impl₂ comp).run s₂)),
+      ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+        a₁.1 = a₂.1 ∧ R a₁.2 a₂.2 := by
+  revert s₁ s₂
+  induction comp using OracleComp.inductionOn with
+  | pure x =>
+    intro s₁ s₂ hr
+    simp only [simulateQ_pure, StateT.run_pure]
+    exact ⟨⟨pure ((x, s₁), (x, s₂)), by constructor <;> simp⟩,
+      fun a₁ a₂ h => by
+        change PMF.pure (some (((x, s₁), (x, s₂)))) (some (a₁, a₂)) ≠ 0 at h
+        simp at h
+        exact ⟨by rw [h.1, h.2], by rw [h.1, h.2]; exact hr⟩⟩
+  | query_bind t oa ih =>
+    intro s₁ s₂ hr
+    sorry
+
+/-- If two stateful oracle implementations can be coupled at each step with
+matching answers and a preserved state relation `R`, then `simulateQ` with
+either implementation produces the same marginal distribution on the result
+(discarding the final state). -/
+lemma evalDist_simulateQ_run'_eq_of_bisim
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    evalDist ((simulateQ impl₁ comp).run' s₁) =
+      evalDist ((simulateQ impl₂ comp).run' s₂) := by
+  obtain ⟨c, hc⟩ := evalDist_simulateQ_run_coupled impl₁ impl₂ R hstep comp s₁ s₂ hr
+  have hmap :
+      evalDist ((simulateQ impl₁ comp).run s₁) >>= (fun a => pure a.1) =
+        evalDist ((simulateQ impl₂ comp).run s₂) >>= (fun a => pure a.1) := by
+    exact SPMF.IsCoupling.bind_eq c.2 fun a₁ a₂ hsupp => by
+      obtain ⟨heq, _⟩ := hc a₁ a₂ hsupp
+      simp [heq]
+  simpa [StateT.run', evalDist_map, map_eq_bind_pure_comp] using hmap
 
 end simulateQ_evalDist
 

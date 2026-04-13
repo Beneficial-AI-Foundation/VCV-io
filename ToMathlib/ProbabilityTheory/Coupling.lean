@@ -151,11 +151,10 @@ theorem IsCoupling.bind_eq {α₁ α₂ β : Type u}
     (h : ∀ a₁ a₂, c.1 (some (a₁, a₂)) ≠ 0 → f a₁ = g a₂) :
     p >>= f = q >>= g := by
   rw [bind_eq_pmf_bind, bind_eq_pmf_bind]
-  congr 1
-  rw [show p = Prod.fst <$> c from hc.map_fst.symm,
-      show q = Prod.snd <$> c from hc.map_snd.symm]
-  rw [SPMF.fmap_eq_map, SPMF.fmap_eq_map]
-  simp only [PMF.bind_map]
+  conv_lhs =>
+    rw [show p = Prod.fst <$> c from hc.map_fst.symm, SPMF.fmap_eq_map, PMF.bind_map]
+  conv_rhs =>
+    rw [show q = Prod.snd <$> c from hc.map_snd.symm, SPMF.fmap_eq_map, PMF.bind_map]
   apply PMF.bind_congr
   intro o ho
   cases o with
@@ -163,7 +162,7 @@ theorem IsCoupling.bind_eq {α₁ α₂ β : Type u}
   | some ab =>
     obtain ⟨a₁, a₂⟩ := ab
     simp only [Function.comp, Option.map]
-    exact congrArg (·.1) (h a₁ a₂ ho)
+    exact h a₁ a₂ ho
 
 end SPMF
 
