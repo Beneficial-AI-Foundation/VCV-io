@@ -292,13 +292,66 @@ Combined with the standard decomposition of both games over a fair coin
 this yields `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, tStar, 1)`.
 -/
 
+/-- The real DDH branch of `securityReduction`, before the final `Bool.not`.
+This is the game that must be shown equivalent to the fixed-bit CKA branch
+with `b = false`; `securityReduction_real` then follows from
+`probOutput_not_map`. -/
+private noncomputable def securityReductionRealGame
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) : ProbComp Bool := do
+  let a ← $ᵗ F
+  let b ← $ᵗ F
+  let x₀ ← $ᵗ F
+  let (b', _) ←
+    (simulateQ (reductionImpl gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false tStar 1)
+  return b'
+
+/-- Unfold the real DDH branch of the reduction into the explicit helper game
+`securityReductionRealGame`. -/
+private lemma probOutput_ddhExpReal_securityReduction
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
+    Pr[= true | ddhExpReal gen (securityReduction adversary tStar)] =
+    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) adversary tStar] := by
+  unfold DiffieHellman.ddhExpReal securityReduction
+  simpa [securityReductionRealGame, map_eq_bind_pure_comp] using
+    (probOutput_not_map (m := ProbComp)
+      (mx := securityReductionRealGame (F := F) (G := G) (gen := gen) adversary tStar))
+
+/-- The fixed-bit CKA security game with `b = false`, written explicitly with the
+initial key sample exposed. -/
+private noncomputable def securityExpFixedBitFalseGame
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) : ProbComp Bool := do
+  let x₀ ← $ᵗ F
+  let (b', _) ←
+    (simulateQ (ckaSecurityImpl (ddhCKA F G gen)) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false tStar 1)
+  return b'
+
+/-- Unfold the fixed-bit `b = false` branch into the explicit helper game
+`securityExpFixedBitFalseGame`. -/
+private lemma probOutput_securityExpFixedBit_false
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
+    Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false tStar 1] =
+    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) adversary tStar] := by
+  unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
+  simp
+
+/-- The core bridge for the real branch: the explicit real-DDH reduction game
+matches the explicit fixed-bit CKA game with `b = false`. -/
+private lemma securityReduction_real_bridge
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
+    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) adversary tStar] =
+    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) adversary tStar] := by
+  sorry
+
 /-- **Real-branch lemma.**
 `Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`. -/
 lemma securityReduction_real
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
     Pr[= true | ddhExpReal gen (securityReduction adversary tStar)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false tStar 1] := by
-  sorry
+  rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false]
+  exact securityReduction_real_bridge (F := F) (G := G) (gen := gen) adversary tStar
 
 /-- **Random-branch lemma.**
 `Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]`.
