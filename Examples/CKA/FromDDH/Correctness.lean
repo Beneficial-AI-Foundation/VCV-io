@@ -85,11 +85,9 @@ private lemma oracleSendA_preserves_gameInvariant :
       rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       rw [CKAScheme.oracleSendA, StateT.run_bind, StateT.run_get] at hz
-      have hz' := hz; simp [validStep] at hz'
-      obtain ⟨key, ρ, ⟨y, hu, rfl⟩ | ⟨_, hu, _⟩⟩ := hz'
-      · rcases (by simpa [ddhCKA, ddhCKA.send] using hu) with ⟨rfl, rfl⟩
-        exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
-      · exact absurd hu (by simp [ddhCKA, ddhCKA.send]))
+      have hz' := hz; simp [validStep, ddhCKA, ddhCKA.send] at hz'
+      obtain ⟨y, _, rfl⟩ := hz'
+      exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩)
 
 /-- `O-Recv-B` preserves `gameInvariant`:
 `(y, x, y•g, -, y•(x•g), -)` → `(y, y•g, -, -, -, -)`;
@@ -135,11 +133,9 @@ private lemma oracleSendB_preserves_gameInvariant :
     rcases (by simpa [gameInvariant] using hσ) with ⟨hc, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
     subst correct
     rw [CKAScheme.oracleSendB, StateT.run_bind, StateT.run_get] at hz
-    have hz' := hz; simp [validStep] at hz'
-    obtain ⟨key, ρ, ⟨x, hu, rfl⟩ | ⟨_, hu, _⟩⟩ := hz'
-    · rcases (by simpa [ddhCKA, ddhCKA.send] using hu) with ⟨rfl, rfl⟩
-      exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
-    · exact absurd hu (by simp [ddhCKA, ddhCKA.send])
+    have hz' := hz; simp [validStep, ddhCKA, ddhCKA.send] at hz'
+    obtain ⟨x, _, rfl⟩ := hz'
+    exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- `O-Recv-A` preserves `gameInvariant`:
 `(y, x', -, x'•g, -, x'•(y•g))` → `(x'•g, x', -, -, -, -)`;

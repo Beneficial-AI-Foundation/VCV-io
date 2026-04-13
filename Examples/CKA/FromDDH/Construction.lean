@@ -5,11 +5,9 @@ import VCVio.CryptoFoundations.HardnessAssumptions.DiffieHellman
 /-!
 # CKA from DDH — Construction
 
-Construction of a CKA scheme from the DDH assumption over a module `Module F G`,
-following [ACD19, Section 4.1].
+Construction of a CKA scheme from the DDH following [ACD19, Section 4.1].
 https://eprint.iacr.org/2018/1037.pdf
 
-## Construction
 We consider a module `Module F G` with scalar field `F`, additive group `G`,
 scalar multiplication `a • gen`, and a fixed generator `gen : G`.
 
@@ -25,29 +23,33 @@ open OracleSpec OracleComp ENNReal
 variable {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
 variable {G : Type} [AddCommGroup G] [Module F G] [SampleableType G]
 
-/-- send(h): x ←$ F; key := x • h, ρ := x • gen, state := x -/
-def ddhCKA.send (gen : G) (st : F ⊕ G) : ProbComp (G × G × (F ⊕ G)) :=
+/-- `send(h : G)`: `x ← $ᵗ F`; `key := x • h`, `msg := x • gen`, `st' := x`. -/
+def ddhCKA.send (gen : G) (st : F ⊕ G) : ProbComp (Option (G × G × (F ⊕ G))) :=
   match st with
-  | .inr h => do let x ← $ᵗ F; return (x • h, x • gen, .inl x)
-  | .inl _ => return (0, 0, .inl 0)
+  | .inr h => do
+    let x ← $ᵗ F
+    let key := x • h
+    let msg := x • gen
+    let st' : F ⊕ G := .inl x
+    return some (key, msg, st')
+  | .inl _ => return none
 
-/-- recv(x, ρ): key := x • ρ, state := ρ -/
-def ddhCKA.recv (st : F ⊕ G) (ρ : G) : Option G × (F ⊕ G) :=
+/-- `recv(x : F, ρ : G)`: `key := x • ρ`, `st' := ρ`. -/
+def ddhCKA.recv (st : F ⊕ G) (ρ : G) : Option (G × (F ⊕ G)) :=
   match st with
-  | .inl x => (some (x • ρ), .inr ρ)
-  | .inr _ => (some ρ, .inr ρ)
-
-omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
-/-- `recv(y, x • g) = (some (x • (y • g)), x • g)` by `smul_comm`. -/
-theorem ddhCKA.recv_key_agree (x y : F) (gen : G) :
-    ddhCKA.recv (.inl y) (x • gen) = (some (x • (y • gen)), .inr (x • gen)) := by
-  simp [ddhCKA.recv, smul_comm y x gen]
+  | .inl x =>
+    let key := x • ρ
+    let st' : F ⊕ G := .inr ρ
+    some (key, st')
+  | .inr _ => none
 
 /-- CKA from DDH over a module `Module F G` with generator `gen : G`.
 
-- `initKeyGen`: x₀ ←$ F; return (x₀ • gen, x₀)
-- `initA(h, x₀)`: store h ∈ G; `initB(h, x₀)`: store x₀ ∈ F
-- send and recv are the same for both parties; only init differs. -/
+- `initKeyGen`: `x₀ ← $ᵗ F`; return `(x₀ • gen, x₀)`.
+- `initA (h, x₀)`: store `h : G`. `initB (h, x₀)`: store `x₀ : F`.
+- `sendA(h: G)` and `sendB(h: G)`: defined as `send(h: G)` above.
+- `revA(x: F, ρ: G)` and `revB(x: F, ρ: G)` defined as `recv(x: F, ρ: G)` above.
+-/
 def ddhCKA (F G : Type) [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
     [AddCommGroup G] [Module F G] [SampleableType G]
     (gen : G) : CKAScheme ProbComp

@@ -141,11 +141,13 @@ private noncomputable def reductionSendB (gen gA : G) :
         return some (gA, xA • gA)
       else
         -- All other epochs: honest B-send.
-        let (key, ρ, stB') ← liftM (ddhCKA.send gen state.stB)
-        set { state with
-          stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-          lastAction := some .sendB, tB := state.tB + 1 }
-        return some (ρ, key)
+        match ← liftM (ddhCKA.send gen state.stB) with
+        | none => pure none
+        | some (key, ρ, stB') =>
+          set { state with
+            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+            lastAction := some .sendB, tB := state.tB + 1 }
+          return some (ρ, key)
     else pure none
 
 /-- Symmetric A-send modification for the challB reduction.
@@ -178,11 +180,13 @@ private noncomputable def reductionSendA (gen gA : G) :
         return some (gA, xB • gA)
       else
         -- All other epochs: honest A-send.
-        let (key, ρ, stA') ← liftM (ddhCKA.send gen state.stA)
-        set { state with
-          stA := stA', lastRhoA := some ρ, lastKeyA := some key,
-          lastAction := some .sendA, tA := state.tA + 1 }
-        return some (ρ, key)
+        match ← liftM (ddhCKA.send gen state.stA) with
+        | none => pure none
+        | some (key, ρ, stA') =>
+          set { state with
+            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+            lastAction := some .sendA, tA := state.tA + 1 }
+          return some (ρ, key)
     else pure none
 
 /-- Modified A-challenge oracle for the challA reduction.
