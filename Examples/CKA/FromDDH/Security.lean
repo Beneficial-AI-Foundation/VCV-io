@@ -141,11 +141,13 @@ private noncomputable def reductionSendB (gen gA : G) :
         return some (gA, xA • gA)
       else
         -- All other epochs: honest B-send.
-        let (key, ρ, stB') ← liftM (ddhCKA.send gen state.stB)
-        set { state with
-          stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-          lastAction := some .sendB, tB := state.tB + 1 }
-        return some (ρ, key)
+        match ← liftM (ddhCKA.send gen state.stB) with
+        | none => pure none
+        | some (key, ρ, stB') =>
+          set { state with
+            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+            lastAction := some .sendB, tB := state.tB + 1 }
+          return some (ρ, key)
     else pure none
 
 /-- Symmetric A-send modification for the challB reduction.
@@ -178,11 +180,13 @@ private noncomputable def reductionSendA (gen gA : G) :
         return some (gA, xB • gA)
       else
         -- All other epochs: honest A-send.
-        let (key, ρ, stA') ← liftM (ddhCKA.send gen state.stA)
-        set { state with
-          stA := stA', lastRhoA := some ρ, lastKeyA := some key,
-          lastAction := some .sendA, tA := state.tA + 1 }
-        return some (ρ, key)
+        match ← liftM (ddhCKA.send gen state.stA) with
+        | none => pure none
+        | some (key, ρ, stA') =>
+          set { state with
+            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+            lastAction := some .sendA, tA := state.tA + 1 }
+          return some (ρ, key)
     else pure none
 
 /-- Modified A-challenge oracle for the challA reduction.
@@ -289,13 +293,7 @@ this yields `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, tStar
 -/
 
 /-- **Real-branch lemma.**
-`Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`.
-
-Proof outline: (1) handle `!b'` via `probOutput_not_map`, (2) reorder DDH
-samples past `x₀` via `probOutput_bind_bind_swap`, (3) apply
-`evalDist_simulateQ_run'_eq_of_bisim` with a state relation coupling the
-reduction's DDH-embedded oracles to the honest game's oracles, using
-`smul_comm` for the per-query coupling at the modified send/challenge epochs. -/
+`Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`. -/
 lemma securityReduction_real
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
     Pr[= true | ddhExpReal gen (securityReduction adversary tStar)] =
@@ -304,9 +302,7 @@ lemma securityReduction_real
 
 /-- **Random-branch lemma.**
 `Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]`.
-
-Same structure as `securityReduction_real`, but uses bijectivity of `· • gen`
-to couple the DDH random element `c • gen` with `$ᵗ G`. -/
+Needs bijectivity of `· • gen` to couple `c • gen` with `$ᵗ G`. -/
 lemma securityReduction_rand
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :

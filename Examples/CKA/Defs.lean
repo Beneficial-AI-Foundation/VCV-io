@@ -37,10 +37,10 @@ structure CKAScheme (m : Type → Type u) [Monad m] (IK St I Rho : Type) where
   initKeyGen : m IK
   initA : IK → m St
   initB : IK → m St
-  sendA : St → m (I × Rho × St)
-  recvA : St → Rho → (Option I × St)
-  sendB : St → m (I × Rho × St)
-  recvB : St → Rho → (Option I × St)
+  sendA : St → m (Option (I × Rho × St))
+  recvA : St → Rho → Option (I × St)
+  sendB : St → m (Option (I × Rho × St))
+  recvB : St → Rho → Option (I × St)
 
 namespace CKAScheme
 
@@ -102,8 +102,14 @@ def validStep (last : Option CKAAction) (next : CKAAction) : Bool :=
   | some .recvA,  .sendA  | some .recvA,  .challA  => true
   | _, _ => false
 
-/-- Internal state of the CKA game:
-`(stA, stB, ρA, ρB, kA, kB, b, correct, lastAction)`. -/
+/-- Internal state of the CKA game.
+- `stA`, `stB`: per-party protocol state.
+- `lastRhoA/B`, `lastKeyA/B`: pending undelivered message and sender key.
+- `b`: hidden challenge bit (security game only).
+- `correct`: conjunction of all key-agreement checks so far.
+- `lastAction`: enforces alternating communication.
+- `tA`, `tB`: epoch counters (incremented on each send/chall).
+- `tStar`, `deltaCKA`: game parameters (challenge epoch and healing delay). -/
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
@@ -137,121 +143,124 @@ def ckaSecuritySpec (St Rho I : Type) :=
 
 /-! ### Send oracles -/
 
-/-- `O-Send-A`: `(I, ρ, stA') ← sendA(stA); return (ρ, I)`. -/
+/-- **O-Send-A.** `(key, ρ, stA') ← sendA(stA)`; return `(ρ, key)` to adversary;
+advance epoch `tA ← tA + 1`. -/
 def oracleSendA (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .sendA then -- alternate communication
-      let (key, ρ, stA') ← liftM (cka.sendA state.stA) -- send message
-      set { state with -- update game state
-        stA := stA'
-        lastRhoA := some ρ
-        lastKeyA := some key
-        lastAction := some .sendA
-        tA := state.tA + 1 }
-      return some (ρ, key) -- return message and key
+    -- enforce *Alternate Communication* assumption
+    if validStep state.lastAction .sendA then
+      match ← liftM (cka.sendA state.stA) with
+      | none => pure none
+      | some (key, ρ, stA') =>
+        set { state with
+          stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+          lastAction := some .sendA, tA := state.tA + 1 }
+        return some (ρ, key)
     else pure none
 
-/-- `O-Send-B`: `(I, ρ, stB') ← sendB(stB); return (ρ, I)`. -/
+/-- **O-Send-B.** `(key, ρ, stB') ← sendB(stB)`; return `(ρ, key)` to adversary;
+advance epoch `tB ← tB + 1`. -/
 def oracleSendB (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .sendB then -- alternate communication
-      let (key, ρ, stB') ← liftM (cka.sendB state.stB) -- send message
-      set { state with -- update game state
-        stB := stB'
-        lastRhoB := some ρ
-        lastKeyB := some key
-        lastAction := some .sendB
-        tB := state.tB + 1 }
-      return some (ρ, key) -- return message and key
+    -- enforce *Alternate Communication* assumption
+    if validStep state.lastAction .sendB then
+      match ← liftM (cka.sendB state.stB) with
+      | none => pure none
+      | some (key, ρ, stB') =>
+        set { state with
+          stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+          lastAction := some .sendB, tB := state.tB + 1 }
+        return some (ρ, key)
     else pure none
 
 /-! ### Receive oracles -/
 
-/-- `O-Recv-A`: deliver pending `ρ` from B; `(I, stA') ← recvA(stA, ρ); assert I = Iᴮ`. -/
+/-- **O-Recv-A.** Deliver pending message `ρ` from B to A:
+`(keyA, stA') ← recvA(stA, ρ)`; assert `keyA = lastKeyB`
+(updating `correct`); clear pending `(lastRhoB, lastKeyB)`. -/
 def oracleRecvA [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .recvA then -- alternate communication
+    -- enforce *Alternate Communication* assumption
+    if validStep state.lastAction .recvA then
       match state.lastRhoB with
-      | none => pure () -- no pending message
+      | none => pure ()
       | some ρ =>
-        let (keyA, stA') := cka.recvA state.stA ρ -- receive message
-        let ok := match state.lastKeyB with
-          | some keyB => decide (keyA = some keyB)
-          | none => false
-        set { state with -- update game state
-          stA := stA'
-          lastRhoB := none
-          lastKeyB := none
-          correct := state.correct && ok -- assert key agreement
-          lastAction := some .recvA }
+        match cka.recvA state.stA ρ with
+        | none => pure ()
+        | some (keyA, stA') =>
+          let ok := match state.lastKeyB with
+            | some keyB => decide (some keyA = some keyB)
+            | none => false
+          set { state with
+            stA := stA', lastRhoB := none, lastKeyB := none,
+            correct := state.correct && ok, lastAction := some .recvA }
     else pure ()
 
-/-- `O-Recv-B`: deliver pending `ρ` from A; `(I, stB') ← recvB(stB, ρ); assert I = Iᴬ`. -/
+/-- **O-Recv-B.** Deliver pending message `ρ` from A to B:
+`(keyB, stB') ← recvB(stB, ρ)`; assert `keyB = lastKeyA`
+(updating `correct`); clear pending `(lastRhoA, lastKeyA)`. -/
 def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    if validStep state.lastAction .recvB then -- alternate communication
+    -- enforce *Alternate Communication* assumption
+    if validStep state.lastAction .recvB then
       match state.lastRhoA with
-      | none => pure () -- no pending message
+      | none => pure ()
       | some ρ =>
-        let (keyB, stB') := cka.recvB state.stB ρ -- receive message
-        let ok := match state.lastKeyA with
-          | some keyA => decide (keyB = some keyA)
-          | none => false
-        set { state with -- update game state
-          stB := stB'
-          lastRhoA := none
-          lastKeyA := none
-          correct := state.correct && ok -- assert key agreement
-          lastAction := some .recvB }
+        match cka.recvB state.stB ρ with
+        | none => pure ()
+        | some (keyB, stB') =>
+          let ok := match state.lastKeyA with
+            | some keyA => decide (some keyB = some keyA)
+            | none => false
+          set { state with
+            stB := stB', lastRhoA := none, lastKeyA := none,
+            correct := state.correct && ok, lastAction := some .recvB }
     else pure ()
 
 /-! ### Challenge oracles -/
 
-/-- `O-Chall-A`: like `O-Send-A` but `return (ρ, b ? $I : I)`.
-Only available at challenge epoch `tStar` fixed upfront [ACD19, Def. 13] -/
+/-- **O-Chall-A.** Like `O-Send-A` but returns `b ? $ᵗ I : key` (real or
+random key). Only fires when `tA = tStar`. -/
 def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
-    -- check *Alternate Communication* and *Fixed Challenge*
+    -- enforce *Alternate Communication* and *Fixed Challenge* assumptions
     if validStep state.lastAction .challA && state.tA == state.tStar then
-      let (key, ρ, stA') ← liftM (cka.sendA state.stA)
-      -- return real key or random key
-      let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
-      set { state with -- update game state
-        stA := stA'
-        lastRhoA := some ρ
-        lastKeyA := some key
-        lastAction := some .challA
-        tA := state.tA + 1 }
-      return some (ρ, outKey) -- return message and key
+      match ← liftM (cka.sendA state.stA) with
+      | none => pure none
+      | some (key, ρ, stA') =>
+        let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
+        set { state with
+          stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+          lastAction := some .challA, tA := state.tA + 1 }
+        return some (ρ, outKey)
     else pure none
 
-/-- `O-Chall-B`: like `O-Send-B` but `return (ρ, b ? $I : I)`.
-Only available at epoch `tStar` [ACD19, Def. 13]. -/
+/-- **O-Chall-B.** Like `O-Send-B` but returns `b ? $ᵗ I : key` (real or
+random key). Only fires when `tB = tStar`. -/
 def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get -- game state
+    -- enforce *Alternate Communication* and *Fixed Challenge* assumptions
     if validStep state.lastAction .challB && state.tB == state.tStar then
-      let (key, ρ, stB') ← liftM (cka.sendB state.stB) -- send message
-      -- return real key or random key
-      let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
-      set { state with -- update game state
-        stB := stB'
-        lastRhoB := some ρ
-        lastKeyB := some key
-        lastAction := some .challB
-        tB := state.tB + 1 }
-      return some (ρ, outKey) -- return message and key
+      match ← liftM (cka.sendB state.stB) with
+      | none => pure none
+      | some (key, ρ, stB') =>
+        let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
+        set { state with
+          stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+          lastAction := some .challB, tB := state.tB + 1 }
+        return some (ρ, outKey)
     else pure none
 
 /-! ### Corruption oracles
