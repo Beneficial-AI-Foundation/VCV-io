@@ -38,9 +38,9 @@ theorem probOutput_fresh_cachingOracle_query
     pure_bind]
   simp only [modifyGet, MonadState.modifyGet, MonadStateOf.modifyGet,
     StateT.modifyGet, StateT.run]
-  rw [show (do let x ← PFunctor.FreeM.lift (query t); pure (x, cache₀.cacheQuery t x)) =
-    (fun x => (x, cache₀.cacheQuery t x)) <$> PFunctor.FreeM.lift (query t) from by
-      simp [Functor.map, bind_pure_comp]]
+  change Pr[= (u, cache₀.cacheQuery t u) |
+      (fun x => (x, cache₀.cacheQuery t x)) <$> (liftM (query t) : OracleComp spec' _)] =
+    (Fintype.card (spec'.Range t) : ℝ≥0∞)⁻¹
   rw [probOutput_map_injective _ (fun a b hab => by exact Prod.ext_iff.mp hab |>.1)]
   exact probOutput_query t u
 
@@ -138,6 +138,7 @@ theorem probEvent_cache_has_value_le_of_unique_preimage {α : Type}
           simp only [StateT.lift, bind_assoc, pure_bind,
             modifyGet, MonadState.modifyGet, MonadStateOf.modifyGet,
             StateT.modifyGet, StateT.run]
+          rfl
         rw [hstep, bind_assoc]; simp [pure_bind]
       rw [hrun]
       -- Decompose: ∑ u, Pr[=u|query t] * Pr[event | cont(u)]
