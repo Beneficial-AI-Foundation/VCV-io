@@ -73,7 +73,10 @@ lemma gauss_sum_inv_le (n : ℕ) (N : ℝ≥0∞) (_hN : 0 < N) :
     have := Finset.sum_range_id_mul_two n; nlinarith [Nat.sub_le n 1]
   have henn : 2 * (∑ k ∈ range n, (k : ℝ≥0∞)) ≤ (n : ℝ≥0∞) ^ 2 := by
     have hcast : (∑ k ∈ range n, (k : ℝ≥0∞)) = ((∑ k ∈ range n, k : ℕ) : ℝ≥0∞) := by
-      simp [Nat.cast_sum]
+      rw [Nat.cast_sum]
+      refine Finset.sum_congr rfl ?_
+      intro x hx
+      rfl
     rw [hcast, show (2 : ℝ≥0∞) = ((2 : ℕ) : ℝ≥0∞) from by norm_num,
       show (n : ℝ≥0∞) ^ 2 = ((n ^ 2 : ℕ) : ℝ≥0∞) from by push_cast; ring,
       ← Nat.cast_mul]
@@ -100,7 +103,10 @@ lemma gauss_sum_inv_eq (n : ℕ) (N : ℝ≥0∞) :
     Finset.sum_range_id_mul_two n
   have henn : 2 * (∑ k ∈ range n, (k : ℝ≥0∞)) = ((n * (n - 1) : ℕ) : ℝ≥0∞) := by
     have hcast : (∑ k ∈ range n, (k : ℝ≥0∞)) = ((∑ k ∈ range n, k : ℕ) : ℝ≥0∞) := by
-      simp [Nat.cast_sum]
+      rw [Nat.cast_sum]
+      refine Finset.sum_congr rfl ?_
+      intro x hx
+      rfl
     rw [hcast, show (2 : ℝ≥0∞) = ((2 : ℕ) : ℝ≥0∞) from by norm_num, ← Nat.cast_mul]
     congr 1; omega
   have heq : (∑ k ∈ range n, (k : ℝ≥0∞)) = ((n * (n - 1) : ℕ) : ℝ≥0∞) / 2 := by

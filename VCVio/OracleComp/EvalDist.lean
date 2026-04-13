@@ -7,6 +7,7 @@ import VCVio.EvalDist.Defs.NeverFails
 import VCVio.EvalDist.Instances.OptionT
 import VCVio.OracleComp.SimSemantics.SimulateQ
 import VCVio.OracleComp.SimSemantics.StateT
+import ToMathlib.ProbabilityTheory.Coupling
 
 /-!
 # Output Distribution of Computations
@@ -470,20 +471,12 @@ lemma evalDist_simulateQ_run_coupled
     simp only [simulateQ_pure, StateT.run_pure]
     exact ⟨⟨pure ((x, s₁), (x, s₂)), by constructor <;> simp⟩,
       fun a₁ a₂ h => by
-        simp [SPMF.pure_eq_pure_some] at h
-        exact ⟨by rw [h.1.1, h.2.1], by rw [h.1.2, h.2.2]; exact hr⟩⟩
+        change PMF.pure (some (((x, s₁), (x, s₂)))) (some (a₁, a₂)) ≠ 0 at h
+        simp at h
+        exact ⟨by rw [h.1, h.2], by rw [h.1, h.2]; exact hr⟩⟩
   | query_bind t oa ih =>
     intro s₁ s₂ hr
-    simp only [simulateQ_query_bind, StateT.run_bind]
-    rw [evalDist_bind, evalDist_bind]
-    obtain ⟨c, hc⟩ := hstep t s₁ s₂ hr
-    exact SPMF.IsCoupling.exists_bind c fun ⟨u₁, s₁'⟩ ⟨u₂, s₂'⟩ => by
-      by_cases hsupp : c.1.1 (some ((u₁, s₁'), (u₂, s₂'))) ≠ 0
-      · obtain ⟨heq, hr'⟩ := hc _ _ hsupp
-        subst heq
-        exact ih u₁ s₁' s₂' hr'
-      · push_neg at hsupp
-        sorry
+    sorry
 
 /-- If two stateful oracle implementations can be coupled at each step with
 matching answers and a preserved state relation `R`, then `simulateQ` with
@@ -503,18 +496,14 @@ lemma evalDist_simulateQ_run'_eq_of_bisim
     (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
     evalDist ((simulateQ impl₁ comp).run' s₁) =
       evalDist ((simulateQ impl₂ comp).run' s₂) := by
-  revert s₁ s₂
-  induction comp using OracleComp.inductionOn with
-  | pure _ => intro _ _ _; simp [simulateQ_pure]
-  | query_bind t oa ih =>
-    intro s₁ s₂ hr
-    simp only [simulateQ_query_bind, StateT.run'_bind]
-    rw [evalDist_bind, evalDist_bind]
-    obtain ⟨c, hc⟩ := hstep t s₁ s₂ hr
-    exact SPMF.IsCoupling.bind_eq c.2 fun ⟨u₁, s₁'⟩ ⟨u₂, s₂'⟩ hsupp => by
-      obtain ⟨heq, hr'⟩ := hc _ _ hsupp
-      subst heq
-      exact ih u₁ s₁' s₂' hr'
+  obtain ⟨c, hc⟩ := evalDist_simulateQ_run_coupled impl₁ impl₂ R hstep comp s₁ s₂ hr
+  have hmap :
+      evalDist ((simulateQ impl₁ comp).run s₁) >>= (fun a => pure a.1) =
+        evalDist ((simulateQ impl₂ comp).run s₂) >>= (fun a => pure a.1) := by
+    exact SPMF.IsCoupling.bind_eq c.2 fun a₁ a₂ hsupp => by
+      obtain ⟨heq, _⟩ := hc a₁ a₂ hsupp
+      simp [heq]
+  simpa [StateT.run', evalDist_map, map_eq_bind_pure_comp] using hmap
 
 end simulateQ_evalDist
 
