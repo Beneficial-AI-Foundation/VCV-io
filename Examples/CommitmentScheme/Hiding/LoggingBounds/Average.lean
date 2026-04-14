@@ -93,9 +93,9 @@ lemma run_simulateQ_hidingAvgComp_eq_bind {AUX : Type} {t : ℕ}
         (liftM (query (spec := Unit →ₒ S) ()) >>= fun s => pure (s, (∅, fun _ => 0))) := by
     simp [hidingAvgQueryImpl, hidingAvgLeftImpl, simulateQ_query]
   rw [hidingAvgComp, simulateQ_bind, StateT.run_bind, hleftrun]
-  simp only [bind_assoc, pure_bind]
+  erw [bind_assoc]
   refine OracleComp.bind_congr' rfl ?_
-  intro s
+  intro s; erw [pure_bind]
   rw [simulateQ_bind, StateT.run_bind]
   rw [show simulateQ hidingAvgQueryImpl
       ((hidingOa A s : OracleComp (CMOracle M S C) Bool).liftComp (HidingAvgSpec M S C)) =
@@ -796,7 +796,7 @@ lemma sum_wp_distinguish_countPred_le_queryBound_of_choose_count_support
           add_le_add_right hpred (t - ∑ s : S, qchoose.2.2 s)
     _ = t := by
         have hcast : (∑ s : S, qchoose.2.2 s : ℝ≥0∞) ≤ t := by
-          exact_mod_cast hchooseCounts
+          erw [← Nat.cast_sum]; exact_mod_cast hchooseCounts
         rw [add_comm]
         rw [Nat.cast_sum]
         exact tsub_add_cancel_of_le hcast
