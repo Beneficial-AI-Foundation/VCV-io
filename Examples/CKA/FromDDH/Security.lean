@@ -91,8 +91,13 @@ The reduction embeds real DDH as `b = false` (real key) and random DDH as
 `b = true` (random key). A correct CKA guess `b'` therefore has the opposite
 polarity from the correct DDH answer, so the reduction returns `!b'`.
 
-**Corruption safety** (`ΔCKA = 1`). After the challenge:
-- Party A's state from epoch `tStar + 1` is `.inl x'` (fresh, independent of `a,b`).
+**Corruption safety** (`ΔCKA = 1`, strict healing). Corruption of the
+challenged party is only allowed once that party has advanced past
+`tStar + 1`, so the challenge-linked sender state is overwritten before it
+can be revealed. Concretely:
+- Party A's challenge state at epoch `tStar + 1` may be a fresh hidden scalar.
+- By the time `corruptA` is allowed, A has already advanced again and this
+  temporary state has been overwritten by honest protocol steps.
 - Party B's state from epoch `tStar` is `.inr gB` (public DDH component).
 -/
 
@@ -199,7 +204,9 @@ post-challenge state `.inl z`, matching the honest game's distribution
 When the DDH triple is real (`gT = (a * b) • gen`), the returned pair
 `(gB, gT) = (b • gen, (a * b) • gen)` matches the honest distribution
 `(x • gen, x • gA) = (x • gen, (x * a) • gen)` for fresh `x`,
-since `b` is uniform just like `x`. -/
+since `b` is uniform just like `x`. The post-challenge state is allowed to
+use an independent fresh scalar because, under the strict healing rule, that
+state cannot be corrupted before it is overwritten. -/
 private noncomputable def reductionChallA (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
@@ -336,13 +343,103 @@ private lemma probOutput_securityExpFixedBit_false
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp
 
+/-- Idealized B-send used in the real-branch bridge.
+At the special epoch before `challA`, it reuses the externally fixed DDH scalar
+`a` both for the visible output and for B's next hidden state. This matches the
+honest game instantiated with the corresponding challenge randomness, unlike
+`reductionSendB`, which uses an independent fresh hidden scalar. -/
+private noncomputable def realIdealSendB (gen : G) (a : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendB then
+      if state.tB + 1 == state.tStar then
+        let gA := a • gen
+        let xA := match state.stA with | .inl x => x | .inr _ => 0
+        set { state with
+          stB := (.inl a : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
+          lastAction := some .sendB, tB := state.tB + 1 }
+        return some (gA, xA • gA)
+      else
+        match ← liftM (ddhCKA.send gen state.stB) with
+        | none => pure none
+        | some (key, ρ, stB') =>
+          set { state with
+            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+            lastAction := some .sendB, tB := state.tB + 1 }
+          return some (ρ, key)
+    else pure none
+
+/-- Idealized A-challenge used in the real-branch bridge.
+At the challenge epoch, it reuses the externally fixed DDH scalar `b` as A's
+post-challenge hidden state. This matches the honest game when the challenge
+send samples `b`. -/
+private noncomputable def realIdealChallA (gen : G) (a b : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .challA && state.tA == state.tStar then
+      let gB := b • gen
+      let gT := (a * b) • gen
+      set { state with
+        stA := (.inl b : F ⊕ G),
+        lastRhoA := some gB, lastKeyA := some gT,
+        lastAction := some .challA, tA := state.tA + 1 }
+      return some (gB, gT)
+    else pure none
+
+/-- Real-branch bridge implementation: same visible DDH embedding as
+`reductionImpl`, but the hidden states at the special B-send / A-challenge
+epochs are synchronized with the corresponding honest-game randomness. -/
+private noncomputable def realIdealImpl (gen : G) (a b : F) :
+    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  (oracleUnif (F ⊕ G) G G
+    + reductionSendA (F := F) gen (a • gen)
+    + oracleRecvA (ddhCKA F G gen)
+    + realIdealSendB (F := F) gen a
+    + oracleRecvB (ddhCKA F G gen))
+  + realIdealChallA (F := F) gen a b
+  + reductionChallB (F := F) (b • gen) ((a * b) • gen)
+  + oracleCorruptA (F ⊕ G) G G
+  + oracleCorruptB (F ⊕ G) G G
+
+/-- The explicit game induced by `realIdealImpl`. -/
+private noncomputable def securityRealIdealGame
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) : ProbComp Bool := do
+  let a ← $ᵗ F
+  let b ← $ᵗ F
+  let x₀ ← $ᵗ F
+  let (b', _) ←
+    (simulateQ (realIdealImpl (F := F) gen a b) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false tStar 1)
+  return b'
+
+/-- First half of the real-branch bridge: the concrete reduction may differ from
+`realIdealImpl` on hidden intermediate state, but these differences remain
+unobservable under strict healing (`ΔCKA = 1`). -/
+private lemma securityReduction_real_to_ideal
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
+    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) adversary tStar] =
+    Pr[= false | securityRealIdealGame (F := F) (G := G) (gen := gen) adversary tStar] := by
+  sorry
+
+/-- Second half of the real-branch bridge: `realIdealImpl` is the honest
+fixed-bit-false game with the two special challenge scalars sampled explicitly
+up front. -/
+private lemma securityReduction_ideal_to_honest
+    (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
+    Pr[= false | securityRealIdealGame (F := F) (G := G) (gen := gen) adversary tStar] =
+    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) adversary tStar] := by
+  sorry
+
 /-- The core bridge for the real branch: the explicit real-DDH reduction game
 matches the explicit fixed-bit CKA game with `b = false`. -/
 private lemma securityReduction_real_bridge
     (adversary : SecurityAdversary (F ⊕ G) G G) (tStar : ℕ) :
     Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) adversary tStar] =
     Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) adversary tStar] := by
-  sorry
+  rw [securityReduction_real_to_ideal (F := F) (G := G) (gen := gen) adversary tStar]
+  exact securityReduction_ideal_to_honest (F := F) (G := G) (gen := gen) adversary tStar
 
 /-- **Real-branch lemma.**
 `Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`. -/
@@ -375,8 +472,11 @@ decomposition of both games over a fair coin:
 
 Hence `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, tStar, 1)`.
 
-**Corruption safety** (`ΔCKA = 1`). After the challenge:
-- The challenged party's state at `tStar + 1` is `.inl x'` (fresh, independent of `a,b`).
+**Corruption safety** (`ΔCKA = 1`, strict healing). After the challenge:
+- The challenged party's state at `tStar + 1` may be a fresh hidden scalar,
+  but corruption is still blocked at that point.
+- Corruption only becomes possible after the challenged party advances once
+  more, by which time the challenge-linked state has been overwritten.
 - The other party's state at `tStar` is `.inr gB` (public DDH component).
 -/
 
