@@ -692,9 +692,9 @@ lemma wp_choose_sumCounts_le_queryBound
             · exact mul_le_mul'
                 le_rfl
                 (by
-                  exact_mod_cast
-                    (sum_counts_le_queryBound_of_mem_support_run_hidingChoose
-                      (M := M) (S := S) (C := C) A hqchoose))
+                  have h := sum_counts_le_queryBound_of_mem_support_run_hidingChoose
+                    (M := M) (S := S) (C := C) A hqchoose
+                  erw [← Nat.cast_sum]; exact_mod_cast h)
             · rw [probOutput_eq_zero_of_not_mem_support hqchoose]
               simp
     _ = t := by
@@ -1165,8 +1165,8 @@ lemma sum_wp_countIncrements_le_queryBound_of_run_hidingImplCountAll
               omega
             exact mul_le_mul'
               le_rfl
-              (by
-                exact_mod_cast hdiff)
+              (by simp_rw [← natCast_sub]; erw [← Nat.cast_sum]
+                  exact_mod_cast hdiff)
           · rw [probOutput_eq_zero_of_not_mem_support hz]
             simp
     _ = (n : ℝ≥0∞) := by
@@ -1235,7 +1235,7 @@ lemma sum_wp_countIncrementIndicators_le_queryBound_of_run_hidingImplCountAll
                 have hnat : 1 ≤ ∑ m : M, qc (m, s) := by
                   omega
                 simp only [OracleComp.ProgramLogic.propInd, hslt, ↓reduceIte, ge_iff_le]
-                exact_mod_cast hnat
+                erw [← Nat.cast_sum]; exact_mod_cast hnat
               · simp [OracleComp.ProgramLogic.propInd, hslt]
             have htotal :
                 (∑ ms : M × S, qc ms) ≤ n := by
@@ -1255,15 +1255,16 @@ lemma sum_wp_countIncrementIndicators_le_queryBound_of_run_hidingImplCountAll
                 _ = ∑ ms : M × S, qc ms := by
                   symm
                   simp [Fintype.sum_prod_type]
-            have hswap' :
-                (∑ s : S, ∑ m : M, qc (m, s) : ℝ≥0∞) =
-                  ∑ ms : M × S, qc ms := by
-              exact_mod_cast hswap
-            have htotal' : (∑ ms : M × S, qc ms : ℝ≥0∞) ≤ n := by
-              exact_mod_cast htotal
+            have h_nat : (∑ s : S, ∑ m : M, qc (m, s)) ≤ n := hswap ▸ htotal
+            have cast_sum_inner : ∀ s : S,
+                (∑ m : M, (↑(qc (m, s)) : ℝ≥0∞)) = ↑(∑ m : M, qc (m, s)) :=
+              fun s => by erw [← Nat.cast_sum]
+            have h_bound : (∑ s : S, ∑ m : M, qc (m, s) : ℝ≥0∞) ≤ n := by
+              simp_rw [cast_sum_inner]
+              erw [← Nat.cast_sum]; exact_mod_cast h_nat
             exact mul_le_mul'
               le_rfl
-              (le_trans hcoordSum (by simpa [hswap'] using htotal'))
+              (le_trans hcoordSum h_bound)
           · rw [probOutput_eq_zero_of_not_mem_support hz]
             simp
     _ = (n : ℝ≥0∞) := by
