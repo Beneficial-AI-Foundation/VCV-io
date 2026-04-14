@@ -60,24 +60,22 @@ The bound includes:
 * an explicit DLog reduction target;
 * the standard forking-lemma loss term `eps * (eps / (qH + 1) - 1 / |F|)`.
 
-Because Schnorr has perfect HVZK (`ζ_zk = 0`), the simulation loss vanishes and the
+Because Schnorr has perfect HVZK, the simulation loss vanishes and the
 CMA advantage coincides with the NMA advantage. -/
 theorem schnorrSignature_euf_cma (g : G) (hg : Function.Bijective (· • g : F → G))
     (M : Type) [DecidableEq M]
     (adv : SignatureAlg.unforgeableAdv (schnorrSignature F G g hg M))
-    (qS qH : ℕ)
-    (hQ : ∀ pk, FiatShamir.signHashQueryBound (M := M) (PC := G) (Ω := F)
-      (S' := G × F) (oa := adv.main pk) qS qH) :
+    (qBound : ℕ)
+    (hQ : ∀ pk, FiatShamir.hashQueryBound (M := M) (PC := G) (Ω := F)
+      (S' := G × F) (oa := adv.main pk) qBound) :
     ∃ reduction : DLogAdversary F G,
-      let eps := adv.advantage (FiatShamir.runtime (PC := G) (Ω := F) M) -
-        ENNReal.ofReal (qS * (0 : ℝ))
-      eps * (eps / (qH + 1 : ENNReal) - FiatShamir.challengeSpaceInv F) ≤
+      let eps := adv.advantage (FiatShamir.runtime (PC := G) (Ω := F) M)
+      eps * (eps / (qBound + 1 : ENNReal) - FiatShamir.challengeSpaceInv F) ≤
         Pr[= true | dlogExp g reduction] := by
   obtain ⟨red, hred⟩ := FiatShamir.euf_cma_bound (schnorrSigma F G g) (dlogGenerable g hg) M
     (schnorrSigma_speciallySound F G g) (schnorrSimTranscript F G g)
-    (ζ_zk := 0) le_rfl
-    ((SigmaProtocol.perfectHVZK_iff_hvzk_zero _ _).mp (schnorrSigma_hvzk F G g))
-    adv qS qH hQ
+    (schnorrSigma_hvzk F G g)
+    adv qBound hQ
   refine ⟨fun _ pk => red pk, hred.trans (le_of_eq ?_)⟩
   simp only [hardRelationExp, dlogExp]
   rw [show Pr[= true | ($ᵗ G : ProbComp G) >>= fun pk =>
