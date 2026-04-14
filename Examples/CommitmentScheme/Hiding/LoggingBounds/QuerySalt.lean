@@ -101,7 +101,7 @@ lemma sum_querySaltIndicators_le_logLength
   have hcounts :
       (∑ s : S,
         QueryLog.countQ log (fun t : (CMOracle M S C).Domain => t.2 = s) : ℝ≥0∞) = log.length := by
-    exact_mod_cast sum_querySaltCounts_eq_length (M := M) (S := S) (C := C) log
+    erw [← Nat.cast_sum]; exact_mod_cast sum_querySaltCounts_eq_length (M := M) (S := S) (C := C) log
   refine le_trans
     (sum_chooseHitIndicators_le_sumCounts
       (counts := fun s => QueryLog.countQ log (fun t : (CMOracle M S C).Domain => t.2 = s))) ?_
@@ -781,14 +781,7 @@ lemma wp_querySaltIndicator_cached_logging_cacheQuery_eq_of_no_other_salt_entrie
                   (liftM (query (spec := CMOracle M S C) t) >>= fun u =>
                     pure (u, (cache₀.cacheQuery (m, s) cm).cacheQuery t u) :
                       OracleComp (CMOracle M S C) (C × QueryCache (CMOracle M S C))) := by
-              simp only [cachingOracle.apply_eq, liftM, MonadLiftT.monadLift, MonadLift.monadLift,
-                StateT.run_bind, StateT.run_get, pure_bind, hcache_none]
-              change (StateT.lift
-                  (PFunctor.FreeM.lift (query (spec := CMOracle M S C) t))
-                  (cache₀.cacheQuery (m, s) cm) >>= _) = _
-              simp only [StateT.lift, bind_assoc, pure_bind,
-                modifyGet, MonadState.modifyGet, MonadStateOf.modifyGet,
-                StateT.modifyGet, StateT.run]
+              simp [cachingOracle.apply_eq, hcache_none]
             have hmiss_common :
                 (liftM (cachingOracle (spec := CMOracle M S C) t) :
                   StateT (QueryCache (CMOracle M S C))
@@ -796,14 +789,7 @@ lemma wp_querySaltIndicator_cached_logging_cacheQuery_eq_of_no_other_salt_entrie
                   (liftM (query (spec := CMOracle M S C) t) >>= fun u =>
                     pure (u, cache₀.cacheQuery t u) :
                       OracleComp (CMOracle M S C) (C × QueryCache (CMOracle M S C))) := by
-              simp only [cachingOracle.apply_eq, liftM, MonadLiftT.monadLift, MonadLift.monadLift,
-                StateT.run_bind, StateT.run_get, pure_bind, ht]
-              change (StateT.lift
-                (PFunctor.FreeM.lift (query (spec := CMOracle M S C) t))
-                cache₀ >>= _) = _
-              simp only [StateT.lift, bind_assoc, pure_bind,
-                modifyGet, MonadState.modifyGet, MonadStateOf.modifyGet,
-                StateT.modifyGet, StateT.run]
+              simp [cachingOracle.apply_eq, ht]
             rw [hmiss_fresh, hmiss_common, OracleComp.ProgramLogic.wp_bind,
               OracleComp.ProgramLogic.wp_bind]
             simp_rw [OracleComp.ProgramLogic.wp_pure]
@@ -1124,7 +1110,7 @@ theorem sum_probEvent_hidingBad_le [Finite M] {AUX : Type} {t : ℕ}
                           exact add_le_add hhit hfresh
                     _ = t := by
                           have hcast : (∑ s : S, qchoose.2.2 s : ℝ≥0∞) ≤ t := by
-                            exact_mod_cast hcounts
+                            erw [← Nat.cast_sum]; exact_mod_cast hcounts
                           rw [add_comm, Nat.cast_sum]
                           exact tsub_add_cancel_of_le hcast
                 · rw [probOutput_eq_zero_of_not_mem_support hqchoose]
