@@ -267,16 +267,22 @@ def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
 
 Following [ACD19, Def. 13, Fig. 3], corruption is allowed iff `allowCorr ∨ finished`:
 - `allowCorr` : `max(tA, tB) + 2 ≤ tStar` (before the challenge window)
-- `finishedP` : `tP ≥ tStar + ΔCKA` (state healed after the challenge)
+- `finishedP` : `tP > tStar + ΔCKA` (state healed after the challenge)
+
+The strict inequality ensures the challenge epoch itself does not count as
+healed — the party must complete `ΔCKA` additional sends before corruption
+is safe.
 -/
 
 /-- Corruption allowed before the challenge window. -/
 def allowCorr (state : GameState St I Rho) : Bool :=
   max state.tA state.tB + 2 ≤ state.tStar
 
-/-- Party P has healed: `tP ≥ t* + ΔCKA`. -/
-def finishedA (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA ≤ state.tA
-def finishedB (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA ≤ state.tB
+/-- Party A has healed: `tA > t* + ΔCKA` (strict: challenge epoch excluded). -/
+def finishedA (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA < state.tA
+
+/-- Party B has healed: `tB > t* + ΔCKA` (strict: challenge epoch excluded). -/
+def finishedB (state : GameState St I Rho) : Bool := state.tStar + state.deltaCKA < state.tB
 
 /-- `O-Corrupt-A`: return A's state if `allowCorr ∨ finishedA`. -/
 def oracleCorruptA (St I Rho : Type) :
