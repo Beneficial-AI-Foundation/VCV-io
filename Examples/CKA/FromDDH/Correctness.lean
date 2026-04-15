@@ -108,7 +108,7 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
       subst correct
       have : z = ((), ⟨.inl y, .inr (y • gen),
           none, none, none, none, b, true,
-          some .recvB, epA, epB, gp⟩) := by
+          some .recvB, epA, epB + 1, gp⟩) := by
         simpa [CKAScheme.oracleRecvB, validStep,
           ddhCKA, ddhCKA.recv, smul_comm x y gen,
           StateT.run_bind, StateT.run_get,
@@ -156,7 +156,7 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
       subst correct
       have : z = ((), ⟨.inr (x • gen), .inl x,
           none, none, none, none, b, true,
-          some .recvA, epA, epB, gp⟩) := by
+          some .recvA, epA + 1, epB, gp⟩) := by
         simpa [CKAScheme.oracleRecvA, validStep,
           ddhCKA, ddhCKA.recv, smul_comm y x gen,
           StateT.run_bind, StateT.run_get,
