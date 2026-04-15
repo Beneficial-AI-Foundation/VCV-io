@@ -25,34 +25,36 @@ with no multiplicative loss.*
 
 ### Why `ΔCKA = 1` is necessary and sufficient
 
-`ΔCKA = 1` means corruption of party `Q` requires `tQ ≥ tStar + 1`: one
-send after the challenge epoch. This is the smallest `ΔCKA` that works —
-`ΔCKA = 0` would allow corrupting `P` immediately after the challenge,
-revealing the challenge-epoch scalar.
+`ΔCKA = 1` means corruption of party `Q` requires `tQ ≥ tStar + ΔCKA`:
+one recv after the challenge epoch. This is the smallest `ΔCKA` that
+works — `ΔCKA = 0` would allow corrupting `P` immediately after the
+challenge, revealing the challenge-epoch scalar.
+
+Following [ACD19, Fig. 3], every oracle (send, recv, chall) increments
+`tP` at the start, so `tP` counts total actions by party `P`. The
+challenge fires when the post-increment counter reaches `tStar`.
 
 Illustration with `P = A` challenged at `tA = tStar`:
 
 ```text
-          A (challenged)                              B
-          ──────────────                              ──
-               │                                       │
-  tA = t*      │  challA: z ←$ F                       │
-               │  A stores z                           │
-               │                                       │
-               │────── ρ = gB, key = gT ──────────────▶│
-               │                                       │  recvB: B stores gB
-               │                                       │
-               │                              tB = t*  │  sendB: x' ←$ F
-               │                                       │  B stores x'
-               │◀── ρ = x'•gen, key = x'•gB ──────────-│
-               │  recvA                                │
-               │                                       │
-  tA = t*+1    │  sendA: y ←$ F                        │
-               │  A stores y  (z overwritten)          │
-               │                                       │
-          ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
-          finishedA (tA ≥ t*+1)     finishedB (tB ≥ t*+1)
-          corruptA reveals y        corruptB reveals x'
+          A (challenged)                                  B
+          ──────────────                                  ──
+               │                                           │
+  tA = t*      │  challA: z ←$ F                           │
+               │  A stores z                               │
+               │                                           │
+               │──── ρ = gB, key = gT ────────────────────▶│
+               │                                  tB++     │  recvB: B stores gB
+               │                                           │
+               │                             tB++, tB = t* │  sendB: x' ←$ F
+               │                                           │  B stores x'
+               │◀── ρ = x'•gen, key = x'•gB ──────────────│
+  tA++         │  recvA: A stores x'•gen                   │
+               │  (z overwritten)                          │
+               │                                           │
+          ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+          finishedA (tA ≥ t*+1)       finishedB (tB ≥ t*+1)
+          corruptA reveals x'•gen     corruptB reveals x'
 ```
 
 At the point corruption is allowed, neither `stA` nor `stB` contains
@@ -138,24 +140,21 @@ private noncomputable def reductionSendB (gen gA : G) :
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
+      let state := { state with tB := state.tB + 1 }
       if isOtherSendBeforeChall state then
-        -- Embed: output (aG, xA·aG) instead of (y·G, y·xA·G).
-        -- stA = .inl xA from A's last send; .inr branch unreachable.
         let xA := match state.stA with | .inl x => x | .inr _ => 0
-        -- Fresh y for stB only (output uses aG, not y).
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
           stB := (.inl y : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
-          lastAction := some .sendB, tB := state.tB + 1 }
+          lastAction := some .sendB }
         return some (gA, xA • gA)
       else
-        -- All other epochs: honest B-send.
         match ← liftM (ddhCKA.send gen state.stB) with
         | none => pure none
         | some (key, ρ, stB') =>
           set { state with
             stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-            lastAction := some .sendB, tB := state.tB + 1 }
+            lastAction := some .sendB }
           return some (ρ, key)
     else pure none
 
@@ -174,24 +173,21 @@ private noncomputable def reductionSendA (gen gA : G) :
   fun () => do
     let state ← get
     if validStep state.lastAction .sendA then
+      let state := { state with tA := state.tA + 1 }
       if isOtherSendBeforeChall state then
-        -- Embed: output (aG, xB·aG) instead of (x·G, x·xB·G).
-        -- stB = .inl xB from B's last send; .inr branch unreachable.
         let xB := match state.stB with | .inl x => x | .inr _ => 0
-        -- Fresh y for stA only (output uses aG, not y).
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
           stA := (.inl y : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
-          lastAction := some .sendA, tA := state.tA + 1 }
+          lastAction := some .sendA }
         return some (gA, xB • gA)
       else
-        -- All other epochs: honest A-send.
         match ← liftM (ddhCKA.send gen state.stA) with
         | none => pure none
         | some (key, ρ, stA') =>
           set { state with
             stA := stA', lastRhoA := some ρ, lastKeyA := some key,
-            lastAction := some .sendA, tA := state.tA + 1 }
+            lastAction := some .sendA }
           return some (ρ, key)
     else pure none
 
@@ -209,14 +205,16 @@ private noncomputable def reductionChallA (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challA && isChallengeEpoch state then
-      -- Fresh z for stA only; output is (gB, gT) from DDH tuple.
-      let z ← liftM ($ᵗ F : ProbComp F)
-      set { state with
-        stA := (.inl z : F ⊕ G),
-        lastRhoA := some gB, lastKeyA := some gT,
-        lastAction := some .challA, tA := state.tA + 1 }
-      return some (gB, gT)
+    if validStep state.lastAction .challA then
+      let state := { state with tA := state.tA + 1 }
+      if isChallengeEpoch state then
+        let z ← liftM ($ᵗ F : ProbComp F)
+        set { state with
+          stA := (.inl z : F ⊕ G),
+          lastRhoA := some gB, lastKeyA := some gT,
+          lastAction := some .challA }
+        return some (gB, gT)
+      else pure none
     else pure none
 
 /-- **O-Chall-B** (modified for DDH reduction, symmetric to `reductionChallA`).
@@ -229,13 +227,16 @@ private noncomputable def reductionChallB (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challB && isChallengeEpoch state then
-      let z ← liftM ($ᵗ F : ProbComp F)
-      set { state with
-        stB := (.inl z : F ⊕ G),
-        lastRhoB := some gB, lastKeyB := some gT,
-        lastAction := some .challB, tB := state.tB + 1 }
-      return some (gB, gT)
+    if validStep state.lastAction .challB then
+      let state := { state with tB := state.tB + 1 }
+      if isChallengeEpoch state then
+        let z ← liftM ($ᵗ F : ProbComp F)
+        set { state with
+          stB := (.inl z : F ⊕ G),
+          lastRhoB := some gB, lastKeyB := some gT,
+          lastAction := some .challB }
+        return some (gB, gT)
+      else pure none
     else pure none
 
 /-- Oracle implementation `R(g, aG, bG, gT)` for the DDH reduction.
@@ -354,26 +355,21 @@ private noncomputable def hybridSendB (gen : G) (a : F) :
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
+      let state := { state with tB := state.tB + 1 }
       if isOtherSendBeforeChall state then
-        -- At tB = t* - 1, state (stA, stB) = (xA, xA • gen).
-        -- gA = a • gen
         let gA := a • gen
-        -- xA is the scalar from A's last send
         let xA := match state.stA with | .inl x => x | .inr _ => 0
-        -- output: (ρ, key) = (a • gen, xA • a • gen)
-        -- stB := a  (DDH scalar, not fresh y as in the reduction)
         set { state with
           stB := (.inl a : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
-          lastAction := some .sendB, tB := state.tB + 1 }
+          lastAction := some .sendB }
         return some (gA, xA • gA)
       else
-        -- All other epochs: honest B-send
         match ← liftM (ddhCKA.send gen state.stB) with
         | none => pure none
         | some (key, ρ, stB') =>
           set { state with
             stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-            lastAction := some .sendB, tB := state.tB + 1 }
+            lastAction := some .sendB }
           return some (ρ, key)
     else pure none
 
@@ -385,18 +381,17 @@ private noncomputable def hybridChallA (gen : G) (a b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challA && isChallengeEpoch state then
-      -- At tA = t*, state (stA, stB) = (gA, y) from preceding recvA / sendB.
-      -- gB = b • gen,  gT = (a · b) • gen
-      let gB := b • gen
-      let gT := (a * b) • gen
-      -- output: (ρ, key) = (b • gen, (a · b) • gen)
-      -- stA := b  (DDH scalar, not fresh z as in the reduction)
-      set { state with
-        stA := (.inl b : F ⊕ G),
-        lastRhoA := some gB, lastKeyA := some gT,
-        lastAction := some .challA, tA := state.tA + 1 }
-      return some (gB, gT)
+    if validStep state.lastAction .challA then
+      let state := { state with tA := state.tA + 1 }
+      if isChallengeEpoch state then
+        let gB := b • gen
+        let gT := (a * b) • gen
+        set { state with
+          stA := (.inl b : F ⊕ G),
+          lastRhoA := some gB, lastKeyA := some gT,
+          lastAction := some .challA }
+        return some (gB, gT)
+      else pure none
     else pure none
 
 /-- Hybrid oracle implementation: same visible DDH embedding as
@@ -432,8 +427,8 @@ where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridImpl(g, a, b)`.
 embedding epochs: `R` draws fresh `y, z ←$ F` while `H` uses the DDH
 scalars `a, b`. The map `π` substitutes the fresh scalars with the DDH ones:
 
-- `stB` window (`tB = t*`, after sendB): `π(stB) = a` where `stB = y` in `R`
-- `stA` window (`tA = t* + 1`, after challA): `π(stA) = b` where `stA = z` in `R`
+- `stB` window (`tB = t* - 1`, after sendB): `π(stB) = a` where `stB = y` in `R`
+- `stA` window (`tA = t*`, after challA): `π(stA) = b` where `stA = z` in `R`
 
 All other fields (outputs, counters, flags) pass through unchanged. -/
 private noncomputable def hybridProj (a b : F)
@@ -441,7 +436,7 @@ private noncomputable def hybridProj (a b : F)
   { s with
     stA := match s.stA with
       | .inl _ =>
-          if s.tA == s.tStar + 1 &&
+          if s.tA == s.tStar &&
               (s.lastAction = some .challA ||
                s.lastAction = some .recvB ||
                s.lastAction = some .sendB)
@@ -450,7 +445,7 @@ private noncomputable def hybridProj (a b : F)
       | .inr _ => s.stA
     stB := match s.stB with
       | .inl _ =>
-          if s.tB == s.tStar &&
+          if s.tB == s.tStar - 1 &&
               (s.lastAction = some .sendB ||
                s.lastAction = some .recvA ||
                s.lastAction = some .sendA ||
@@ -479,7 +474,7 @@ private lemma hybridProj_query_map_eq (gp : GameParams) (a b : F)
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
 `hybridImpl` on hidden intermediate state, but these differences remain
-unobservable under strict healing (`ΔCKA = 1`). -/
+unobservable under the healing predicate (`ΔCKA = 1`). -/
 private lemma securityReduction_real_to_hybrid (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] =
