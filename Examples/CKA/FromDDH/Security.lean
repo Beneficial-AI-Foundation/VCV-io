@@ -141,7 +141,7 @@ private noncomputable def reductionSendB (gen gA : G) :
     let state ← get
     if validStep state.lastAction .sendB then
       let state := { state with tB := state.tB + 1 }
-      if isOtherSendBeforeChall state then
+      if state.challengedParty == .A && isOtherSendBeforeChall state then
         let xA := match state.stA with | .inl x => x | .inr _ => 0
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
@@ -174,7 +174,7 @@ private noncomputable def reductionSendA (gen gA : G) :
     let state ← get
     if validStep state.lastAction .sendA then
       let state := { state with tA := state.tA + 1 }
-      if isOtherSendBeforeChall state then
+      if state.challengedParty == .B && isOtherSendBeforeChall state then
         let xB := match state.stB with | .inl x => x | .inr _ => 0
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
@@ -356,7 +356,7 @@ private noncomputable def hybridSendA (gen : G) (a : F) :
     let state ← get
     if validStep state.lastAction .sendA then
       let state := { state with tA := state.tA + 1 }
-      if isOtherSendBeforeChall state then
+      if state.challengedParty == .B && isOtherSendBeforeChall state then
         let gA := a • gen
         let xB := match state.stB with | .inl x => x | .inr _ => 0
         set { state with
@@ -384,7 +384,7 @@ private noncomputable def hybridSendB (gen : G) (a : F) :
     let state ← get
     if validStep state.lastAction .sendB then
       let state := { state with tB := state.tB + 1 }
-      if isOtherSendBeforeChall state then
+      if state.challengedParty == .A && isOtherSendBeforeChall state then
         let gA := a • gen
         let xA := match state.stA with | .inl x => x | .inr _ => 0
         set { state with
@@ -560,6 +560,28 @@ private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
       simp [hybridProj, initGameState, GameState.challengedParty, hcp]
   · refine ⟨rfl, ?_⟩
     exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
+while leaving their respective states unchanged. -/
+private lemma hybridRel_query_unif (a b : F) (t : unifSpec.Domain)
+    (sR sH : GameState (F ⊕ G) G G)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((oracleUnif (F ⊕ G) G G t).run sR)
+      ((oracleUnif (F ⊕ G) G G t).run sH)
+      (fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
+  simpa [oracleUnif] using
+    (OracleComp.ProgramLogic.Relational.relTriple_map
+      (R := fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2)
+      (f := fun u => (u, sR)) (g := fun u => (u, sH))
+      (OracleComp.ProgramLogic.Relational.relTriple_post_mono
+        (OracleComp.ProgramLogic.Relational.relTriple_query (spec₁ := unifSpec) t)
+        (fun _ _ hEq => by
+          dsimp [OracleComp.ProgramLogic.Relational.EqRel] at hEq
+          subst hEq
+          exact ⟨rfl, hrel⟩)))
 
 /-- One-step relational property for the real/hybrid bridge.
 
