@@ -523,22 +523,57 @@ private noncomputable def hybridProj (a b : F)
           else s.stB
       | _, .inr _ => s.stB }
 
-/-- One-step projection property for `reductionOracleImpl` in the real branch.
+/-- Hybrid-side reachability invariant. This is the same four-phase invariant as the
+correctness proof: hybrid states are always honest DDH-CKA states with `correct = true`. -/
+private def hybridInvariant (s : GameState (F ⊕ G) G G) : Prop :=
+  s.correct = true ∧
+  match s.lastAction with
+  | none | some .recvA =>
+    ∃ x : F, s.stA = .inr (x • gen) ∧ s.stB = .inl x ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
+  | some .sendA | some .challA =>
+    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
+      s.lastRhoA = some (y • gen) ∧ s.lastRhoB = none ∧
+      s.lastKeyA = some (y • (x • gen)) ∧ s.lastKeyB = none
+  | some .recvB =>
+    ∃ y : F, s.stA = .inl y ∧ s.stB = .inr (y • gen) ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
+  | some .sendB | some .challB =>
+    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
+      s.lastRhoA = none ∧ s.lastRhoB = some (x • gen) ∧
+      s.lastKeyA = none ∧ s.lastKeyB = some (x • (y • gen))
 
-Let `π := hybridProj a b` (state projection),
-`R := reductionOracleImpl(g, aG, bG, abG)` (concrete reduction oracles),
-`H := hybridImpl(g, a, b)` (hybrid oracles). Then:
+/-- Relational invariant between reduction and hybrid states. The hybrid state is the
+projection of the reduction state and itself satisfies the honest four-phase invariant. -/
+private def hybridRel (a b : F)
+    (sR sH : GameState (F ⊕ G) G G) : Prop :=
+  sH = hybridProj (F := F) a b sR ∧ hybridInvariant (F := F) (G := G) (gen := gen) sH
 
-    `(id × π)(R(q, s)) = H(q, π(s))`
+/-- The projected initial state is already an honest hybrid state. -/
+private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
+    hybridRel (F := F) (G := G) (gen := gen) a b
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp) := by
+  constructor
+  · symm
+    cases hcp : gp.challengedParty <;>
+      simp [hybridProj, initGameState, GameState.challengedParty, hcp]
+  · refine ⟨rfl, ?_⟩
+    exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
-for any oracle query `q` and game state `s`. -/
-private lemma hybridProj_query_map_eq (gp : GameParams) (a b : F)
+/-- One-step relational property for the real/hybrid bridge.
+
+This is the right local statement for `securityReduction_real_to_hybrid`:
+the bridge only needs to hold on related reachable states, not on arbitrary game states. -/
+private lemma hybridRel_query (gp : GameParams) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
-    (s : GameState (F ⊕ G) G G) :
-    Prod.map id (hybridProj (F := F) a b) <$>
-      ((reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen)) t).run s =
-    ((hybridImpl (F := F) gen a b) t).run
-      (hybridProj (F := F) a b s) := by
+    (sR sH : GameState (F ⊕ G) G G)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      (((reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen)) t).run sR)
+      (((hybridImpl (F := F) gen a b) t).run sH)
+      (fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
   sorry
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
@@ -555,25 +590,19 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
   intro b
   refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
   intro x₀
-  have hinit :
-      hybridProj (F := F) a b
-        (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp) =
-      initGameState (.inr (x₀ • gen)) (.inl x₀) false gp := by
-    cases hcp : gp.challengedParty with
-    | A =>
-        simp [hybridProj, initGameState, GameState.challengedParty, hcp]
-    | B =>
-        simp [hybridProj, initGameState, GameState.challengedParty, hcp]
+  have hrel_init :=
+    hybridRel_init (F := F) (G := G) (gen := gen) gp a b x₀
   have hrun' :=
-    OracleComp.ProgramLogic.Relational.run'_simulateQ_eq_of_query_map_eq
+    OracleComp.ProgramLogic.Relational.relTriple_simulateQ_run'
       (impl₁ := reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen))
       (impl₂ := hybridImpl (F := F) gen a b)
-      (proj := hybridProj (F := F) a b)
-      (hproj := hybridProj_query_map_eq (F := F) (G := G) (gen := gen) gp a b)
+      (R_state := hybridRel (F := F) (G := G) (gen := gen) a b)
       adversary
+      (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp a b)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
-  rw [hinit] at hrun'
-  exact congrArg (fun mx => Pr[= false | mx]) hrun'
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+      hrel_init
+  exact OracleComp.ProgramLogic.Relational.probOutput_eq_of_relTriple_eqRel hrun' false
 
 /-- Second half of the real-branch bridge: `hybridImpl` is the honest
 fixed-bit-false game with the two special challenge scalars sampled explicitly
