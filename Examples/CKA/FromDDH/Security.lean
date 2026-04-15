@@ -12,97 +12,99 @@ https://eprint.iacr.org/2018/1037.pdf
 
 **Theorem** (`ddhCKA_security`). *Let `G` be a group with generator `gen` such
 that `· • gen : F → G` is bijective. If every DDH adversary has guess-advantage
-at most `ε`, then for any CKA adversary `𝒜` and any `tStar : ℕ`:*
+at most `ε`, then for any CKA adversary `𝒜`, challenge epoch `tStar`,
+and challenged party `P ∈ {A, B}`:*
 
-  `securityAdvantage(ddhCKA, 𝒜, tStar, ΔCKA := 1) ≤ ε`
+  `securityAdvantage(ddhCKA, 𝒜, ⟨tStar, 1, P⟩) ≤ ε`
 
-*where `securityAdvantage = |Pr[b = b' | securityExp] - 1/2|`.
+*where `securityAdvantage = |Pr[b = b' | securityExp] - 1/2|` and `ΔCKA = 1`.
 More precisely, there is an explicit DDH adversary
-`ℬ = securityReduction 𝒜 tStar` such that
-`securityAdvantage(ddhCKA, 𝒜, tStar, 1) ≤ ddhGuessAdvantage(gen, ℬ)`,
+`ℬ = securityReduction ⟨tStar, 1, P⟩ 𝒜` such that
+`securityAdvantage(ddhCKA, 𝒜, ⟨tStar, 1, P⟩) ≤ ddhGuessAdvantage(gen, ℬ)`,
 with no multiplicative loss.*
+
+### Why `ΔCKA = 1` is necessary and sufficient
+
+`ΔCKA = 1` means corruption of party `Q` requires `tQ ≥ tStar + 1`: one
+send after the challenge epoch. This is the smallest `ΔCKA` that works —
+`ΔCKA = 0` would allow corrupting `P` immediately after the challenge,
+revealing the challenge-epoch scalar.
+
+Illustration with `P = A` challenged at `tA = tStar`:
+
+```text
+          A (challenged)                              B
+          ──────────────                              ──
+               │                                       │
+  tA = t*      │  challA: z ←$ F                       │
+               │  A stores z                           │
+               │                                       │
+               │────── ρ = gB, key = gT ──────────────▶│
+               │                                       │  recvB: B stores gB
+               │                                       │
+               │                              tB = t*  │  sendB: x' ←$ F
+               │                                       │  B stores x'
+               │◀── ρ = x'•gen, key = x'•gB ──────────-│
+               │  recvA                                │
+               │                                       │
+  tA = t*+1    │  sendA: y ←$ F                        │
+               │  A stores y  (z overwritten)          │
+               │                                       │
+          ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+          finishedA (tA ≥ t*+1)     finishedB (tB ≥ t*+1)
+          corruptA reveals y        corruptB reveals x'
+```
+
+At the point corruption is allowed, neither `stA` nor `stB` contains
+information about the challenge key `gT`.
 
 ## Proof overview — reduction diagram
 
-The adversary `𝒜` challenges exactly one party at epoch `t*` by calling
-either `O-Chall-A` or `O-Chall-B`. `reductionOracleImpl` handles both
-(only one fires per execution). The diagram below illustrates the case
-where `𝒜` challenges party A; the party-B case is symmetric.
-Given a DDH triple `(gen, gA, gB, gT)` with
-`gA = a • gen`, `gB = b • gen`, and `gT = c • gen` where `c = a·b` (real) or
-`c` random:
+The adversary `𝒜` challenges exactly one party at epoch `t*`. We show the
+case where `𝒜` calls `O-Chall-A` at `tA = t*`; the `O-Chall-B` case is
+symmetric.
+
+Given a DDH triple `(gen, gA, gB, gT)` with `gA = a • gen`,
+`gB = b • gen`, and `gT = c • gen` where `c = a·b` (real) or `c` is uniform:
 
 ```text
- DDH Challenger                       DDH Adversary ℬA = securityReductionA(𝒜, tStar)
-┌──────────────┐                     ┌──────────────────────────────────────────────┐
-│              │  (gen,gA,gB,gT)     │                                              │
-│  gA = a•gen  │────────────────────▶│   x₀ ← $F                                   │
-│  gB = b•gen  │                     │   stA₀ := .inr (x₀•gen),  stB₀ := .inl x₀   │
-│  gT = c•gen  │                     │                                              │
-│              │                     │   Simulate CKA oracles for adversary 𝒜 :     │
-│  c = a·b     │                     │                                              │
-│  or random   │                     │   ┌────────────────────────────────────────┐  │
-│              │                     │   │         CKA Adversary 𝒜               │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  queries: sendA, sendB, recvA, recvB,  │  │
-│              │                     │   │           challA, corruptA, corruptB   │  │
-│              │                     │   └──────────────┬─────────────────────────┘  │
-│              │                     │                  │ oracle calls               │
-│              │                     │   ┌──────────────▼─────────────────────────┐  │
-│              │                     │   │       Oracle simulation by ℬ           │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  ① tB < tStar-1 :  honest send/recv   │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  ② tB = tStar-1 :  embed gA           │  │
-│              │                     │   │     msg := gA,  key := xA • gA        │  │
-│              │                     │   │     (xA = party A's exponent from stA) │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  ③ tA = tStar (challA) : embed DDH    │  │
-│              │                     │   │     msg := gB,  key := gT             │  │
-│              │                     │   │     real ⟹ gT = b•(a•gen) = honest   │  │
-│              │                     │   │     rand ⟹ gT = uniform              │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  ④ tB = tStar :  honest send from     │  │
-│              │                     │   │     .inr gB (no modification needed)   │  │
-│              │                     │   │     msg = x'•gen,  key = x'•gB        │  │
-│              │                     │   │                                        │  │
-│              │                     │   │  ⑤ tA,tB > tStar :  honest send/recv  │  │
-│              │                     │   └────────────────────────────────────────┘  │
-│              │                     │                                              │
-│              │     !b'             │   b' := 𝒜's guess for hidden bit             │
-│              │◀────────────────────│   return !b'  (negate for bit convention)     │
-│              │                     │                                              │
-└──────────────┘                     └──────────────────────────────────────────────┘
+ DDH Challenger                 DDH Adversary ℬ = securityReduction gp 𝒜
+┌──────────────┐               ┌──────────────────────────────────────────────────────────┐
+│              │ (gen,gA,gB,gT)│ sample x₀ ←$ F                                          │
+│  gA = a•gen  │──────────────▶│ init A with g₀ := x₀ • gen, init B with x₀              │
+│  gB = b•gen  │               │                                                          │
+│  gT = c•gen  │               │ simulate CKA oracles for 𝒜 (honest except below):       │
+│              │               │                                                          │
+│  c = a·b     │               │          Honest CKA    │ Hybrid        │ Reduction       │
+│  or random   │               │ ─────────────────────────────────────────────────────────│
+│              │               │ O-Send-B, tB = t* - 1, state (xA, xA • gen):             │
+│              │               │   y ←$ F               │               │                 │
+│              │               │   ρ   = y • gen        │ ρ   = gA      │ ρ   = gA        │
+│              │               │   key = y • xA • gen   │ key = xA • gA │ key = xA • gA   │
+│              │               │   stB := y             │ stB := a      │ stB := y        │
+│              │               │ ─────────────────────────────────────────────────────────│
+│              │               │ recvA delivers ρ from above:                              │
+│              │               │   stA := y • gen       │ stA := gA     │ stA := gA       │
+│              │               │ ─────────────────────────────────────────────────────────│
+│              │               │ O-Chall-A, tA = t*, state (stA, stB) from above:         │
+│              │               │   x ←$ F               │               │                 │
+│              │               │   ρ   = x • gen        │ ρ   = gB      │ ρ   = gB        │
+│              │               │   key = x • stA        │ key = gT      │ key = gT        │
+│              │               │   stA := x             │ stA := b      │ stA := z        │
+│              │               │ · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·│
+│              │               │   real: gT = b • gA                random: gT ←$ G       │
+│              │               │ ─────────────────────────────────────────────────────────│
+│              │               │ all later queries: honest in all three                   │
+│              │               │                                                          │
+│              │     !b'       │ output !b', where b' is 𝒜's challenge guess              │
+│              │◀──────────────│                                                          │
+└──────────────┘               └──────────────────────────────────────────────────────────┘
 ```
 
-**Key identities.**
-- Stage ②: The honest B-send returns `(y • gen, (y · xA) • gen)` for fresh
-  `y ← $F`. The reduction returns `(a • gen, (xA · a) • gen)` where `a` is
-  from the DDH challenge. Both are `(α • gen, (α · xA) • gen)` for uniform
-  `α` (`α = y` vs `α = a`), so the distributions are identical.
-- Stage ③ (real): `gT = (a·b)•gen = b•(a•gen) = b•gA` by `smul_comm`,
-  which is the honest CKA key when party A sends from state `.inr gA`.
-- Stage ③ (random): `gT = c•gen` for uniform `c`, matching `$ᵗ G` when
-  `· • gen` is bijective.
-- Stage ④ needs no modification: party B's state after receiving `gB` is `.inr gB`,
-  so the honest send computes `(x'•gen, x'•gB)`.
-
-**Bit convention.** The DDH and CKA games use opposite polarities for `true`:
-- DDH (`ddhExp`): `bit = true` ↦ real triple (`c = a·b`).
-- CKA (`oracleChallA`): `b = true` ↦ random key (`outKey ← $ᵗ I`).
-
-The reduction embeds real DDH as `b = false` (real key) and random DDH as
-`b = true` (random key). A correct CKA guess `b'` therefore has the opposite
-polarity from the correct DDH answer, so the reduction returns `!b'`.
-
-**Post-compromise security** (`ΔCKA = 1`, strict healing). Corruption of the
-challenged party is only allowed once that party has advanced past
-`tStar + 1`, so the challenge-linked sender state is overwritten before it
-can be revealed. Concretely:
-- Party A's challenge state at epoch `tStar + 1` may be a fresh hidden scalar.
-- By the time `corruptA` is allowed, A has already advanced again and this
-  temporary state has been overwritten by honest protocol steps.
-- Party B's state from epoch `tStar` is `.inr gB` (public DDH component).
+**Bit convention.** DDH uses `true` for the real branch, whereas the CKA game
+uses `true` for the random branch. Thus real DDH corresponds to `b = false`
+in the CKA experiment, random DDH corresponds to `b = true`, and the
+reduction must return `!b'`.
 -/
 
 open OracleSpec OracleComp ENNReal
@@ -257,12 +259,12 @@ private noncomputable def reductionOracleImpl (gen gA gB gT : G) :
   + oracleCorruptB (F ⊕ G) G G
 
 /-- DDH adversary obtained by reduction from a CKA security adversary
-[ACD19, Theorem 3], parameterized by the challenged party `cp`.
+[ACD19, Theorem 3], parameterized by `gp : GameParams`.
 
 Given a DDH triple `(gen, gA, gB, gT)`, the reduction:
 1. Initialises the CKA game honestly: `x₀ ← $ᵗ F`.
-2. Runs the adversary against `reductionOracleImpl cp`, which embeds `aG` into
-   the other party's send and `(gB, gT)` into `cp`'s challenge oracle.
+2. Runs the adversary against `reductionOracleImpl`, which embeds `aG` into
+   the other party's send and `(gB, gT)` into `gp.challengedParty`'s challenge.
 3. Outputs `!b'` (negated CKA guess) to align bit conventions. -/
 noncomputable def securityReduction (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : DDHAdversary F G :=
@@ -274,36 +276,26 @@ noncomputable def securityReduction (gp : GameParams)
 
 /-! ### Simulation: each DDH branch maps to the corresponding CKA branch
 
-The main subgoal is to show that the adversary `𝒜` has the same view
-whether it interacts with the real CKA game or with the reduction's
-simulation. Writing `CKA(b)` for the CKA security game with fixed bit `b`,
-and `DDH_real`, `DDH_rand` for the two DDH branches, the reduction `ℬ`
-must satisfy:
+The goal is to show that the adversary `𝒜` has the same view whether it interacts with the
+real CKA game or with the reduction's simulation.
 
-    `Pr[ℬ = 1 | DDH_real]  = Pr[𝒜 = 0 | CKA(b = 0)]`    … (real branch)
-    `Pr[ℬ = 1 | DDH_rand]  = Pr[𝒜 = 0 | CKA(b = 1)]`    … (rand branch)
+The reduction `ℬ` returns `¬b'`. We show (see the module overview above):
 
-For the real branch, writing
-`G_R := securityReductionRealGame` (runs `𝒜` against `reductionOracleImpl`)
-and `G_CKA := securityExpFixedBitFalseGame` (the honest CKA game with `b = 0`),
-the proof factors into:
+    Pr[ℬ ⇒ 1 | DDH_real] = Pr[𝒜 ⇒ 0 | CKA^{b=0}]   … (real)
+    Pr[ℬ ⇒ 1 | DDH_rand] = Pr[𝒜 ⇒ 0 | CKA^{b=1}]   … (rand)
 
-    `Pr[ℬ = 1 | DDH_real]`
-      `= Pr[G_R = 0]`            (unfold + `probOutput_not_map`)
-      `= Pr[G_CKA = 0]`          (lemma `securityReduction_real_bridge`)
-      `= Pr[CKA(b = 0) = 0]`     (unfold `securityExpFixedBit`)
+The **real branch** uses three games (columns in the diagram above):
 
-The core step `Pr[G_R = 0] = Pr[G_CKA = 0]` factors as:
+- `G_R`   — `securityReductionRealGame`:  `𝒜` vs `reductionOracleImpl` (Reduction)
+- `G_H`   — `securityHybridGame`:       `𝒜` vs `hybridImpl`          (Hybrid)
+- `G_CKA` — `securityExpFixedBitFalseGame`: `𝒜` vs `ckaSecurityImpl` (Honest CKA)
 
-    `Pr[G_R = 0]  =  Pr[G_I = 0]  =  Pr[G_CKA = 0]`
+    Pr[ℬ ⇒ 1 | DDH_real]
+      = Pr[G_R   ⇒ 0]        (ℬ negates; `probOutput_not_map`)
+      = Pr[G_H   ⇒ 0]        (`securityReduction_real_to_hybrid`)
+      = Pr[G_CKA ⇒ 0]        (`securityReduction_hybrid_to_honest`)  ∎
 
-where `G_I` (`securityRealIdealGame`) runs `𝒜` against `I = realIdealImpl(g, a, b)`.
-`I` and `R` have identical outputs, but `I` sets hidden state to `a, b`
-where `R` draws fresh `y, z ← $F`. The first `=` is by simulation relation
-`π = realIdealProj a b`; the second is by algebraic unfolding.
-
-For the random branch, bijectivity of `· • gen` gives `c • gen ≡ $ᵗ G`,
-which directly equates the reduction's challenge key with a uniform sample.
+The **random branch** follows from bijectivity of `(·) • gen`: `c • gen ≡ $ᵗ G`.
 -/
 
 /-- Auxiliary game `G_real(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
@@ -352,24 +344,30 @@ private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp [initGameState]
 
-/-- Idealized B-send used in the real-branch bridge.
+/-- Hybrid B-send used in the real-branch bridge.
 At the special epoch before `challA`, it reuses the externally fixed DDH scalar
 `a` both for the visible output and for B's next hidden state. This matches the
 honest game instantiated with the corresponding challenge randomness, unlike
 `reductionSendB`, which uses an independent fresh hidden scalar. -/
-private noncomputable def realIdealSendB (gen : G) (a : F) :
+private noncomputable def hybridSendB (gen : G) (a : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
       if isOtherSendBeforeChall state then
+        -- At tB = t* - 1, state (stA, stB) = (xA, xA • gen).
+        -- gA = a • gen
         let gA := a • gen
+        -- xA is the scalar from A's last send
         let xA := match state.stA with | .inl x => x | .inr _ => 0
+        -- output: (ρ, key) = (a • gen, xA • a • gen)
+        -- stB := a  (DDH scalar, not fresh y as in the reduction)
         set { state with
           stB := (.inl a : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
           lastAction := some .sendB, tB := state.tB + 1 }
         return some (gA, xA • gA)
       else
+        -- All other epochs: honest B-send
         match ← liftM (ddhCKA.send gen state.stB) with
         | none => pure none
         | some (key, ρ, stB') =>
@@ -379,17 +377,21 @@ private noncomputable def realIdealSendB (gen : G) (a : F) :
           return some (ρ, key)
     else pure none
 
-/-- Idealized A-challenge used in the real-branch bridge.
+/-- Hybrid A-challenge used in the real-branch bridge.
 At the challenge epoch, it reuses the externally fixed DDH scalar `b` as A's
 post-challenge hidden state. This matches the honest game when the challenge
 send samples `b`. -/
-private noncomputable def realIdealChallA (gen : G) (a b : F) :
+private noncomputable def hybridChallA (gen : G) (a b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .challA && isChallengeEpoch state then
+      -- At tA = t*, state (stA, stB) = (gA, y) from preceding recvA / sendB.
+      -- gB = b • gen,  gT = (a · b) • gen
       let gB := b • gen
       let gT := (a * b) • gen
+      -- output: (ρ, key) = (b • gen, (a · b) • gen)
+      -- stA := b  (DDH scalar, not fresh z as in the reduction)
       set { state with
         stA := (.inl b : F ⊕ G),
         lastRhoA := some gB, lastKeyA := some gT,
@@ -397,45 +399,44 @@ private noncomputable def realIdealChallA (gen : G) (a b : F) :
       return some (gB, gT)
     else pure none
 
-/-- Real-branch bridge implementation: same visible DDH embedding as
+/-- Hybrid oracle implementation: same visible DDH embedding as
 `reductionOracleImpl`, but the hidden states at the special B-send / A-challenge
-epochs are synchronized with the corresponding honest-game randomness. -/
-private noncomputable def realIdealImpl (gen : G) (a b : F) :
+epochs use the DDH scalars `a, b` instead of fresh randomness. -/
+private noncomputable def hybridImpl (gen : G) (a b : F) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
     + reductionSendA (F := F) gen (a • gen)
     + oracleRecvA (ddhCKA F G gen)
-    + realIdealSendB (F := F) gen a
+    + hybridSendB (F := F) gen a
     + oracleRecvB (ddhCKA F G gen))
-  + realIdealChallA (F := F) gen a b
+  + hybridChallA (F := F) gen a b
   + reductionChallB (F := F) (b • gen) ((a * b) • gen)
   + oracleCorruptA (F ⊕ G) G G
   + oracleCorruptB (F ⊕ G) G G
 
-/-- The explicit game induced by `realIdealImpl`. -/
-private noncomputable def securityRealIdealGame (gp : GameParams)
+/-- The explicit game induced by `hybridImpl`. -/
+private noncomputable def securityHybridGame (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
   let b ← $ᵗ F
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (realIdealImpl (F := F) gen a b) adversary).run
+    (simulateQ (hybridImpl (F := F) gen a b) adversary).run
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
   return b'
 
-/-- State projection `π : GameState → GameState` mapping `reductionOracleImpl`
-states to `realIdealImpl` states.
+/-- State map `π : GameState → GameState` from `R`-states to `H`-states,
+where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridImpl(g, a, b)`.
 
-Let `R := reductionOracleImpl(g, aG, bG, abG)` and `I := realIdealImpl(g, a, b)`.
-`R` and `I` agree on all outputs but diverge on hidden party state at two
-embedding epochs: `R` draws fresh `y, z ← $F` while `I` sets `stB := a` and
-`stA := b`. The projection `π` collapses this:
+`R` and `H` agree on all outputs but diverge on hidden party state at two
+embedding epochs: `R` draws fresh `y, z ←$ F` while `H` uses the DDH
+scalars `a, b`. The map `π` substitutes the fresh scalars with the DDH ones:
 
-- `stB` window (`tB = t*`, after sendB): `π(.inl y) = .inl a`
-- `stA` window (`tA = t* + 1`, after challA): `π(.inl z) = .inl b`
+- `stB` window (`tB = t*`, after sendB): `π(stB) = a` where `stB = y` in `R`
+- `stA` window (`tA = t* + 1`, after challA): `π(stA) = b` where `stA = z` in `R`
 
 All other fields (outputs, counters, flags) pass through unchanged. -/
-private noncomputable def realIdealProj (a b : F)
+private noncomputable def hybridProj (a b : F)
     (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
   { s with
     stA := match s.stA with
@@ -460,28 +461,30 @@ private noncomputable def realIdealProj (a b : F)
 
 /-- One-step projection property for `reductionOracleImpl` in the real branch.
 
-Let `π := realIdealProj a b` (state projection),
+Let `π := hybridProj a b` (state projection),
 `R := reductionOracleImpl(g, aG, bG, abG)` (concrete reduction oracles),
-`I := realIdealImpl(g, a, b)` (idealized real-branch oracles). Then:
+`H := hybridImpl(g, a, b)` (hybrid oracles). Then:
 
-    `(id × π)(R(t, s)) = I(t, π(s))` -/
-private lemma realIdealProj_query_map_eq (gp : GameParams) (a b : F)
+    `(id × π)(R(q, s)) = H(q, π(s))`
+
+for any oracle query `q` and game state `s`. -/
+private lemma hybridProj_query_map_eq (gp : GameParams) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s : GameState (F ⊕ G) G G) :
-    Prod.map id (realIdealProj (F := F) a b) <$>
+    Prod.map id (hybridProj (F := F) a b) <$>
       ((reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen)) t).run s =
-    ((realIdealImpl (F := F) gen a b) t).run
-      (realIdealProj (F := F) a b s) := by
+    ((hybridImpl (F := F) gen a b) t).run
+      (hybridProj (F := F) a b s) := by
   sorry
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
-`realIdealImpl` on hidden intermediate state, but these differences remain
+`hybridImpl` on hidden intermediate state, but these differences remain
 unobservable under strict healing (`ΔCKA = 1`). -/
-private lemma securityReduction_real_to_ideal (gp : GameParams)
+private lemma securityReduction_real_to_hybrid (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] =
-    Pr[= false | securityRealIdealGame (F := F) (G := G) (gen := gen) gp adversary] := by
-  unfold securityReductionRealGame securityRealIdealGame
+    Pr[= false | securityHybridGame (F := F) (G := G) (gen := gen) gp adversary] := by
+  unfold securityReductionRealGame securityHybridGame
   refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
   intro a
   refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
@@ -489,27 +492,27 @@ private lemma securityReduction_real_to_ideal (gp : GameParams)
   refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
   intro x₀
   have hinit :
-      realIdealProj (F := F) a b
+      hybridProj (F := F) a b
         (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp) =
       initGameState (.inr (x₀ • gen)) (.inl x₀) false gp := by
-    simp [realIdealProj, initGameState]
+    simp [hybridProj, initGameState]
   have hrun' :=
     OracleComp.ProgramLogic.Relational.run'_simulateQ_eq_of_query_map_eq
       (impl₁ := reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen))
-      (impl₂ := realIdealImpl (F := F) gen a b)
-      (proj := realIdealProj (F := F) a b)
-      (hproj := realIdealProj_query_map_eq (F := F) (G := G) (gen := gen) gp a b)
+      (impl₂ := hybridImpl (F := F) gen a b)
+      (proj := hybridProj (F := F) a b)
+      (hproj := hybridProj_query_map_eq (F := F) (G := G) (gen := gen) gp a b)
       adversary
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
   rw [hinit] at hrun'
   exact congrArg (fun mx => Pr[= false | mx]) hrun'
 
-/-- Second half of the real-branch bridge: `realIdealImpl` is the honest
+/-- Second half of the real-branch bridge: `hybridImpl` is the honest
 fixed-bit-false game with the two special challenge scalars sampled explicitly
 up front. -/
-private lemma securityReduction_ideal_to_honest (gp : GameParams)
+private lemma securityReduction_hybrid_to_honest (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
-    Pr[= false | securityRealIdealGame (F := F) (G := G) (gen := gen) gp adversary] =
+    Pr[= false | securityHybridGame (F := F) (G := G) (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) gp adversary] := by
   sorry
 
@@ -519,8 +522,8 @@ private lemma securityReduction_real_bridge (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) gp adversary] := by
-  rw [securityReduction_real_to_ideal (F := F) (G := G) (gen := gen) gp adversary]
-  exact securityReduction_ideal_to_honest (F := F) (G := G) (gen := gen) gp adversary
+  rw [securityReduction_real_to_hybrid (F := F) (G := G) (gen := gen) gp adversary]
+  exact securityReduction_hybrid_to_honest (F := F) (G := G) (gen := gen) gp adversary
 
 /-- **Real-branch lemma.**
 `Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`. -/
