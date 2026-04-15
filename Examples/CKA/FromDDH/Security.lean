@@ -205,7 +205,7 @@ private noncomputable def reductionChallA (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challA then
+    if state.challengedParty == .A && validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
       if isChallengeEpoch state then
         let z ← liftM ($ᵗ F : ProbComp F)
@@ -227,7 +227,7 @@ private noncomputable def reductionChallB (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challB then
+    if state.challengedParty == .B && validStep state.lastAction .challB then
       let state := { state with tB := state.tB + 1 }
       if isChallengeEpoch state then
         let z ← liftM ($ᵗ F : ProbComp F)
@@ -345,6 +345,34 @@ private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp [initGameState]
 
+/-- Hybrid A-send used in the real-branch bridge.
+At the special epoch before `challB`, it reuses the externally fixed DDH scalar
+`a` both for the visible output and for A's next hidden state. This matches the
+honest game instantiated with the corresponding challenge randomness, unlike
+`reductionSendA`, which uses an independent fresh hidden scalar. -/
+private noncomputable def hybridSendA (gen : G) (a : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendA then
+      let state := { state with tA := state.tA + 1 }
+      if isOtherSendBeforeChall state then
+        let gA := a • gen
+        let xB := match state.stB with | .inl x => x | .inr _ => 0
+        set { state with
+          stA := (.inl a : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
+          lastAction := some .sendA }
+        return some (gA, xB • gA)
+      else
+        match ← liftM (ddhCKA.send gen state.stA) with
+        | none => pure none
+        | some (key, ρ, stA') =>
+          set { state with
+            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+            lastAction := some .sendA }
+          return some (ρ, key)
+    else pure none
+
 /-- Hybrid B-send used in the real-branch bridge.
 At the special epoch before `challA`, it reuses the externally fixed DDH scalar
 `a` both for the visible output and for B's next hidden state. This matches the
@@ -381,7 +409,7 @@ private noncomputable def hybridChallA (gen : G) (a b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challA then
+    if state.challengedParty == .A && validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
       if isChallengeEpoch state then
         let gB := b • gen
@@ -394,18 +422,39 @@ private noncomputable def hybridChallA (gen : G) (a b : F) :
       else pure none
     else pure none
 
+/-- Hybrid B-challenge used in the real-branch bridge.
+At the challenge epoch, it reuses the externally fixed DDH scalar `b` as B's
+post-challenge hidden state. This matches the honest game when the challenge
+send samples `b`. -/
+private noncomputable def hybridChallB (gen : G) (a b : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if state.challengedParty == .B && validStep state.lastAction .challB then
+      let state := { state with tB := state.tB + 1 }
+      if isChallengeEpoch state then
+        let gB := b • gen
+        let gT := (a * b) • gen
+        set { state with
+          stB := (.inl b : F ⊕ G),
+          lastRhoB := some gB, lastKeyB := some gT,
+          lastAction := some .challB }
+        return some (gB, gT)
+      else pure none
+    else pure none
+
 /-- Hybrid oracle implementation: same visible DDH embedding as
-`reductionOracleImpl`, but the hidden states at the special B-send / A-challenge
+`reductionOracleImpl`, but the hidden states at the special send/challenge
 epochs use the DDH scalars `a, b` instead of fresh randomness. -/
 private noncomputable def hybridImpl (gen : G) (a b : F) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
-    + reductionSendA (F := F) gen (a • gen)
+    + hybridSendA (F := F) gen a
     + oracleRecvA (ddhCKA F G gen)
     + hybridSendB (F := F) gen a
     + oracleRecvB (ddhCKA F G gen))
   + hybridChallA (F := F) gen a b
-  + reductionChallB (F := F) (b • gen) ((a * b) • gen)
+  + hybridChallB (F := F) gen a b
   + oracleCorruptA (F ⊕ G) G G
   + oracleCorruptB (F ⊕ G) G G
 
@@ -423,28 +472,41 @@ private noncomputable def securityHybridGame (gp : GameParams)
 /-- State map `π : GameState → GameState` from `R`-states to `H`-states,
 where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridImpl(g, a, b)`.
 
-`R` and `H` agree on all outputs but diverge on hidden party state at two
-embedding epochs: `R` draws fresh `y, z ←$ F` while `H` uses the DDH
-scalars `a, b`. The map `π` substitutes the fresh scalars with the DDH ones:
+`R` and `H` agree on all outputs but diverge on hidden party state at the two
+embedding epochs for the challenged direction:
 
-- `stB` window (`tB = t* - 1`, after sendB): `π(stB) = a` where `stB = y` in `R`
-- `stA` window (`tA = t*`, after challA): `π(stA) = b` where `stA = z` in `R`
+- if `challengedParty = .A`, then `π` rewrites B's special send-state to `a`
+  and A's special challenge-state to `b`
+- if `challengedParty = .B`, then `π` rewrites A's special send-state to `a`
+  and B's special challenge-state to `b`
+- it also forgets the internal `correct` flag, which is unobservable in the
+  security game and can differ spuriously in the reduction after the embedded
+  challenge branch
 
 All other fields (outputs, counters, flags) pass through unchanged. -/
 private noncomputable def hybridProj (a b : F)
     (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
   { s with
-    stA := match s.stA with
-      | .inl _ =>
+    correct := true
+    stA := match s.challengedParty, s.stA with
+      | .A, .inl _ =>
           if s.tA == s.tStar &&
               (s.lastAction = some .challA ||
                s.lastAction = some .recvB ||
                s.lastAction = some .sendB)
           then (.inl b : F ⊕ G)
           else s.stA
-      | .inr _ => s.stA
-    stB := match s.stB with
-      | .inl _ =>
+      | .B, .inl _ =>
+          if s.tA == s.tStar &&
+              (s.lastAction = some .sendA ||
+               s.lastAction = some .recvB ||
+               s.lastAction = some .sendB ||
+               s.lastAction = some .challB)
+          then (.inl a : F ⊕ G)
+          else s.stA
+      | _, .inr _ => s.stA
+    stB := match s.challengedParty, s.stB with
+      | .A, .inl _ =>
           if s.tB == s.tStar - 1 &&
               (s.lastAction = some .sendB ||
                s.lastAction = some .recvA ||
@@ -452,7 +514,14 @@ private noncomputable def hybridProj (a b : F)
                s.lastAction = some .challA)
           then (.inl a : F ⊕ G)
           else s.stB
-      | .inr _ => s.stB }
+      | .B, .inl _ =>
+          if s.tB == s.tStar &&
+              (s.lastAction = some .challB ||
+               s.lastAction = some .recvA ||
+               s.lastAction = some .sendA)
+          then (.inl b : F ⊕ G)
+          else s.stB
+      | _, .inr _ => s.stB }
 
 /-- One-step projection property for `reductionOracleImpl` in the real branch.
 
@@ -490,7 +559,11 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
       hybridProj (F := F) a b
         (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp) =
       initGameState (.inr (x₀ • gen)) (.inl x₀) false gp := by
-    simp [hybridProj, initGameState]
+    cases hcp : gp.challengedParty with
+    | A =>
+        simp [hybridProj, initGameState, GameState.challengedParty, hcp]
+    | B =>
+        simp [hybridProj, initGameState, GameState.challengedParty, hcp]
   have hrun' :=
     OracleComp.ProgramLogic.Relational.run'_simulateQ_eq_of_query_map_eq
       (impl₁ := reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen))
