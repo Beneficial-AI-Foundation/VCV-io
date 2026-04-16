@@ -1253,7 +1253,9 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
     by_cases hcpA : gp.challengedParty = .A
     · by_cases hvs : validStep sR.lastAction .challA = true
       · by_cases hchal : isChallengeEpoch gp { sR with tA := sR.tA + 1 } = true
-        · -- Fires: explicit output + state match
+        · -- Fires: reduction samples z, hybrid uses b. Outputs agree (both (bG, abG)).
+          -- Post-states coincide under hybridProj (challA window rewrites stA := .inl b).
+          -- TODO: detailed proof — requires state extensionality and invariant preservation.
           sorry
         · -- validStep ok, not in challenge epoch: returns pure none
           have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challA
