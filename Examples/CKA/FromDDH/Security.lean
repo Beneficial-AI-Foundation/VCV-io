@@ -1247,9 +1247,209 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | challA => sorry
   -- challA: reduction uses (gB, gT) with stA := z; hybrid uses (b·G, ab·G) with stA := b;
   -- outputs agree since gB = b·gen and gT = (a*b)·gen; hybridWindowInv tracks the window
-  · sorry
+  · rcases hrel with ⟨rfl, hShape, hWin⟩
+    -- The oracle only fires when challengedParty = .A ∧ validStep ∧ isChallengeEpoch.
+    -- Otherwise returns pure none on both sides with hybridProj's output agreeing.
+    by_cases hcpA : gp.challengedParty = .A
+    · by_cases hvs : validStep sR.lastAction .challA = true
+      · by_cases hchal : isChallengeEpoch gp { sR with tA := sR.tA + 1 } = true
+        · -- Fires: explicit output + state match
+          sorry
+        · -- validStep ok, not in challenge epoch: returns pure none
+          have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challA
+              = true := by simpa [hybridProj] using hvs
+          have hchalH : isChallengeEpoch gp
+              { hybridProj (F := F) (gen := gen) gp a b sR with
+                tA := (hybridProj (F := F) (gen := gen) gp a b sR).tA + 1 } = false := by
+            have : isChallengeEpoch gp { sR with tA := sR.tA + 1 } = false := by
+              cases h : isChallengeEpoch gp { sR with tA := sR.tA + 1 }
+              · rfl
+              · exact absurd h hchal
+            simpa [isChallengeEpoch, hybridProj] using this
+          have hrunL :
+              ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+                = pure (none, sR) := by
+            simp [reductionChallA, hcpA, hvs, hchal, StateT.run_bind, StateT.run_get,
+              pure_bind, StateT.run_pure]
+          have hrunH :
+              ((hybridChallA (F := F) gp gen a b) ()).run
+                (hybridProj (F := F) (gen := gen) gp a b sR)
+                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            have hcpAH : (hybridProj (F := F) (gen := gen) gp a b sR).lastAction
+                = sR.lastAction := by simp [hybridProj]
+            simp [hybridChallA, hcpA, hvsH, hchalH, StateT.run_bind, StateT.run_get,
+              pure_bind, StateT.run_pure]
+          change OracleComp.ProgramLogic.Relational.RelTriple
+            ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+            ((hybridChallA (F := F) gp gen a b ()).run
+              (hybridProj (F := F) (gen := gen) gp a b sR))
+            (fun pR pH =>
+              pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          rw [hrunL, hrunH]
+          exact
+            (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+              (spec₁ := unifSpec) (spec₂ := unifSpec)
+              (R := fun pR pH =>
+                pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+              (a := ((none : Option (G × G)), sR))
+              (b := ((none : Option (G × G)),
+                hybridProj (F := F) (gen := gen) gp a b sR))
+              ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+      · -- validStep false: returns pure none
+        have hvs' : validStep sR.lastAction .challA = false := by
+          cases h : validStep sR.lastAction .challA
+          · rfl
+          · exact absurd h hvs
+        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challA
+            = false := by simpa [hybridProj] using hvs'
+        have hrunL :
+            ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+              = pure (none, sR) := by
+          simp [reductionChallA, hcpA, hvs', StateT.run_pure]
+        have hrunH :
+            ((hybridChallA (F := F) gp gen a b) ()).run
+              (hybridProj (F := F) (gen := gen) gp a b sR)
+              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+          simp [hybridChallA, hcpA, hvsH, StateT.run_pure]
+        change OracleComp.ProgramLogic.Relational.RelTriple
+          ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+          ((hybridChallA (F := F) gp gen a b ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR))
+          (fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        rw [hrunL, hrunH]
+        exact
+          (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+            (spec₁ := unifSpec) (spec₂ := unifSpec)
+            (R := fun pR pH =>
+              pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+            (a := ((none : Option (G × G)), sR))
+            (b := ((none : Option (G × G)),
+              hybridProj (F := F) (gen := gen) gp a b sR))
+            ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+    · -- challengedParty ≠ .A: returns pure none on both sides
+      have hrunL :
+          ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+            = pure (none, sR) := by
+        simp [reductionChallA, hcpA, StateT.run_pure]
+      have hrunH :
+          ((hybridChallA (F := F) gp gen a b) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR)
+            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [hybridChallA, hcpA, StateT.run_pure]
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+        ((hybridChallA (F := F) gp gen a b ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((none : Option (G × G)), sR))
+          (b := ((none : Option (G × G)),
+            hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
   -- challB: symmetric to challA for the challenged-B case
-  · sorry
+  · rcases hrel with ⟨rfl, hShape, hWin⟩
+    by_cases hcpB : gp.challengedParty = .B
+    · by_cases hvs : validStep sR.lastAction .challB = true
+      · by_cases hchal : isChallengeEpoch gp { sR with tB := sR.tB + 1 } = true
+        · sorry
+        · have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challB
+              = true := by simpa [hybridProj] using hvs
+          have hchalH : isChallengeEpoch gp
+              { hybridProj (F := F) (gen := gen) gp a b sR with
+                tB := (hybridProj (F := F) (gen := gen) gp a b sR).tB + 1 } = false := by
+            have : isChallengeEpoch gp { sR with tB := sR.tB + 1 } = false := by
+              cases h : isChallengeEpoch gp { sR with tB := sR.tB + 1 }
+              · rfl
+              · exact absurd h hchal
+            simpa [isChallengeEpoch, hybridProj] using this
+          have hrunL :
+              ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+                = pure (none, sR) := by
+            simp [reductionChallB, hcpB, hvs, hchal, StateT.run_pure]
+          have hrunH :
+              ((hybridChallB (F := F) gp gen a b) ()).run
+                (hybridProj (F := F) (gen := gen) gp a b sR)
+                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            simp [hybridChallB, hcpB, hvsH, hchalH, StateT.run_pure]
+          change OracleComp.ProgramLogic.Relational.RelTriple
+            ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+            ((hybridChallB (F := F) gp gen a b ()).run
+              (hybridProj (F := F) (gen := gen) gp a b sR))
+            (fun pR pH =>
+              pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          rw [hrunL, hrunH]
+          exact
+            (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+              (spec₁ := unifSpec) (spec₂ := unifSpec)
+              (R := fun pR pH =>
+                pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+              (a := ((none : Option (G × G)), sR))
+              (b := ((none : Option (G × G)),
+                hybridProj (F := F) (gen := gen) gp a b sR))
+              ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+      · have hvs' : validStep sR.lastAction .challB = false := by
+          cases h : validStep sR.lastAction .challB
+          · rfl
+          · exact absurd h hvs
+        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challB
+            = false := by simpa [hybridProj] using hvs'
+        have hrunL :
+            ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+              = pure (none, sR) := by
+          simp [reductionChallB, hcpB, hvs', StateT.run_pure]
+        have hrunH :
+            ((hybridChallB (F := F) gp gen a b) ()).run
+              (hybridProj (F := F) (gen := gen) gp a b sR)
+              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+          simp [hybridChallB, hcpB, hvsH, StateT.run_pure]
+        change OracleComp.ProgramLogic.Relational.RelTriple
+          ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+          ((hybridChallB (F := F) gp gen a b ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR))
+          (fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        rw [hrunL, hrunH]
+        exact
+          (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+            (spec₁ := unifSpec) (spec₂ := unifSpec)
+            (R := fun pR pH =>
+              pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+            (a := ((none : Option (G × G)), sR))
+            (b := ((none : Option (G × G)),
+              hybridProj (F := F) (gen := gen) gp a b sR))
+            ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+    · have hrunL :
+          ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
+            = pure (none, sR) := by
+        simp [reductionChallB, hcpB, StateT.run_pure]
+      have hrunH :
+          ((hybridChallB (F := F) gp gen a b) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR)
+            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [hybridChallB, hcpB, StateT.run_pure]
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
+        ((hybridChallB (F := F) gp gen a b ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((none : Option (G × G)), sR))
+          (b := ((none : Option (G × G)),
+            hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
   -- corruptA
   · exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp a b sR sH hΔ hrel
   -- corruptB
