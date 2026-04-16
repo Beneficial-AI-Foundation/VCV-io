@@ -362,7 +362,9 @@ private noncomputable def hybridSendA (gp : GameParams) (gen : G) (a : F) :
   fun () => do
     let state ← get
     if validStep state.lastAction .sendA then
+      -- tA++
       let state := { state with tA := state.tA + 1 }
+      -- check if this is the embedding epoch for the reduction's special send
       if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
         let gA := a • gen
         let xB := match state.stB with | .inl x => x | .inr _ => 0
@@ -497,16 +499,18 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
     correct := true
     stA := match gp.challengedParty, s.stA with
       | .A, .inl _ =>
-          if s.tA == gp.tStar &&
-              (s.lastAction = some .challA ||
-               s.lastAction = some .recvB ||
-               s.lastAction = some .sendB)
+          if (s.lastAction = some .challA && s.tA == gp.tStar) ||
+              (s.lastAction = some .recvB && s.tA == gp.tStar &&
+                s.stB = (.inr (b • gen) : F ⊕ G)) ||
+              (s.lastAction = some .sendB && s.tA == gp.tStar &&
+                s.tB == gp.tStar + 1)
           then (.inl b : F ⊕ G)
           else s.stA
       | .B, .inl _ =>
           if s.tA == gp.tStar &&
               (s.lastAction = some .sendA ||
-               s.lastAction = some .recvB ||
+               (s.lastAction = some .recvB &&
+                 s.stB = (.inr (a • gen) : F ⊕ G)) ||
                s.lastAction = some .sendB ||
                s.lastAction = some .challB)
           then (.inl a : F ⊕ G)
@@ -530,9 +534,17 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
           else s.stB
       | _, .inr _ => s.stB }
 
+/-- Reachable security-game states obey the communication-phase counter relation. -/
+private def hybridPhaseInv (s : GameState (F ⊕ G) G G) : Prop :=
+  match s.lastAction with
+  | none | some .recvA | some .recvB => s.tA = s.tB
+  | some .sendA | some .challA => s.tA = s.tB + 1
+  | some .sendB | some .challB => s.tB = s.tA + 1
+
 /-- Hybrid-side reachability invariant. This is the same four-phase invariant as the
 correctness proof: hybrid states are always honest DDH-CKA states with `correct = true`. -/
 private def hybridInvariant (s : GameState (F ⊕ G) G G) : Prop :=
+  hybridPhaseInv s ∧
   s.correct = true ∧
   match s.lastAction with
   | none | some .recvA =>
@@ -554,22 +566,21 @@ private def hybridInvariant (s : GameState (F ⊕ G) G G) : Prop :=
 projection of the reduction state and itself satisfies the honest four-phase invariant. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  sH = hybridProj (F := F) gp a b sR ∧
+  sH = hybridProj (F := F) (gen := gen) gp a b sR ∧
   hybridInvariant (F := F) (G := G) (gen := gen) sH
 
-omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- The projected initial state is already an honest hybrid state. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
+  unfold hybridRel
   constructor
   · symm
     cases hcp : gp.challengedParty <;>
       simp [hybridProj, initGameState, hcp]
-  · exact ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
-omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
 while leaving their respective states unchanged. -/
 private lemma hybridRel_query_unif (gp : GameParams) (a b : F) (t : unifSpec.Domain)
@@ -622,32 +633,24 @@ private lemma relTriple_of_map_eq
     subst hzEq
     exact hpost x hx
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `allowCorr`. -/
 private lemma allowCorr_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
-    allowCorr gp (hybridProj (F := F) gp a b s) = allowCorr gp s := by
-  simp [allowCorr, hybridProj]
+    allowCorr gp (hybridProj (F := F) (gen := gen) gp a b s) = allowCorr gp s := by
+  rfl
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `finishedA`. -/
 private lemma finishedA_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
-    finishedA gp (hybridProj (F := F) gp a b s) = finishedA gp s := by
-  simp [finishedA, finishedP, GameState.tP, hybridProj]
+    finishedA gp (hybridProj (F := F) (gen := gen) gp a b s) = finishedA gp s := by
+  rfl
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `finishedB`. -/
 private lemma finishedB_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
-    finishedB gp (hybridProj (F := F) gp a b s) = finishedB gp s := by
-  simp [finishedB, finishedP, GameState.tP, hybridProj]
+    finishedB gp (hybridProj (F := F) (gen := gen) gp a b s) = finishedB gp s := by
+  rfl
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptA` can never occur while `tA = tStar`. -/
 private lemma tA_ne_tStar_of_corruptA_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -665,8 +668,6 @@ private lemma tA_ne_tStar_of_corruptA_allowed
       simpa [finishedA, finishedP, hΔ] using hfin
     omega
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar - 1`. -/
 private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -684,8 +685,6 @@ private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
       simpa [finishedB, finishedP, hΔ] using hfin
     omega
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar`. -/
 private lemma tB_ne_tStar_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -703,29 +702,25 @@ private lemma tB_ne_tStar_of_corruptB_allowed
       simpa [finishedB, finishedP, hΔ] using hfin
     omega
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, the A-state projection window closes before `corruptA`
 can return a state. -/
 private lemma hybridProj_stA_eq_of_corruptA_allowed
     (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
     (hΔ : gp.deltaCKA = 1)
     (hallow : allowCorr gp s || finishedA gp s = true) :
-    (hybridProj (F := F) gp a b s).stA = s.stA := by
+    (hybridProj (F := F) (gen := gen) gp a b s).stA = s.stA := by
   have htA : s.tA ≠ gp.tStar :=
     tA_ne_tStar_of_corruptA_allowed (F := F) gp s hΔ hallow
   cases hcp : gp.challengedParty <;> cases hsA : s.stA <;>
     simp [hybridProj, hcp, hsA, htA]
 
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, the B-state projection window closes before `corruptB`
 can return a state. -/
 private lemma hybridProj_stB_eq_of_corruptB_allowed
     (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
     (hΔ : gp.deltaCKA = 1)
     (hallow : allowCorr gp s || finishedB gp s = true) :
-    (hybridProj (F := F) gp a b s).stB = s.stB := by
+    (hybridProj (F := F) (gen := gen) gp a b s).stB = s.stB := by
   cases hcp : gp.challengedParty
   · have htB : s.tB ≠ gp.tStar - 1 :=
       tB_ne_tStar_sub_one_of_corruptB_allowed (F := F) gp s hΔ hallow
@@ -734,7 +729,6 @@ private lemma hybridProj_stB_eq_of_corruptB_allowed
       tB_ne_tStar_of_corruptB_allowed (F := F) gp s hΔ hallow
     cases hsB : s.stB <;> simp [hybridProj, hcp, hsB, htB]
 
-omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- `corruptA` preserves `hybridRel` once `ΔCKA = 1` is made explicit:
 the projection no longer changes the returned A-state when corruption is legal,
 and otherwise both sides return `none` while keeping the same states. -/
@@ -751,21 +745,21 @@ private lemma hybridRel_query_corruptA
   by_cases hallow : allowCorr gp sR = true ∨ finishedA gp sR = true
   · have hallowBool : allowCorr gp sR || finishedA gp sR = true := by
       simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
-    have hallowH : allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
-        finishedA gp (hybridProj (F := F) gp a b sR) = true := by
+    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
+        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR) = true := by
       simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
     have hstA := hybridProj_stA_eq_of_corruptA_allowed
-      (F := F) gp a b sR hΔ hallowBool
+      (F := F) (gen := gen) gp a b sR hΔ hallowBool
     simpa [oracleCorruptA, hallow, hallowH, hstA] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
         (spec₁ := unifSpec) (spec₂ := unifSpec)
         (R := fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := (some sR.stA, sR))
-        (b := (some sR.stA, hybridProj (F := F) gp a b sR))
+        (b := (some sR.stA, hybridProj (F := F) (gen := gen) gp a b sR))
         ⟨rfl, ⟨rfl, hInv⟩⟩)
-  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
-        finishedA gp (hybridProj (F := F) gp a b sR) = true) := by
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
+        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR) = true) := by
       simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
     simpa [oracleCorruptA, hallow, hallowH] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
@@ -773,10 +767,9 @@ private lemma hybridRel_query_corruptA
         (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := ((none : Option (F ⊕ G)), sR))
-        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) gp a b sR))
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR))
         ⟨rfl, ⟨rfl, hInv⟩⟩)
 
-omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- Symmetric corruption leaf for `corruptB`. -/
 private lemma hybridRel_query_corruptB
     (gp : GameParams) (a b : F) (sR sH : GameState (F ⊕ G) G G)
@@ -791,21 +784,21 @@ private lemma hybridRel_query_corruptB
   by_cases hallow : allowCorr gp sR = true ∨ finishedB gp sR = true
   · have hallowBool : allowCorr gp sR || finishedB gp sR = true := by
       simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
-    have hallowH : allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
-        finishedB gp (hybridProj (F := F) gp a b sR) = true := by
+    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
+        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR) = true := by
       simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
     have hstB := hybridProj_stB_eq_of_corruptB_allowed
-      (F := F) gp a b sR hΔ hallowBool
+      (F := F) (gen := gen) gp a b sR hΔ hallowBool
     simpa [oracleCorruptB, hallow, hallowH, hstB] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
         (spec₁ := unifSpec) (spec₂ := unifSpec)
         (R := fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := (some sR.stB, sR))
-        (b := (some sR.stB, hybridProj (F := F) gp a b sR))
+        (b := (some sR.stB, hybridProj (F := F) (gen := gen) gp a b sR))
         ⟨rfl, ⟨rfl, hInv⟩⟩)
-  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
-        finishedB gp (hybridProj (F := F) gp a b sR) = true) := by
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
+        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR) = true) := by
       simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
     simpa [oracleCorruptB, hallow, hallowH] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
@@ -813,7 +806,7 @@ private lemma hybridRel_query_corruptB
         (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := ((none : Option (F ⊕ G)), sR))
-        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) gp a b sR))
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR))
         ⟨rfl, ⟨rfl, hInv⟩⟩)
 
 /-- One-step relational property for the real/hybrid bridge.
