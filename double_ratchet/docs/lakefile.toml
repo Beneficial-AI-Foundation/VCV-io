@@ -1,0 +1,18 @@
+name = "DoubleRatchetDocs"
+defaultTargets = ["DoubleRatchetDocs", "docs"]
+
+[[require]]
+name = "versoBlueprint"
+git = "https://github.com/ejgallego/verso-blueprint"
+rev = "v4.28.0"
+
+[[require]]
+name = "DoubleRatchet"
+path = ".."
+
+[[lean_lib]]
+name = "DoubleRatchetDocs"
+
+[[lean_exe]]
+name = "docs"
+root = "Main"
