@@ -120,8 +120,7 @@ structure GameParams where
 - `b`: hidden challenge bit (security game only).
 - `correct`: conjunction of all key-agreement checks so far.
 - `lastAction`: enforces alternating communication.
-- `tA`, `tB`: epoch counters (incremented on each send/chall).
-- `params`: game parameters (challenge epoch, healing delay, challenged party). -/
+- `tA`, `tB`: epoch counters (incremented on each send/chall). -/
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
@@ -134,12 +133,6 @@ structure GameState (St I Rho : Type) where
   lastAction : Option CKAAction
   tA : ℕ                 -- epoch counter for A (incremented on each send/chall by A)
   tB : ℕ                 -- epoch counter for B (incremented on each send/chall by B)
-  params : GameParams    -- game parameters (fixed at init)
-
--- Convenience accessors for game parameters.
-abbrev GameState.tStar (s : GameState St I Rho) := s.params.tStar
-abbrev GameState.deltaCKA (s : GameState St I Rho) := s.params.deltaCKA
-abbrev GameState.challengedParty (s : GameState St I Rho) := s.params.challengedParty
 
 /-- Epoch counter for party `p`. -/
 def GameState.tP (s : GameState St I Rho) : CKAParty → ℕ
@@ -258,14 +251,15 @@ def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
 /-- **O-Chall-A.** `tA++; req tA = t*; (key, ρ, stA') ← sendA(stA)`;
 return `(ρ, b ? $ᵗ I : key)`. Counter advances before the epoch check,
 matching [ACD19, Fig. 3]. -/
-def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
+def oracleChallA (gp : GameParams) [SampleableType I]
+    (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .challA then
       -- tA++ (before epoch check, matching paper)
       let state := { state with tA := state.tA + 1 }
-      if state.challengedParty == .A && state.tA == state.tStar then
+      if gp.challengedParty == .A && state.tA == gp.tStar then
         match ← liftM (cka.sendA state.stA) with
         | none => pure none
         | some (key, ρ, stA') =>
@@ -280,14 +274,15 @@ def oracleChallA [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
 /-- **O-Chall-B.** `tB++; req tB = t*; (key, ρ, stB') ← sendB(stB)`;
 return `(ρ, b ? $ᵗ I : key)`. Counter advances before the epoch check,
 matching [ACD19, Fig. 3]. -/
-def oracleChallB [SampleableType I] (cka : CKAScheme ProbComp IK St I Rho) :
+def oracleChallB (gp : GameParams) [SampleableType I]
+    (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .challB then
       -- tB++ (before epoch check, matching paper)
       let state := { state with tB := state.tB + 1 }
-      if state.challengedParty == .B && state.tB == state.tStar then
+      if gp.challengedParty == .B && state.tB == gp.tStar then
         match ← liftM (cka.sendB state.stB) with
         | none => pure none
         | some (key, ρ, stB') =>
@@ -312,46 +307,46 @@ All counter values in these predicates are **post-increment**: every oracle
 /-- Challenge fires when the challenged party's post-increment counter
 reaches `tStar`. Used by the reduction oracles in `Security.lean`;
 the generic chall oracles in `Defs.lean` inline this check. -/
-def isChallengeEpoch (state : GameState St I Rho) : Bool :=
-  state.tP state.challengedParty == state.tStar
+def isChallengeEpoch (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  state.tP gp.challengedParty == gp.tStar
 
 /-- The other party's send just before the challenge (post-increment check).
 Due to alternating communication with A going first:
 - challenging A: B-send at `tB = tStar - 1`
 - challenging B: A-send at `tA = tStar` -/
-def isOtherSendBeforeChall (state : GameState St I Rho) : Bool :=
-  match state.challengedParty with
-  | .A => state.tB == state.tStar - 1
-  | .B => state.tA == state.tStar
+def isOtherSendBeforeChall (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  match gp.challengedParty with
+  | .A => state.tB == gp.tStar - 1
+  | .B => state.tA == gp.tStar
 
 /-- Party `p` has healed: `tP ≥ tStar + ΔCKA`. -/
-def finishedP (party : CKAParty) (state : GameState St I Rho) : Bool :=
-  state.tStar + state.deltaCKA ≤ state.tP party
+def finishedP (gp : GameParams) (party : CKAParty) (state : GameState St I Rho) : Bool :=
+  gp.tStar + gp.deltaCKA ≤ state.tP party
 
 /-- Corruption allowed before the challenge window. -/
-def allowCorr (state : GameState St I Rho) : Bool :=
-  max state.tA state.tB + 2 ≤ state.tStar
+def allowCorr (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  max state.tA state.tB + 2 ≤ gp.tStar
 
 /-- Party A has healed: `tA ≥ t* + ΔCKA`. -/
-abbrev finishedA (state : GameState St I Rho) : Bool := finishedP .A state
+abbrev finishedA (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .A state
 
 /-- Party B has healed: `tB ≥ t* + ΔCKA`. -/
-abbrev finishedB (state : GameState St I Rho) : Bool := finishedP .B state
+abbrev finishedB (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .B state
 
 /-- **O-Corrupt-A.** `() → Option St`. Return `stA` if corruption is allowed. -/
-def oracleCorruptA (St I Rho : Type) :
+def oracleCorruptA (gp : GameParams) (St I Rho : Type) :
     QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
-    if allowCorr state || finishedA state then return some state.stA
+    if allowCorr gp state || finishedA gp state then return some state.stA
     else return none
 
 /-- **O-Corrupt-B.** `() → Option St`. Return `stB` if corruption is allowed. -/
-def oracleCorruptB (St I Rho : Type) :
+def oracleCorruptB (gp : GameParams) (St I Rho : Type) :
     QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
-    if allowCorr state || finishedB state then return some state.stB
+    if allowCorr gp state || finishedB gp state then return some state.stB
     else return none
 
 /-- Oracle for adversary randomness: forwards to `ProbComp`. -/
@@ -367,11 +362,12 @@ def ckaCorrectnessImpl [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     + oracleSendB cka + oracleRecvB cka
 
 /-- Oracle implementation for the security game. -/
-def ckaSecurityImpl [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
+def ckaSecurityImpl (gp : GameParams) [SampleableType I] [DecidableEq I]
+    (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (ckaSecuritySpec St Rho I) (StateT (GameState St I Rho) ProbComp) :=
   ckaCorrectnessImpl cka
-    + oracleChallA cka + oracleChallB cka
-    + oracleCorruptA St I Rho + oracleCorruptB St I Rho
+    + oracleChallA gp cka + oracleChallB gp cka
+    + oracleCorruptA gp St I Rho + oracleCorruptB gp St I Rho
 
 /-- Correctness adversary: send + recv oracles only. -/
 abbrev CorrectnessAdversary (Rho I : Type) := OracleComp (ckaCorrectnessSpec Rho I) Bool
@@ -382,12 +378,11 @@ abbrev SecurityAdversary (St Rho I : Type) := OracleComp (ckaSecuritySpec St Rho
 /-! ### Correctness game -/
 
 /-- Initial game state. -/
-def initGameState (stA stB : St) (b : Bool)
-    (params : GameParams := ⟨0, 0, .A⟩) : GameState St I Rho :=
+def initGameState (stA stB : St) (b : Bool) : GameState St I Rho :=
   { stA, stB, lastRhoA := none, lastRhoB := none,
     lastKeyA := none, lastKeyB := none,
     b, correct := true, lastAction := none,
-    tA := 0, tB := 0, params }
+    tA := 0, tB := 0 }
 
 def correctnessExp [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
     (adversary : CorrectnessAdversary Rho I) : ProbComp Bool := do
@@ -408,8 +403,8 @@ def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK 
   let stA ← cka.initA ik
   let stB ← cka.initB ik
   let b ← $ᵗ Bool
-  let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run
-    (initGameState stA stB b gp)
+  let (b', _) ← (simulateQ (ckaSecurityImpl gp cka) adversary).run
+    (initGameState stA stB b)
   return (b == b')
 
 /-- Security experiment with a fixed challenge bit `b` (not sampled uniformly).
@@ -421,8 +416,8 @@ def securityExpFixedBit [SampleableType I] [DecidableEq I]
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
   let stB ← cka.initB ik
-  let (b', _) ← (simulateQ (ckaSecurityImpl cka) adversary).run
-    (initGameState stA stB b gp)
+  let (b', _) ← (simulateQ (ckaSecurityImpl gp cka) adversary).run
+    (initGameState stA stB b)
   return b'
 
 /-- The single-game CKA experiment can be decomposed as a uniform-bit branch over
