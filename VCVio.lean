@@ -201,6 +201,7 @@ import VCVio.ProgramLogic.Tactics.Common
 import VCVio.ProgramLogic.Tactics.Common.CompiledRules
 import VCVio.ProgramLogic.Tactics.Common.Core
 import VCVio.ProgramLogic.Tactics.Common.Naming
+import VCVio.ProgramLogic.Tactics.Common.OracleSum
 import VCVio.ProgramLogic.Tactics.Common.Registry
 import VCVio.ProgramLogic.Tactics.Common.SpecIR
 import VCVio.ProgramLogic.Tactics.Common.Suggestions

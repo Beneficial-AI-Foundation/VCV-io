@@ -1,5 +1,6 @@
 import Examples.CKA.FromDDH.Common
 import VCVio.ProgramLogic.Relational.SimulateQ
+import VCVio.ProgramLogic.Tactics.Common.OracleSum
 
 /-!
 # CKA from DDH — Security Proof
@@ -303,7 +304,7 @@ The reduction `ℬ` returns `¬b'`. We show (see the module overview above):
 The **real branch** uses three games (columns in the diagram above):
 
 - `G_R`   — `securityReductionRealGame`:  `𝒜` vs `reductionOracleImpl` (Reduction)
-- `G_H`   — `securityHybridGame`:       `𝒜` vs `hybridImpl`          (Hybrid)
+- `G_H`   — `securityHybridGame`:       `𝒜` vs `hybridOracleImpl`          (Hybrid)
 - `G_CKA` — `securityExpFixedBitFalseGame`: `𝒜` vs `ckaSecurityImpl` (Honest CKA)
 
     Pr[ℬ ⇒ 1 | DDH_real]
@@ -475,7 +476,7 @@ private noncomputable def hybridChallB (gp : GameParams) (gen : G) (a b : F) :
 /-- Hybrid oracle implementation: same visible DDH embedding as
 `reductionOracleImpl`, but the hidden states at the special send/challenge
 epochs use the DDH scalars `a, b` instead of fresh randomness. -/
-private noncomputable def hybridImpl (gp : GameParams) (gen : G) (a b : F) :
+private noncomputable def hybridOracleImpl (gp : GameParams) (gen : G) (a b : F) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
     + hybridSendA (F := F) gp gen a
@@ -487,19 +488,19 @@ private noncomputable def hybridImpl (gp : GameParams) (gen : G) (a b : F) :
   + oracleCorruptA gp (F ⊕ G) G G
   + oracleCorruptB gp (F ⊕ G) G G
 
-/-- The explicit game induced by `hybridImpl`. -/
+/-- The explicit game induced by `hybridOracleImpl`. -/
 private noncomputable def securityHybridGame (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
   let b ← $ᵗ F
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (hybridImpl (F := F) gp gen a b) adversary).run
+    (simulateQ (hybridOracleImpl (F := F) gp gen a b) adversary).run
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
 /-- State map `π : GameState → GameState` from `R`-states to `H`-states,
-where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridImpl(g, a, b)`.
+where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridOracleImpl(g, a, b)`.
 
 `R` and `H` agree on all outputs but diverge on hidden party state at the two
 embedding epochs for the challenged direction:
@@ -1037,13 +1038,31 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
     (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
     OracleComp.ProgramLogic.Relational.RelTriple
       (((reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) t).run sR)
-      (((hybridImpl (F := F) gp gen a b) t).run sH)
+      (((hybridOracleImpl (F := F) gp gen a b) t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  sorry
+  cases_oracle t
+  -- unif
+  · exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
+  -- sendA
+  · sorry
+  -- recvA
+  · sorry
+  -- sendB
+  · sorry
+  -- recvB
+  · sorry
+  -- challA
+  · sorry
+  -- challB
+  · sorry
+  -- corruptA
+  · exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp a b sR sH hΔ hrel
+  -- corruptB
+  · exact hybridRel_query_corruptB (F := F) (G := G) (gen := gen) gp a b sR sH hΔ hrel
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
-`hybridImpl` on hidden intermediate state, but these differences remain
+`hybridOracleImpl` on hidden intermediate state, but these differences remain
 unobservable under the healing predicate (`ΔCKA = 1`). -/
 private lemma securityReduction_real_to_hybrid (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
@@ -1062,7 +1081,7 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
   have hrun' :=
     OracleComp.ProgramLogic.Relational.relTriple_simulateQ_run'
       (impl₁ := reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
-      (impl₂ := hybridImpl (F := F) gp gen a b)
+      (impl₂ := hybridOracleImpl (F := F) gp gen a b)
       (R_state := hybridRel (F := F) (G := G) (gen := gen) gp a b)
       adversary
       (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp hΔ a b)
@@ -1071,7 +1090,7 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
       hrel_init
   exact OracleComp.ProgramLogic.Relational.probOutput_eq_of_relTriple_eqRel hrun' false
 
-/-- Second half of the real-branch bridge: `hybridImpl` is the honest
+/-- Second half of the real-branch bridge: `hybridOracleImpl` is the honest
 fixed-bit-false game with the two special challenge scalars sampled explicitly
 up front. -/
 private lemma securityReduction_hybrid_to_honest (gp : GameParams)

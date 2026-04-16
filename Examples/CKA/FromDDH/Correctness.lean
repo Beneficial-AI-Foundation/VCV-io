@@ -1,4 +1,5 @@
 import Examples.CKA.FromDDH.Common
+import VCVio.ProgramLogic.Tactics.Common.OracleSum
 
 /-!
 # CKA from DDH — Correctness
@@ -151,28 +152,14 @@ private lemma correctnessImpl_preserves [DecidableEq G] :
       (CKAScheme.ckaCorrectnessImpl (ddhCKA F G gen))
       (reachableInv gen) := by
   intro t σ hσ z hz
-  cases t with
-  | inl t =>
-      cases t with
-      | inl t =>
-          cases t with
-          | inl t =>
-              cases t with
-              | inl t =>
-                  simpa [CKAScheme.ckaCorrectnessImpl] using
-                    oracleUnif_preserves_reachableInv (gen := gen) t σ hσ z hz
-              | inr _ =>
-                  simpa [CKAScheme.ckaCorrectnessImpl] using
-                    oracleSendA_preserves_reachableInv (gen := gen) () σ hσ z hz
-          | inr _ =>
-              simpa [CKAScheme.ckaCorrectnessImpl] using
-                oracleRecvA_preserves_reachableInv (gen := gen) () σ hσ z hz
-      | inr _ =>
-          simpa [CKAScheme.ckaCorrectnessImpl] using
-            oracleSendB_preserves_reachableInv (gen := gen) () σ hσ z hz
-  | inr _ =>
-      simpa [CKAScheme.ckaCorrectnessImpl] using
-        oracleRecvB_preserves_reachableInv (gen := gen) () σ hσ z hz
+  cases_oracle t
+  all_goals simpa [CKAScheme.ckaCorrectnessImpl] using
+    (by first
+      | exact oracleUnif_preserves_reachableInv (gen := gen) t σ hσ z hz
+      | exact oracleSendA_preserves_reachableInv (gen := gen) () σ hσ z hz
+      | exact oracleRecvA_preserves_reachableInv (gen := gen) () σ hσ z hz
+      | exact oracleSendB_preserves_reachableInv (gen := gen) () σ hσ z hz
+      | exact oracleRecvB_preserves_reachableInv (gen := gen) () σ hσ z hz)
 
 /-! ### Correctness theorem -/
 
