@@ -142,6 +142,28 @@ theorem IsCoupling.refl (p : SPMF α) :
 noncomputable def Coupling.refl (p : SPMF α) : Coupling p p :=
   ⟨p >>= fun a => pure (a, a), IsCoupling.refl p⟩
 
+/-- If a coupling guarantees that supported pairs satisfy `f a₁ = g a₂`, then
+`p >>= f = q >>= g`. This is the key tool for bisimulation arguments. -/
+theorem IsCoupling.bind_eq {α₁ α₂ β : Type u}
+    {p : SPMF α₁} {q : SPMF α₂} {c : SPMF (α₁ × α₂)}
+    (hc : IsCoupling c p q)
+    {f : α₁ → SPMF β} {g : α₂ → SPMF β}
+    (h : ∀ a₁ a₂, c.1 (some (a₁, a₂)) ≠ 0 → f a₁ = g a₂) :
+    p >>= f = q >>= g := by
+  rw [show p = Prod.fst <$> c from hc.map_fst.symm,
+      show q = Prod.snd <$> c from hc.map_snd.symm]
+  rw [SPMF.fmap_eq_map, SPMF.fmap_eq_map]
+  rw [bind_eq_pmf_bind, bind_eq_pmf_bind]
+  simp only [PMF.bind_map]
+  apply PMF.bind_congr
+  intro o ho
+  cases o with
+  | none => rfl
+  | some ab =>
+    obtain ⟨a₁, a₂⟩ := ab
+    simp only [Function.comp, Option.map]
+    exact h a₁ a₂ ho
+
 end SPMF
 
 end

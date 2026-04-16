@@ -3,6 +3,7 @@ Copyright (c) 2025 Devon Tuma. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Devon Tuma, Quang Dao
 -/
+import ToMathlib.ProbabilityTheory.Coupling
 import VCVio.EvalDist.Defs.NeverFails
 import VCVio.EvalDist.Instances.OptionT
 import VCVio.OracleComp.SimSemantics.SimulateQ
@@ -429,6 +430,126 @@ lemma evalDist_simulateQ_run_eq_of_impl_evalDist_eq
     congr 1
     · exact h t s
     · funext ⟨u, s'⟩; exact ih u s'
+
+/-- Coupled bisimulation for `simulateQ` with `StateT`. Given a state relation
+`R` and per-query couplings that guarantee same oracle answers and preserve `R`,
+the full `simulateQ` computations can be coupled with the same guarantees.
+
+This generalises `evalDist_simulateQ_run_eq_of_impl_evalDist_eq` to
+implementations whose per-query joint distributions on `(answer, newState)`
+may differ, provided they can be *coupled* with matching answers and related
+successor states. The canonical use case is security reductions where the
+reduction oracle correlates answers and state differently from the honest game
+(e.g. the CKA-DDH reduction's `smul_comm` argument). -/
+lemma evalDist_simulateQ_run_coupled
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : _root_.SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    ∃ c : _root_.SPMF.Coupling
+        (evalDist ((simulateQ impl₁ comp).run s₁))
+        (evalDist ((simulateQ impl₂ comp).run s₂)),
+      ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+        a₁.1 = a₂.1 ∧ R a₁.2 a₂.2 := by
+  revert s₁ s₂
+  induction comp using OracleComp.inductionOn with
+  | pure x =>
+    intro s₁ s₂ hr
+    exact ⟨⟨pure ((x, s₁), (x, s₂)), by constructor <;> simp⟩,
+      fun a₁ a₂ h => by
+        rcases a₁ with ⟨y₁, t₁⟩
+        rcases a₂ with ⟨y₂, t₂⟩
+        have hmem :
+            ((y₁, t₁), (y₂, t₂)) ∈
+              support (pure (((x, s₁), (x, s₂))) : SPMF ((α × σ) × (α × σ))) :=
+          (_root_.SPMF.mem_support_iff _ _).2 h
+        have hEq : ((y₁, t₁), (y₂, t₂)) = (((x, s₁), (x, s₂))) := by
+          simpa [support_pure, Set.mem_singleton_iff] using hmem
+        cases hEq
+        exact ⟨rfl, hr⟩⟩
+  | query_bind t oa ih =>
+    intro s₁ s₂ hr
+    rw [simulateQ_query_bind, StateT.run_bind]
+    change ∃ c : _root_.SPMF.Coupling
+        (evalDist (((impl₁ t).run s₁) >>= fun p => (simulateQ impl₁ (oa p.1)).run p.2))
+        (evalDist (((impl₂ t).run s₂) >>= fun p => (simulateQ impl₂ (oa p.1)).run p.2)),
+      ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+        a₁.1 = a₂.1 ∧ R a₁.2 a₂.2
+    rw [evalDist_bind, evalDist_bind]
+    obtain ⟨c, hc⟩ := hstep t s₁ s₂ hr
+    classical
+    let d : (spec'.Range t × σ) → (spec'.Range t × σ) → SPMF ((α × σ) × (α × σ)) :=
+      fun p₁ p₂ =>
+        if hrel : R p₁.2 p₂.2 then (Classical.choose (ih p₁.1 p₁.2 p₂.2 hrel)).1
+        else failure
+    have hd :
+        ∀ p₁ p₂, c.1.1 (some (p₁, p₂)) ≠ 0 →
+          _root_.SPMF.IsCoupling (d p₁ p₂)
+            (evalDist ((simulateQ impl₁ (oa p₁.1)).run p₁.2))
+            (evalDist ((simulateQ impl₂ (oa p₂.1)).run p₂.2)) := by
+      intro p₁ p₂ hsupp
+      rcases p₁ with ⟨u₁, s₁'⟩
+      rcases p₂ with ⟨u₂, s₂'⟩
+      obtain ⟨hout, hrel⟩ := hc (u₁, s₁') (u₂, s₂') hsupp
+      subst hout
+      have hdEq : d (u₁, s₁') (u₁, s₂') = (Classical.choose (ih u₁ s₁' s₂' hrel)).1 := by
+        dsimp [d]
+        rw [dif_pos hrel]
+      rw [hdEq]
+      exact (Classical.choose (ih u₁ s₁' s₂' hrel)).2
+    refine ⟨⟨c.1 >>= fun p => d p.1 p.2, _root_.SPMF.IsCoupling.bind c d hd⟩, ?_⟩
+    intro a₁ a₂ hsupp
+    have hmem : ((a₁, a₂) :
+        (α × σ) × (α × σ)) ∈ support (c.1 >>= fun p => d p.1 p.2) := by
+      exact (_root_.SPMF.mem_support_iff _ _).2 hsupp
+    rw [mem_support_bind_iff] at hmem
+    rcases hmem with ⟨p, hp, hp'⟩
+    have hpMass : c.1.1 (some p) ≠ 0 := by
+      exact (_root_.SPMF.mem_support_iff _ _).1 hp
+    rcases p with ⟨⟨u₁, s₁'⟩, ⟨u₂, s₂'⟩⟩
+    obtain ⟨hout, hrel⟩ := hc (u₁, s₁') (u₂, s₂') hpMass
+    subst hout
+    have hdEq : d (u₁, s₁') (u₁, s₂') = (Classical.choose (ih u₁ s₁' s₂' hrel)).1 := by
+      dsimp [d]
+      rw [dif_pos hrel]
+    have hp'Mass : ((Classical.choose (ih u₁ s₁' s₂' hrel)).1).1 (some (a₁, a₂)) ≠ 0 := by
+      rw [← hdEq]
+      exact (_root_.SPMF.mem_support_iff _ _).1 hp'
+    exact (Classical.choose_spec (ih u₁ s₁' s₂' hrel)) a₁ a₂ hp'Mass
+
+/-- If two stateful oracle implementations can be coupled at each step with
+matching answers and a preserved state relation `R`, then `simulateQ` with
+either implementation produces the same marginal distribution on the result
+(discarding the final state). -/
+lemma evalDist_simulateQ_run'_eq_of_bisim
+    {ι' : Type} {spec' : OracleSpec ι'}
+    {σ α : Type}
+    (impl₁ impl₂ : QueryImpl spec' (StateT σ (OracleComp spec)))
+    (R : σ → σ → Prop)
+    (hstep : ∀ (t : spec'.Domain) (s₁ s₂ : σ), R s₁ s₂ →
+      ∃ c : _root_.SPMF.Coupling
+          (evalDist ((impl₁ t).run s₁))
+          (evalDist ((impl₂ t).run s₂)),
+        ∀ a₁ a₂, c.1.1 (some (a₁, a₂)) ≠ 0 →
+          a₁.1 = a₂.1 ∧ R a₁.2 a₂.2)
+    (comp : OracleComp spec' α) (s₁ s₂ : σ) (hr : R s₁ s₂) :
+    evalDist ((simulateQ impl₁ comp).run' s₁) =
+      evalDist ((simulateQ impl₂ comp).run' s₂) := by
+  obtain ⟨c, hc⟩ := evalDist_simulateQ_run_coupled impl₁ impl₂ R hstep comp s₁ s₂ hr
+  have hmap :
+      (evalDist ((simulateQ impl₁ comp).run s₁) >>= fun a₁ => pure a₁.1) =
+      (evalDist ((simulateQ impl₂ comp).run s₂) >>= fun a₂ => pure a₂.1) := by
+    exact _root_.SPMF.IsCoupling.bind_eq c.2 (fun a₁ a₂ hsupp => by
+      obtain ⟨hout, _⟩ := hc _ _ hsupp
+      simp [hout])
+  simpa [StateT.run'_eq, map_eq_bind_pure_comp] using hmap
 
 end simulateQ_evalDist
 
