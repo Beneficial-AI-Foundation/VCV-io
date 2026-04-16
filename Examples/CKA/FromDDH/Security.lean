@@ -590,14 +590,15 @@ Notation for the bridge below:
 -/
 /-- Relational invariant between reduction and hybrid states.
 
-`sH = hybridProj sR` gives the projection; `reachableShape sR` captures the shape
-invariant on the reduction side (correct-flag is normalized away by `hybridProj`);
-`hybridWindowInv sR` records the extra facts about the challenged branch needed
-to justify the projection. -/
+`sH = hybridProj sR` gives the projection; `reachableShape sH` captures the shape
+invariant on the projected hybrid state (where `hybridProj`'s rewrites realign
+the reduction's fresh scalars with the embedded DDH values, so `phaseShapeInv`
+holds even in the embedding window); `hybridWindowInv sR` records the extra
+facts about the challenged branch needed to justify the projection. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
   sH = hybridProj (F := F) (gen := gen) gp a b sR ∧
-  reachableShape gen sR ∧
+  reachableShape gen sH ∧
   hybridWindowInv (F := F) (G := G) (gen := gen) gp a b sR
 
 /-- Map a reduction-side post-state to the corresponding hybrid-side post-state. -/
@@ -608,11 +609,11 @@ private noncomputable def hybridPostMap {α : Type} (gp : GameParams) (a b : F)
 section hybridHelpers
 omit [Fintype F] [SampleableType F] [SampleableType G]
 
-/-- If the reduction-side shape holds and the window witness holds, then the pair
-`(s, hybridProj s)` satisfies `hybridRel`. -/
+/-- If the projected state has the reachable shape and the window witness holds,
+then the pair `(s, hybridProj s)` satisfies `hybridRel`. -/
 private lemma hybridRel_mk (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G)
-    (hShape : reachableShape gen s)
+    (hShape : reachableShape gen (hybridProj (F := F) (gen := gen) gp a b s))
     (hWin : hybridWindowInv (F := F) (G := G) (gen := gen) gp a b s) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b s
       (hybridProj (F := F) (gen := gen) gp a b s) :=
@@ -879,7 +880,8 @@ private lemma hybridRel_of_run_eq
     (hrun_eq : (fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2))
         <$> maR.run sR =
       maH.run (hybridProj (F := F) (gen := gen) gp a b sR))
-    (hShape_post : ∀ p ∈ support (evalDist (maR.run sR)), reachableShape gen p.2)
+    (hShape_post : ∀ p ∈ support (evalDist (maR.run sR)),
+      reachableShape gen (hybridProj (F := F) (gen := gen) gp a b p.2))
     (hWin_post : ∀ p ∈ support (evalDist (maR.run sR)),
       hybridWindowInv (F := F) (G := G) (gen := gen) gp a b p.2) :
     OracleComp.ProgramLogic.Relational.RelTriple
