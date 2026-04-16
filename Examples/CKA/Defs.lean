@@ -120,7 +120,7 @@ structure GameParams where
 - `b`: hidden challenge bit (security game only).
 - `correct`: conjunction of all key-agreement checks so far.
 - `lastAction`: enforces alternating communication.
-- `tA`, `tB`: epoch counters (incremented on each send/chall). -/
+- `tA`, `tB`: epoch counters (incremented on each send/chall/recv). -/
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
@@ -131,8 +131,8 @@ structure GameState (St I Rho : Type) where
   b : Bool
   correct : Bool
   lastAction : Option CKAAction
-  tA : ℕ                 -- epoch counter for A (incremented on each send/chall by A)
-  tB : ℕ                 -- epoch counter for B (incremented on each send/chall by B)
+  tA : ℕ                 -- epoch counter for A (incremented on each send/chall/recv by A)
+  tB : ℕ                 -- epoch counter for B (incremented on each send/chall/recv by B)
 
 /-- Epoch counter for party `p`. -/
 def GameState.tP (s : GameState St I Rho) : CKAParty → ℕ
@@ -160,16 +160,44 @@ def ckaSecuritySpec (St Rho I : Type) :=
   + (Unit →ₒ Option St)           -- O-Corrupt-A
   + (Unit →ₒ Option St)           -- O-Corrupt-B
 
+/-! ### Epoch predicates -/
+
+/-- Challenge fires when the challenged party's counter reaches `tStar`. -/
+def isChallengeEpoch (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  state.tP gp.challengedParty == gp.tStar
+
+/-- The other party's send just before the challenge. Due to alternating
+communication with A going first:
+- challenging A: B-send at `tB = tStar - 1`
+- challenging B: A-send at `tA = tStar` -/
+def isOtherSendBeforeChall (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  match gp.challengedParty with
+  | .A => state.tB == gp.tStar - 1
+  | .B => state.tA == gp.tStar
+
+/-- Party `p` has healed: `tP ≥ tStar + ΔCKA`. -/
+def finishedP (gp : GameParams) (party : CKAParty) (state : GameState St I Rho) : Bool :=
+  gp.tStar + gp.deltaCKA ≤ state.tP party
+
+/-- `tA ≥ t* + ΔCKA`. -/
+abbrev finishedA (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .A state
+
+/-- `tB ≥ t* + ΔCKA`. -/
+abbrev finishedB (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .B state
+
+/-- Corruption allowed before the challenge window: `max(tA, tB) + 2 ≤ tStar`. -/
+def allowCorr (gp : GameParams) (state : GameState St I Rho) : Bool :=
+  max state.tA state.tB + 2 ≤ gp.tStar
+
 /-! ### Send oracles -/
 
-/-- **O-Send-A.** `tA++; (key, ρ, stA') ← sendA(stA)`; return `(ρ, key)`.
-Following [ACD19, Fig. 3], the counter is advanced before protocol logic. -/
+/-- **O-Send-A.** `tA++; (key, ρ, stA') ← sendA(stA)`; return `(ρ, key)`. -/
 def oracleSendA (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendA then
-      -- tA++ (before protocol logic, matching paper)
+      -- tA++
       let state := { state with tA := state.tA + 1 }
       match ← liftM (cka.sendA state.stA) with
       | none => pure none
@@ -180,14 +208,13 @@ def oracleSendA (cka : CKAScheme ProbComp IK St I Rho) :
         return some (ρ, key)
     else pure none
 
-/-- **O-Send-B.** `tB++; (key, ρ, stB') ← sendB(stB)`; return `(ρ, key)`.
-Following [ACD19, Fig. 3], the counter is advanced before protocol logic. -/
+/-- **O-Send-B.** `tB++; (key, ρ, stB') ← sendB(stB)`; return `(ρ, key)`. -/
 def oracleSendB (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
-      -- tB++ (before protocol logic, matching paper)
+      -- tB++
       let state := { state with tB := state.tB + 1 }
       match ← liftM (cka.sendB state.stB) with
       | none => pure none
@@ -200,14 +227,13 @@ def oracleSendB (cka : CKAScheme ProbComp IK St I Rho) :
 
 /-! ### Receive oracles -/
 
-/-- **O-Recv-A.** `tA++; (keyA, stA') ← recvA(stA, ρ)`; assert `keyA = lastKeyB`.
-Following [ACD19, Fig. 3], recv also advances the counter. -/
+/-- **O-Recv-A.** `tA++; (keyA, stA') ← recvA(stA, ρ)`; assert `keyA = lastKeyB`. -/
 def oracleRecvA [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .recvA then
-      -- tA++ (before protocol logic, matching paper)
+      -- tA++
       let state := { state with tA := state.tA + 1 }
       match state.lastRhoB with
       | none => pure ()
@@ -223,14 +249,13 @@ def oracleRecvA [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
             correct := state.correct && ok, lastAction := some .recvA }
     else pure ()
 
-/-- **O-Recv-B.** `tB++; (keyB, stB') ← recvB(stB, ρ)`; assert `keyB = lastKeyA`.
-Following [ACD19, Fig. 3], recv also advances the counter. -/
+/-- **O-Recv-B.** `tB++; (keyB, stB') ← recvB(stB, ρ)`; assert `keyB = lastKeyA`. -/
 def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .recvB then
-      -- tB++ (before protocol logic, matching paper)
+      -- tB++
       let state := { state with tB := state.tB + 1 }
       match state.lastRhoA with
       | none => pure ()
@@ -248,18 +273,16 @@ def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
 
 /-! ### Challenge oracles -/
 
-/-- **O-Chall-A.** `tA++; req tA = t*; (key, ρ, stA') ← sendA(stA)`;
-return `(ρ, b ? $ᵗ I : key)`. Counter advances before the epoch check,
-matching [ACD19, Fig. 3]. -/
+/-- **O-Chall-A.** Like `O-Send-A` but returns `b ? $ᵗ I : key` (real or
+random key). Only fires when `P = A` and `tA = t*`. -/
 def oracleChallA (gp : GameParams) [SampleableType I]
     (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .challA then
-      -- tA++ (before epoch check, matching paper)
       let state := { state with tA := state.tA + 1 }
-      if gp.challengedParty == .A && state.tA == gp.tStar then
+      if gp.challengedParty == .A && isChallengeEpoch gp state then
         match ← liftM (cka.sendA state.stA) with
         | none => pure none
         | some (key, ρ, stA') =>
@@ -271,18 +294,16 @@ def oracleChallA (gp : GameParams) [SampleableType I]
       else pure none
     else pure none
 
-/-- **O-Chall-B.** `tB++; req tB = t*; (key, ρ, stB') ← sendB(stB)`;
-return `(ρ, b ? $ᵗ I : key)`. Counter advances before the epoch check,
-matching [ACD19, Fig. 3]. -/
+/-- **O-Chall-B.** Like `O-Send-B` but returns `b ? $ᵗ I : key` (real or
+random key). Only fires when `P = B` and `tB = t*`. -/
 def oracleChallB (gp : GameParams) [SampleableType I]
     (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Option (Rho × I)) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .challB then
-      -- tB++ (before epoch check, matching paper)
       let state := { state with tB := state.tB + 1 }
-      if gp.challengedParty == .B && state.tB == gp.tStar then
+      if gp.challengedParty == .B && isChallengeEpoch gp state then
         match ← liftM (cka.sendB state.stB) with
         | none => pure none
         | some (key, ρ, stB') =>
@@ -296,44 +317,11 @@ def oracleChallB (gp : GameParams) [SampleableType I]
 
 /-! ### Corruption oracles
 
-Following [ACD19, Def. 13, Fig. 3], corruption is allowed iff `allowCorr ∨ finished`:
-- `allowCorr` : `max(tA, tB) + 2 ≤ tStar` (before the challenge window)
-- `finishedP` : `tP ≥ tStar + ΔCKA` (state healed after the challenge)
-
-All counter values in these predicates are **post-increment**: every oracle
-(send, recv, chall) advances `tP` at the start, before any protocol logic.
+Following [ACD19, Def. 13, Fig. 3], corruption is allowed iff
+`allowCorr ∨ finishedP` (see epoch predicates above).
 -/
 
-/-- Challenge fires when the challenged party's post-increment counter
-reaches `tStar`. Used by the reduction oracles in `Security.lean`;
-the generic chall oracles in `Defs.lean` inline this check. -/
-def isChallengeEpoch (gp : GameParams) (state : GameState St I Rho) : Bool :=
-  state.tP gp.challengedParty == gp.tStar
-
-/-- The other party's send just before the challenge (post-increment check).
-Due to alternating communication with A going first:
-- challenging A: B-send at `tB = tStar - 1`
-- challenging B: A-send at `tA = tStar` -/
-def isOtherSendBeforeChall (gp : GameParams) (state : GameState St I Rho) : Bool :=
-  match gp.challengedParty with
-  | .A => state.tB == gp.tStar - 1
-  | .B => state.tA == gp.tStar
-
-/-- Party `p` has healed: `tP ≥ tStar + ΔCKA`. -/
-def finishedP (gp : GameParams) (party : CKAParty) (state : GameState St I Rho) : Bool :=
-  gp.tStar + gp.deltaCKA ≤ state.tP party
-
-/-- Corruption allowed before the challenge window. -/
-def allowCorr (gp : GameParams) (state : GameState St I Rho) : Bool :=
-  max state.tA state.tB + 2 ≤ gp.tStar
-
-/-- Party A has healed: `tA ≥ t* + ΔCKA`. -/
-abbrev finishedA (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .A state
-
-/-- Party B has healed: `tB ≥ t* + ΔCKA`. -/
-abbrev finishedB (gp : GameParams) (state : GameState St I Rho) : Bool := finishedP gp .B state
-
-/-- **O-Corrupt-A.** `() → Option St`. Return `stA` if corruption is allowed. -/
+/-- **O-Corrupt-A.** Return `stA` if `allowCorr ∨ finishedA`. -/
 def oracleCorruptA (gp : GameParams) (St I Rho : Type) :
     QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
