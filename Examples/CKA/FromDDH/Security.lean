@@ -862,28 +862,29 @@ private lemma relTriple_of_map_eq
     subst hzEq
     exact hpost x hx
 
-/-- Uniform helper for oracle branches where reduction and hybrid use identical code.
+/-- Uniform helper for oracle branches where the two runs agree via `hybridProj`.
 
-Given `hybridRel sR sH` with `sH = hybridProj sR`, if the oracle's run on `sH`
-factors as the `hybridProj`-projection of its run on `sR`, and if the shape
-and window invariants are preserved along the support, then the full `RelTriple`
-with `hybridRel` postcondition holds.
+If running `maR` on the reduction state `sR` and `maH` on the hybrid state
+`hybridProj sR` produce results related by `hybridProj` at the state component,
+and both the shape and window invariants are preserved along the support, then
+the `RelTriple` with `hybridRel` postcondition holds.
 
-This packages the common pattern for `unif`, `recvA`/`recvB`, `corruptA`/`corruptB`
-and the non-embedding sub-cases of `sendA`/`sendB`/`challA`/`challB`. -/
+Applies both to oracles where `maR = maH` (shared code: `unif`, `recv*`, `corrupt*`)
+and to oracles where `maR ≠ maH` but agree on outputs (non-embedding sub-cases of
+`send*`/`chall*`, and the embedding sub-cases where outputs match explicitly). -/
 private lemma hybridRel_of_run_eq
     {α : Type}
-    (ma : StateT (GameState (F ⊕ G) G G) ProbComp α)
+    (maR maH : StateT (GameState (F ⊕ G) G G) ProbComp α)
     (sR : GameState (F ⊕ G) G G) (gp : GameParams) (a b : F)
     (hrun_eq : (fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2))
-        <$> ma.run sR =
-      ma.run (hybridProj (F := F) (gen := gen) gp a b sR))
-    (hShape_post : ∀ p ∈ support (evalDist (ma.run sR)), reachableShape gen p.2)
-    (hWin_post : ∀ p ∈ support (evalDist (ma.run sR)),
+        <$> maR.run sR =
+      maH.run (hybridProj (F := F) (gen := gen) gp a b sR))
+    (hShape_post : ∀ p ∈ support (evalDist (maR.run sR)), reachableShape gen p.2)
+    (hWin_post : ∀ p ∈ support (evalDist (maR.run sR)),
       hybridWindowInv (F := F) (G := G) (gen := gen) gp a b p.2) :
     OracleComp.ProgramLogic.Relational.RelTriple
-      (ma.run sR)
-      (ma.run (hybridProj (F := F) (gen := gen) gp a b sR))
+      (maR.run sR)
+      (maH.run (hybridProj (F := F) (gen := gen) gp a b sR))
       (fun pR pH => pR.1 = pH.1 ∧
         hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   refine relTriple_of_map_eq
