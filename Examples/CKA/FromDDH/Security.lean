@@ -1549,6 +1549,17 @@ together with the fair-coin decomposition of both games:
 Hence `ddhGuessAdvantage(gen, ℬ) = securityAdvantage(ddhCKA, 𝒜, gp)`.
 -/
 
+/-- Auxiliary: the failure probability of `securityExpFixedBit` does not depend on
+the challenge bit. This holds because the bit only affects the output of the
+challenge oracle, not whether any computation fails.
+
+TODO: prove via oracle-level NeverFail / bind-decomposition; currently `sorry`. -/
+private lemma probFailure_securityExpFixedBit_eq
+    (gp : GameParams) (adversary : SecurityAdversary (F ⊕ G) G G) :
+    Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary true gp] =
+    Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
+  sorry
+
 /-- **DDH-CKA security (per-adversary form)** [ACD19, Theorem 3].
 
 For any CKA adversary `𝒜`, the CKA advantage is bounded by the DDH
@@ -1561,15 +1572,50 @@ theorem security (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     securityAdvantage (ddhCKA F G gen) adversary gp ≤
       ddhGuessAdvantage gen (securityReduction gp adversary) := by
-  -- In fact the two advantages are equal. From the branch lemmas:
-  --   Pr[=true | ddhExpReal ℬ] = Pr[=false | FixedBit false] = 1 - Pr[=true | FixedBit false]
-  --   Pr[=true | ddhExpRand ℬ] = Pr[=false | FixedBit true]  = 1 - Pr[=true | FixedBit true]
-  -- Hence  Pr[=true|ddhReal] - Pr[=true|ddhRand] =
-  --         Pr[=true|FixedBit true] - Pr[=true|FixedBit false]
-  -- Combined with `ddhExp_probOutput_sub_half` and `securityExp_toReal_sub_half`:
-  --   Pr[=true|ddhExp] - 1/2 = Pr[=true|securityExp] - 1/2
-  -- Taking absolute values: `ddhGuessAdvantage = securityAdvantage` ≤ ddhGuessAdvantage.
-  sorry
+  -- The two advantages are equal; ≤ follows.
+  -- Branch lemmas
+  have hReal := securityReduction_real (gen := gen) gp hΔ adversary
+  have hRand := securityReduction_rand (gen := gen) gp hΔ hg adversary
+  -- Failure-probability symmetry across the two fixed-bit games
+  have hFail := probFailure_securityExpFixedBit_eq (F := F) (G := G) (gen := gen) gp adversary
+  -- Advantage decomposition identities
+  have hDdh := ddhExp_probOutput_sub_half (F := F) gen
+    (securityReduction (F := F) (G := G) gp adversary)
+  have hSec := securityExp_toReal_sub_half (ddhCKA F G gen) adversary gp
+  -- Convert `=false` to `1 - =true - ⊥` for both fixed-bit games (via Pr[true]+Pr[false]=1-Pr[⊥])
+  have hFalseSub (b : Bool) :
+      (Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal +
+      (Pr[= true | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal =
+      1 - (Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal := by
+    have h := probOutput_false_add_true
+      (mx := securityExpFixedBit (ddhCKA F G gen) adversary b gp)
+    have hNeTop : (Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary b gp]) ≠ ⊤ := by
+      simp
+    calc (Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal +
+          (Pr[= true | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal
+        = (Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary b gp] +
+            Pr[= true | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal := by
+          rw [ENNReal.toReal_add (by simp) (by simp)]
+      _ = (1 - Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal := by
+          rw [h]
+      _ = 1 - (Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary b gp]).toReal := by
+          rw [ENNReal.toReal_sub_of_le (by simp) (by simp)]; simp
+  -- From the branch lemmas (converted to toReal)
+  have hRealR := congrArg ENNReal.toReal hReal
+  have hRandR := congrArg ENNReal.toReal hRand
+  have hFailR := congrArg ENNReal.toReal hFail
+  -- Key arithmetic: the two sub-half expressions agree
+  have hKey :
+      (Pr[= true | ddhExp gen
+        (securityReduction (F := F) (G := G) gp adversary)]).toReal - 1 / 2 =
+      (Pr[= true | securityExp (ddhCKA F G gen) adversary gp]).toReal - 1 / 2 := by
+    have hF := hFalseSub false
+    have hT := hFalseSub true
+    rw [hDdh, hSec, hRealR, hRandR]
+    linarith [hF, hT, hFailR]
+  -- Take absolute values
+  unfold securityAdvantage ddhGuessAdvantage
+  exact le_of_eq (by rw [← hKey])
 
 /-- **DDH-CKA security (quantitative form)** [ACD19, Theorem 3].
 
