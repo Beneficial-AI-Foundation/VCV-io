@@ -602,6 +602,9 @@ private noncomputable def hybridPostMap {α : Type} (gp : GameParams) (a b : F)
     (p : α × GameState (F ⊕ G) G G) : α × GameState (F ⊕ G) G G :=
   (p.1, hybridProj (F := F) (gen := gen) gp a b p.2)
 
+section hybridHelpers
+omit [Fintype F] [SampleableType F] [SampleableType G]
+
 /-- If the projected state is reachable and the reduction-side window witness holds,
 then the pair of states satisfies `hybridRel`. -/
 private lemma hybridRel_mk (gp : GameParams) (a b : F)
@@ -612,6 +615,9 @@ private lemma hybridRel_mk (gp : GameParams) (a b : F)
     hybridRel (F := F) (G := G) (gen := gen) gp a b s
       (hybridProj (F := F) (gen := gen) gp a b s) :=
   ⟨rfl, hInv, hWin⟩
+
+section windowAndReachable
+omit [DecidableEq F] [DecidableEq G]
 
 /-- In the challenged-`A` challenge window, `hybridWindowInv` identifies the pending
 challenge transcript as `(b • gen, (a * b) • gen)`. -/
@@ -787,6 +793,8 @@ private lemma reachableInv_sendB_or_challB
   | inr hchallB =>
       simpa [phaseShapeInv, hchallB] using hshape
 
+end windowAndReachable
+
 /-- The projected initial state is already an honest hybrid state. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
@@ -870,6 +878,7 @@ private lemma finishedB_hybridProj (gp : GameParams) (a b : F)
     finishedB gp (hybridProj (F := F) (gen := gen) gp a b s) = finishedB gp s := by
   rfl
 
+omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptA` can never occur while `tA = tStar`. -/
 private lemma tA_ne_tStar_of_corruptA_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -887,6 +896,7 @@ private lemma tA_ne_tStar_of_corruptA_allowed
       simpa [finishedA, finishedP, hΔ] using hfin
     omega
 
+omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar - 1`. -/
 private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -904,6 +914,7 @@ private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
       simpa [finishedB, finishedP, hΔ] using hfin
     omega
 
+omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar`. -/
 private lemma tB_ne_tStar_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -1027,6 +1038,8 @@ private lemma hybridRel_query_corruptB
         (a := ((none : Option (F ⊕ G)), sR))
         (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR))
         ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+
+end hybridHelpers
 
 /-- One-step relational property for the real/hybrid bridge.
 
