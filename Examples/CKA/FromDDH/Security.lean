@@ -135,13 +135,13 @@ At `tB = t* - 1` (embedding epoch), with state `(stA, stB) = (xA ∈ F, h ∈ G)
 - Update: `(stA, stB, tB) ← (xA, y ∈ F, tB + 1)` for fresh `y ← $F`
 
 All other epochs: delegates to `oracleSendB`. -/
-private noncomputable def reductionSendB (gen gA : G) :
+private noncomputable def reductionSendB (gp : GameParams) (gen gA : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
       let state := { state with tB := state.tB + 1 }
-      if state.challengedParty == .A && isOtherSendBeforeChall state then
+      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
         let xA := match state.stA with | .inl x => x | .inr _ => 0
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
@@ -168,13 +168,13 @@ At `tA = t*` (embedding epoch), with state `(stA, stB) = (h ∈ G, xB ∈ F)`:
 - Update: `(stA, stB, tA) ← (y ∈ F, xB, tA + 1)` for fresh `y ← $F`
 
 All other epochs: delegates to `oracleSendA`. -/
-private noncomputable def reductionSendA (gen gA : G) :
+private noncomputable def reductionSendA (gp : GameParams) (gen gA : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendA then
       let state := { state with tA := state.tA + 1 }
-      if state.challengedParty == .B && isOtherSendBeforeChall state then
+      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
         let xB := match state.stB with | .inl x => x | .inr _ => 0
         let y ← liftM ($ᵗ F : ProbComp F)
         set { state with
@@ -201,13 +201,13 @@ With state `(stA, stB) = (aG ∈ G, xB ∈ F)`:
 - Random DDH: `gT = cG` for uniform `c`, matching `$ᵗ G`
 - Update: `(stA, tA) ← (z ∈ F, tA + 1)` for fresh `z ← $F` (not `b`);
   `ΔCKA = 1` prevents corruption before `z` is overwritten -/
-private noncomputable def reductionChallA (gB gT : G) :
+private noncomputable def reductionChallA (gp : GameParams) (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if state.challengedParty == .A && validStep state.lastAction .challA then
+    if gp.challengedParty == .A && validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
-      if isChallengeEpoch state then
+      if isChallengeEpoch gp state then
         let z ← liftM ($ᵗ F : ProbComp F)
         set { state with
           stA := (.inl z : F ⊕ G),
@@ -223,13 +223,13 @@ private noncomputable def reductionChallA (gB gT : G) :
 With state `(stA, stB) = (xA ∈ F, bG ∈ G)`:
 - Output: `(ρ, key) = (gB, gT)` from DDH tuple
 - Update: `(stB, tB) ← (z ∈ F, tB + 1)` for fresh `z ← $F` -/
-private noncomputable def reductionChallB (gB gT : G) :
+private noncomputable def reductionChallB (gp : GameParams) (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if state.challengedParty == .B && validStep state.lastAction .challB then
+    if gp.challengedParty == .B && validStep state.lastAction .challB then
       let state := { state with tB := state.tB + 1 }
-      if isChallengeEpoch state then
+      if isChallengeEpoch gp state then
         let z ← liftM ($ᵗ F : ProbComp F)
         set { state with
           stB := (.inl z : F ⊕ G),
@@ -247,17 +247,17 @@ Embeds the DDH tuple into the oracles for `challengedParty` (read from state):
 
 All modified oracles are always present; each guards on `challengedParty`
 internally, so only the relevant ones fire. -/
-private noncomputable def reductionOracleImpl (gen gA gB gT : G) :
+private noncomputable def reductionOracleImpl (gp : GameParams) (gen gA gB gT : G) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
-    + reductionSendA (F := F) gen gA
+    + reductionSendA (F := F) gp gen gA
     + oracleRecvA (ddhCKA F G gen)
-    + reductionSendB (F := F) gen gA
+    + reductionSendB (F := F) gp gen gA
     + oracleRecvB (ddhCKA F G gen))
-  + reductionChallA (F := F) gB gT
-  + reductionChallB (F := F) gB gT
-  + oracleCorruptA (F ⊕ G) G G
-  + oracleCorruptB (F ⊕ G) G G
+  + reductionChallA (F := F) gp gB gT
+  + reductionChallB (F := F) gp gB gT
+  + oracleCorruptA gp (F ⊕ G) G G
+  + oracleCorruptB gp (F ⊕ G) G G
 
 /-- DDH adversary obtained by reduction from a CKA security adversary
 [ACD19, Theorem 3], parameterized by `gp : GameParams`.
@@ -271,8 +271,8 @@ noncomputable def securityReduction (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : DDHAdversary F G :=
   fun gen gA gB gT => do
     let x₀ ← $ᵗ F
-    let (b', _) ← (simulateQ (reductionOracleImpl gen gA gB gT) adversary).run
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+    let (b', _) ← (simulateQ (reductionOracleImpl gp gen gA gB gT) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
     return !b'
 
 /-! ### Simulation: each DDH branch maps to the corresponding CKA branch
@@ -311,8 +311,8 @@ private noncomputable def securityReductionRealGame (gp : GameParams)
   let b ← $ᵗ F
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+    (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
 /-- Unfold the real DDH branch of the reduction into the explicit helper game
@@ -320,11 +320,11 @@ private noncomputable def securityReductionRealGame (gp : GameParams)
 private lemma probOutput_ddhExpReal_securityReduction (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= true | ddhExpReal gen (securityReduction gp adversary)] =
-    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] := by
+    Pr[= false | securityReductionRealGame (gen := gen) gp adversary] := by
   unfold DiffieHellman.ddhExpReal securityReduction
   simpa [securityReductionRealGame, map_eq_bind_pure_comp] using
     (probOutput_not_map (m := ProbComp)
-      (mx := securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary))
+      (mx := securityReductionRealGame (gen := gen) gp adversary))
 
 /-- The fixed-bit CKA security game with `b = false`, written explicitly with the
 initial key sample exposed. -/
@@ -332,8 +332,8 @@ private noncomputable def securityExpFixedBitFalseGame (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (ckaSecurityImpl (ddhCKA F G gen)) adversary).run
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+    (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
 /-- Unfold the fixed-bit `b = false` branch into the explicit helper game
@@ -341,7 +341,7 @@ private noncomputable def securityExpFixedBitFalseGame (gp : GameParams)
 private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false gp] =
-    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) gp adversary] := by
+    Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp [initGameState]
 
@@ -350,13 +350,13 @@ At the special epoch before `challB`, it reuses the externally fixed DDH scalar
 `a` both for the visible output and for A's next hidden state. This matches the
 honest game instantiated with the corresponding challenge randomness, unlike
 `reductionSendA`, which uses an independent fresh hidden scalar. -/
-private noncomputable def hybridSendA (gen : G) (a : F) :
+private noncomputable def hybridSendA (gp : GameParams) (gen : G) (a : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendA then
       let state := { state with tA := state.tA + 1 }
-      if state.challengedParty == .B && isOtherSendBeforeChall state then
+      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
         let gA := a • gen
         let xB := match state.stB with | .inl x => x | .inr _ => 0
         set { state with
@@ -378,13 +378,13 @@ At the special epoch before `challA`, it reuses the externally fixed DDH scalar
 `a` both for the visible output and for B's next hidden state. This matches the
 honest game instantiated with the corresponding challenge randomness, unlike
 `reductionSendB`, which uses an independent fresh hidden scalar. -/
-private noncomputable def hybridSendB (gen : G) (a : F) :
+private noncomputable def hybridSendB (gp : GameParams) (gen : G) (a : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
     if validStep state.lastAction .sendB then
       let state := { state with tB := state.tB + 1 }
-      if state.challengedParty == .A && isOtherSendBeforeChall state then
+      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
         let gA := a • gen
         let xA := match state.stA with | .inl x => x | .inr _ => 0
         set { state with
@@ -405,13 +405,13 @@ private noncomputable def hybridSendB (gen : G) (a : F) :
 At the challenge epoch, it reuses the externally fixed DDH scalar `b` as A's
 post-challenge hidden state. This matches the honest game when the challenge
 send samples `b`. -/
-private noncomputable def hybridChallA (gen : G) (a b : F) :
+private noncomputable def hybridChallA (gp : GameParams) (gen : G) (a b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if state.challengedParty == .A && validStep state.lastAction .challA then
+    if gp.challengedParty == .A && validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
-      if isChallengeEpoch state then
+      if isChallengeEpoch gp state then
         let gB := b • gen
         let gT := (a * b) • gen
         set { state with
@@ -426,13 +426,13 @@ private noncomputable def hybridChallA (gen : G) (a b : F) :
 At the challenge epoch, it reuses the externally fixed DDH scalar `b` as B's
 post-challenge hidden state. This matches the honest game when the challenge
 send samples `b`. -/
-private noncomputable def hybridChallB (gen : G) (a b : F) :
+private noncomputable def hybridChallB (gp : GameParams) (gen : G) (a b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if state.challengedParty == .B && validStep state.lastAction .challB then
+    if gp.challengedParty == .B && validStep state.lastAction .challB then
       let state := { state with tB := state.tB + 1 }
-      if isChallengeEpoch state then
+      if isChallengeEpoch gp state then
         let gB := b • gen
         let gT := (a * b) • gen
         set { state with
@@ -446,17 +446,17 @@ private noncomputable def hybridChallB (gen : G) (a b : F) :
 /-- Hybrid oracle implementation: same visible DDH embedding as
 `reductionOracleImpl`, but the hidden states at the special send/challenge
 epochs use the DDH scalars `a, b` instead of fresh randomness. -/
-private noncomputable def hybridImpl (gen : G) (a b : F) :
+private noncomputable def hybridImpl (gp : GameParams) (gen : G) (a b : F) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
-    + hybridSendA (F := F) gen a
+    + hybridSendA (F := F) gp gen a
     + oracleRecvA (ddhCKA F G gen)
-    + hybridSendB (F := F) gen a
+    + hybridSendB (F := F) gp gen a
     + oracleRecvB (ddhCKA F G gen))
-  + hybridChallA (F := F) gen a b
-  + hybridChallB (F := F) gen a b
-  + oracleCorruptA (F ⊕ G) G G
-  + oracleCorruptB (F ⊕ G) G G
+  + hybridChallA (F := F) gp gen a b
+  + hybridChallB (F := F) gp gen a b
+  + oracleCorruptA gp (F ⊕ G) G G
+  + oracleCorruptB gp (F ⊕ G) G G
 
 /-- The explicit game induced by `hybridImpl`. -/
 private noncomputable def securityHybridGame (gp : GameParams)
@@ -465,8 +465,8 @@ private noncomputable def securityHybridGame (gp : GameParams)
   let b ← $ᵗ F
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (hybridImpl (F := F) gen a b) adversary).run
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+    (simulateQ (hybridImpl (F := F) gp gen a b) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
 /-- State map `π : GameState → GameState` from `R`-states to `H`-states,
@@ -484,20 +484,20 @@ embedding epochs for the challenged direction:
   challenge branch
 
 All other fields (outputs, counters, flags) pass through unchanged. -/
-private noncomputable def hybridProj (a b : F)
+private noncomputable def hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
   { s with
     correct := true
-    stA := match s.challengedParty, s.stA with
+    stA := match gp.challengedParty, s.stA with
       | .A, .inl _ =>
-          if s.tA == s.tStar &&
+          if s.tA == gp.tStar &&
               (s.lastAction = some .challA ||
                s.lastAction = some .recvB ||
                s.lastAction = some .sendB)
           then (.inl b : F ⊕ G)
           else s.stA
       | .B, .inl _ =>
-          if s.tA == s.tStar &&
+          if s.tA == gp.tStar &&
               (s.lastAction = some .sendA ||
                s.lastAction = some .recvB ||
                s.lastAction = some .sendB ||
@@ -505,9 +505,9 @@ private noncomputable def hybridProj (a b : F)
           then (.inl a : F ⊕ G)
           else s.stA
       | _, .inr _ => s.stA
-    stB := match s.challengedParty, s.stB with
+    stB := match gp.challengedParty, s.stB with
       | .A, .inl _ =>
-          if s.tB == s.tStar - 1 &&
+          if s.tB == gp.tStar - 1 &&
               (s.lastAction = some .sendB ||
                s.lastAction = some .recvA ||
                s.lastAction = some .sendA ||
@@ -515,7 +515,7 @@ private noncomputable def hybridProj (a b : F)
           then (.inl a : F ⊕ G)
           else s.stB
       | .B, .inl _ =>
-          if s.tB == s.tStar &&
+          if s.tB == gp.tStar &&
               (s.lastAction = some .challB ||
                s.lastAction = some .recvA ||
                s.lastAction = some .sendA)
@@ -545,36 +545,36 @@ private def hybridInvariant (s : GameState (F ⊕ G) G G) : Prop :=
 
 /-- Relational invariant between reduction and hybrid states. The hybrid state is the
 projection of the reduction state and itself satisfies the honest four-phase invariant. -/
-private def hybridRel (a b : F)
+private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  sH = hybridProj (F := F) a b sR ∧ hybridInvariant (F := F) (G := G) (gen := gen) sH
+  sH = hybridProj (F := F) gp a b sR ∧
+  hybridInvariant (F := F) (G := G) (gen := gen) sH
 
 /-- The projected initial state is already an honest hybrid state. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
-    hybridRel (F := F) (G := G) (gen := gen) a b
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp) := by
+    hybridRel (F := F) (G := G) (gen := gen) gp a b
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
   constructor
   · symm
     cases hcp : gp.challengedParty <;>
-      simp [hybridProj, initGameState, GameState.challengedParty, hcp]
-  · refine ⟨rfl, ?_⟩
-    exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      simp [hybridProj, initGameState, hcp]
+  · exact ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
 while leaving their respective states unchanged. -/
-private lemma hybridRel_query_unif (a b : F) (t : unifSpec.Domain)
+private lemma hybridRel_query_unif (gp : GameParams) (a b : F) (t : unifSpec.Domain)
     (sR sH : GameState (F ⊕ G) G G)
-    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((oracleUnif (F ⊕ G) G G t).run sR)
       ((oracleUnif (F ⊕ G) G G t).run sH)
       (fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   simpa [oracleUnif] using
     (OracleComp.ProgramLogic.Relational.relTriple_map
       (R := fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2)
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       (f := fun u => (u, sR)) (g := fun u => (u, sH))
       (OracleComp.ProgramLogic.Relational.relTriple_post_mono
         (OracleComp.ProgramLogic.Relational.relTriple_query (spec₁ := unifSpec) t)
@@ -592,7 +592,7 @@ private lemma relTriple_of_map_eq
     {oa : ProbComp α} {ob : ProbComp β}
     (f : α → β)
     (hmap : f <$> oa = ob)
-    (hpost : ∀ x, x ∈ support oa → R x (f x)) :
+    (hpost : ∀ x, x ∈ support (evalDist oa) → R x (f x)) :
     OracleComp.ProgramLogic.Relational.RelTriple oa ob R := by
   apply (OracleComp.ProgramLogic.Relational.relTriple_iff_relWP
     (oa := oa) (ob := ob) (R := R)).2
@@ -601,7 +601,7 @@ private lemma relTriple_of_map_eq
     · simp
     · calc
         Prod.snd <$> (evalDist oa >>= fun x => pure (x, f x))
-          = f <$> evalDist oa := by simp [evalDist_map]
+          = f <$> evalDist oa := by simp
         _ = evalDist (f <$> oa) := by simp [evalDist_map]
         _ = evalDist ob := by simpa using congrArg evalDist hmap
   · intro z hz
@@ -613,123 +613,181 @@ private lemma relTriple_of_map_eq
     subst hzEq
     exact hpost x hx
 
+/-- `hybridProj` preserves the counters used by `allowCorr`. -/
+private lemma allowCorr_hybridProj (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    allowCorr gp (hybridProj (F := F) gp a b s) = allowCorr gp s := by
+  simp [allowCorr, hybridProj]
+
+/-- `hybridProj` preserves the counters used by `finishedA`. -/
+private lemma finishedA_hybridProj (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    finishedA gp (hybridProj (F := F) gp a b s) = finishedA gp s := by
+  simp [finishedA, finishedP, GameState.tP, hybridProj]
+
+/-- `hybridProj` preserves the counters used by `finishedB`. -/
+private lemma finishedB_hybridProj (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    finishedB gp (hybridProj (F := F) gp a b s) = finishedB gp s := by
+  simp [finishedB, finishedP, GameState.tP, hybridProj]
+
+/-- With `ΔCKA = 1`, `corruptA` can never occur while `tA = tStar`. -/
+private lemma tA_ne_tStar_of_corruptA_allowed
+    (gp : GameParams) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedA gp s = true) :
+    s.tA ≠ gp.tStar := by
+  intro htA
+  have hcases : allowCorr gp s = true ∨ finishedA gp s = true := by
+    simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+  rcases hcases with hcorr | hfin
+  · have hcorr' : max s.tA s.tB + 2 ≤ gp.tStar := by
+      simpa [allowCorr] using hcorr
+    omega
+  · have hfin' : gp.tStar + 1 ≤ s.tA := by
+      simpa [finishedA, finishedP, hΔ] using hfin
+    omega
+
+/-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar - 1`. -/
+private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
+    (gp : GameParams) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedB gp s = true) :
+    s.tB ≠ gp.tStar - 1 := by
+  intro htB
+  have hcases : allowCorr gp s = true ∨ finishedB gp s = true := by
+    simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+  rcases hcases with hcorr | hfin
+  · have hcorr' : max s.tA s.tB + 2 ≤ gp.tStar := by
+      simpa [allowCorr] using hcorr
+    omega
+  · have hfin' : gp.tStar + 1 ≤ s.tB := by
+      simpa [finishedB, finishedP, hΔ] using hfin
+    omega
+
+/-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar`. -/
+private lemma tB_ne_tStar_of_corruptB_allowed
+    (gp : GameParams) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedB gp s = true) :
+    s.tB ≠ gp.tStar := by
+  intro htB
+  have hcases : allowCorr gp s = true ∨ finishedB gp s = true := by
+    simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+  rcases hcases with hcorr | hfin
+  · have hcorr' : max s.tA s.tB + 2 ≤ gp.tStar := by
+      simpa [allowCorr] using hcorr
+    omega
+  · have hfin' : gp.tStar + 1 ≤ s.tB := by
+      simpa [finishedB, finishedP, hΔ] using hfin
+    omega
+
 /-- With `ΔCKA = 1`, the A-state projection window closes before `corruptA`
 can return a state. -/
 private lemma hybridProj_stA_eq_of_corruptA_allowed
-    (a b : F) (s : GameState (F ⊕ G) G G)
-    (hΔ : s.deltaCKA = 1)
-    (hallow : allowCorr s || finishedA s = true) :
-    (hybridProj (F := F) a b s).stA = s.stA := by
-  cases hcp : s.challengedParty <;>
-    simp [hybridProj, hcp] at *
-  · split_ifs with hwin <;> simp
-    rcases Bool.or_eq_true.mp hallow with hcorr | hfin
-    · have ht : s.tStar + 2 ≤ s.tA := by
-        exact le_trans (by omega) hcorr
-      omega
-    · rw [finishedA, finishedP, hΔ] at hfin
-      omega
-  · split_ifs with hwin <;> simp
-    rcases Bool.or_eq_true.mp hallow with hcorr | hfin
-    · have ht : s.tStar + 2 ≤ s.tA := by
-        exact le_trans (by omega) hcorr
-      omega
-    · rw [finishedA, finishedP, hΔ] at hfin
-      omega
+    (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedA gp s = true) :
+    (hybridProj (F := F) gp a b s).stA = s.stA := by
+  have htA : s.tA ≠ gp.tStar :=
+    tA_ne_tStar_of_corruptA_allowed (F := F) gp s hΔ hallow
+  cases hcp : gp.challengedParty <;> cases hsA : s.stA <;>
+    simp [hybridProj, hcp, hsA, htA]
 
 /-- With `ΔCKA = 1`, the B-state projection window closes before `corruptB`
 can return a state. -/
 private lemma hybridProj_stB_eq_of_corruptB_allowed
-    (a b : F) (s : GameState (F ⊕ G) G G)
-    (hΔ : s.deltaCKA = 1)
-    (hallow : allowCorr s || finishedB s = true) :
-    (hybridProj (F := F) a b s).stB = s.stB := by
-  cases hcp : s.challengedParty <;>
-    simp [hybridProj, hcp] at *
-  · split_ifs with hwin <;> simp
-    rcases Bool.or_eq_true.mp hallow with hcorr | hfin
-    · have ht : s.tStar + 1 ≤ s.tB := by
-        omega
-      omega
-    · rw [finishedB, finishedP, hΔ] at hfin
-      omega
-  · split_ifs with hwin <;> simp
-    rcases Bool.or_eq_true.mp hallow with hcorr | hfin
-    · have ht : s.tStar + 2 ≤ s.tB := by
-        exact le_trans (by omega) hcorr
-      omega
-    · rw [finishedB, finishedP, hΔ] at hfin
-      omega
+    (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedB gp s = true) :
+    (hybridProj (F := F) gp a b s).stB = s.stB := by
+  cases hcp : gp.challengedParty
+  · have htB : s.tB ≠ gp.tStar - 1 :=
+      tB_ne_tStar_sub_one_of_corruptB_allowed (F := F) gp s hΔ hallow
+    cases hsB : s.stB <;> simp [hybridProj, hcp, hsB, htB]
+  · have htB : s.tB ≠ gp.tStar :=
+      tB_ne_tStar_of_corruptB_allowed (F := F) gp s hΔ hallow
+    cases hsB : s.stB <;> simp [hybridProj, hcp, hsB, htB]
 
 /-- `corruptA` preserves `hybridRel` once `ΔCKA = 1` is made explicit:
 the projection no longer changes the returned A-state when corruption is legal,
 and otherwise both sides return `none` while keeping the same states. -/
 private lemma hybridRel_query_corruptA
-    (a b : F) (sR sH : GameState (F ⊕ G) G G)
-    (hΔ : sR.deltaCKA = 1)
-    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    (gp : GameParams) (a b : F) (sR sH : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
     OracleComp.ProgramLogic.Relational.RelTriple
-      ((oracleCorruptA (F ⊕ G) G G ()).run sR)
-      ((oracleCorruptA (F ⊕ G) G G ()).run sH)
+      ((oracleCorruptA gp (F ⊕ G) G G ()).run sR)
+      ((oracleCorruptA gp (F ⊕ G) G G ()).run sH)
       (fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   rcases hrel with ⟨rfl, hInv⟩
-  apply relTriple_of_map_eq (f := Prod.map id (hybridProj (F := F) a b))
-  · by_cases hallow : allowCorr sR || finishedA sR = true
-    · have hallowH : allowCorr (hybridProj (F := F) a b sR) ||
-          finishedA (hybridProj (F := F) a b sR) = true := by
-        simpa [hybridProj] using hallow
-      have hstA := hybridProj_stA_eq_of_corruptA_allowed
-        (F := F) a b sR (by simpa [GameState.deltaCKA] using hΔ) hallow
-      simp [oracleCorruptA, hallow, hallowH, hstA]
-    · have hallowH : allowCorr (hybridProj (F := F) a b sR) ||
-          finishedA (hybridProj (F := F) a b sR) = false := by
-        simpa [hybridProj] using hallow
-      simp [oracleCorruptA, hallow, hallowH]
-  · intro pR hpR
-    by_cases hallow : allowCorr sR || finishedA sR = true
-    · have hpR' : pR = (some sR.stA, sR) := by
-        simpa [oracleCorruptA, hallow] using hpR
-      subst hpR'
-      exact ⟨rfl, rfl, hInv⟩
-    · have hpR' : pR = (none, sR) := by
-        simpa [oracleCorruptA, hallow] using hpR
-      subst hpR'
-      exact ⟨rfl, rfl, hInv⟩
+  by_cases hallow : allowCorr gp sR = true ∨ finishedA gp sR = true
+  · have hallowBool : allowCorr gp sR || finishedA gp sR = true := by
+      simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+    have hallowH : allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
+        finishedA gp (hybridProj (F := F) gp a b sR) = true := by
+      simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
+    have hstA := hybridProj_stA_eq_of_corruptA_allowed
+      (F := F) gp a b sR hΔ hallowBool
+    simpa [oracleCorruptA, hallow, hallowH, hstA] using
+      (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+        (spec₁ := unifSpec) (spec₂ := unifSpec)
+        (R := fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        (a := (some sR.stA, sR))
+        (b := (some sR.stA, hybridProj (F := F) gp a b sR))
+        ⟨rfl, ⟨rfl, hInv⟩⟩)
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
+        finishedA gp (hybridProj (F := F) gp a b sR) = true) := by
+      simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
+    simpa [oracleCorruptA, hallow, hallowH] using
+      (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+        (spec₁ := unifSpec) (spec₂ := unifSpec)
+        (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        (a := ((none : Option (F ⊕ G)), sR))
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) gp a b sR))
+        ⟨rfl, ⟨rfl, hInv⟩⟩)
 
 /-- Symmetric corruption leaf for `corruptB`. -/
 private lemma hybridRel_query_corruptB
-    (a b : F) (sR sH : GameState (F ⊕ G) G G)
-    (hΔ : sR.deltaCKA = 1)
-    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    (gp : GameParams) (a b : F) (sR sH : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
     OracleComp.ProgramLogic.Relational.RelTriple
-      ((oracleCorruptB (F ⊕ G) G G ()).run sR)
-      ((oracleCorruptB (F ⊕ G) G G ()).run sH)
+      ((oracleCorruptB gp (F ⊕ G) G G ()).run sR)
+      ((oracleCorruptB gp (F ⊕ G) G G ()).run sH)
       (fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   rcases hrel with ⟨rfl, hInv⟩
-  apply relTriple_of_map_eq (f := Prod.map id (hybridProj (F := F) a b))
-  · by_cases hallow : allowCorr sR || finishedB sR = true
-    · have hallowH : allowCorr (hybridProj (F := F) a b sR) ||
-          finishedB (hybridProj (F := F) a b sR) = true := by
-        simpa [hybridProj] using hallow
-      have hstB := hybridProj_stB_eq_of_corruptB_allowed
-        (F := F) a b sR (by simpa [GameState.deltaCKA] using hΔ) hallow
-      simp [oracleCorruptB, hallow, hallowH, hstB]
-    · have hallowH : allowCorr (hybridProj (F := F) a b sR) ||
-          finishedB (hybridProj (F := F) a b sR) = false := by
-        simpa [hybridProj] using hallow
-      simp [oracleCorruptB, hallow, hallowH]
-  · intro pR hpR
-    by_cases hallow : allowCorr sR || finishedB sR = true
-    · have hpR' : pR = (some sR.stB, sR) := by
-        simpa [oracleCorruptB, hallow] using hpR
-      subst hpR'
-      exact ⟨rfl, rfl, hInv⟩
-    · have hpR' : pR = (none, sR) := by
-        simpa [oracleCorruptB, hallow] using hpR
-      subst hpR'
-      exact ⟨rfl, rfl, hInv⟩
+  by_cases hallow : allowCorr gp sR = true ∨ finishedB gp sR = true
+  · have hallowBool : allowCorr gp sR || finishedB gp sR = true := by
+      simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+    have hallowH : allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
+        finishedB gp (hybridProj (F := F) gp a b sR) = true := by
+      simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
+    have hstB := hybridProj_stB_eq_of_corruptB_allowed
+      (F := F) gp a b sR hΔ hallowBool
+    simpa [oracleCorruptB, hallow, hallowH, hstB] using
+      (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+        (spec₁ := unifSpec) (spec₂ := unifSpec)
+        (R := fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        (a := (some sR.stB, sR))
+        (b := (some sR.stB, hybridProj (F := F) gp a b sR))
+        ⟨rfl, ⟨rfl, hInv⟩⟩)
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) gp a b sR) = true ∨
+        finishedB gp (hybridProj (F := F) gp a b sR) = true) := by
+      simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
+    simpa [oracleCorruptB, hallow, hallowH] using
+      (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+        (spec₁ := unifSpec) (spec₂ := unifSpec)
+        (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+        (a := ((none : Option (F ⊕ G)), sR))
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) gp a b sR))
+        ⟨rfl, ⟨rfl, hInv⟩⟩)
 
 /-- One-step relational property for the real/hybrid bridge.
 
@@ -738,12 +796,12 @@ the bridge only needs to hold on related reachable states, not on arbitrary game
 private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (sR sH : GameState (F ⊕ G) G G)
-    (hrel : hybridRel (F := F) (G := G) (gen := gen) a b sR sH) :
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
     OracleComp.ProgramLogic.Relational.RelTriple
-      (((reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen)) t).run sR)
-      (((hybridImpl (F := F) gen a b) t).run sH)
+      (((reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) t).run sR)
+      (((hybridImpl (F := F) gp gen a b) t).run sH)
       (fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) a b pR.2 pH.2) := by
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   sorry
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
@@ -752,8 +810,8 @@ unobservable under the healing predicate (`ΔCKA = 1`). -/
 private lemma securityReduction_real_to_hybrid (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
-    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] =
-    Pr[= false | securityHybridGame (F := F) (G := G) (gen := gen) gp adversary] := by
+    Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
+    Pr[= false | securityHybridGame (gen := gen) gp adversary] := by
   unfold securityReductionRealGame securityHybridGame
   refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
   intro a
@@ -765,13 +823,13 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
     hybridRel_init (F := F) (G := G) (gen := gen) gp a b x₀
   have hrun' :=
     OracleComp.ProgramLogic.Relational.relTriple_simulateQ_run'
-      (impl₁ := reductionOracleImpl gen (a • gen) (b • gen) ((a * b) • gen))
-      (impl₂ := hybridImpl (F := F) gen a b)
-      (R_state := hybridRel (F := F) (G := G) (gen := gen) a b)
+      (impl₁ := reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
+      (impl₂ := hybridImpl (F := F) gp gen a b)
+      (R_state := hybridRel (F := F) (G := G) (gen := gen) gp a b)
       adversary
       (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp hΔ a b)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false gp)
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       hrel_init
   exact OracleComp.ProgramLogic.Relational.probOutput_eq_of_relTriple_eqRel hrun' false
 
@@ -781,8 +839,8 @@ up front. -/
 private lemma securityReduction_hybrid_to_honest (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
-    Pr[= false | securityHybridGame (F := F) (G := G) (gen := gen) gp adversary] =
-    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) gp adversary] := by
+    Pr[= false | securityHybridGame (gen := gen) gp adversary] =
+    Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
   sorry
 
 /-- The core bridge for the real branch: the explicit real-DDH reduction game
@@ -790,10 +848,10 @@ matches the explicit fixed-bit CKA game with `b = false`. -/
 private lemma securityReduction_real_bridge (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
-    Pr[= false | securityReductionRealGame (F := F) (G := G) (gen := gen) gp adversary] =
-    Pr[= false | securityExpFixedBitFalseGame (F := F) (G := G) (gen := gen) gp adversary] := by
-  rw [securityReduction_real_to_hybrid (F := F) (G := G) (gen := gen) gp hΔ adversary]
-  exact securityReduction_hybrid_to_honest (F := F) (G := G) (gen := gen) gp hΔ adversary
+    Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
+    Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
+  rw [securityReduction_real_to_hybrid (gen := gen) gp hΔ adversary]
+  exact securityReduction_hybrid_to_honest (gen := gen) gp hΔ adversary
 
 /-- **Real-branch lemma.**
 `Pr[ℬ outputs true | real DDH] = Pr[𝒜 guesses false | CKA b = false]`. -/
@@ -803,7 +861,7 @@ lemma securityReduction_real (gp : GameParams)
     Pr[= true | ddhExpReal gen (securityReduction gp adversary)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
   rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false]
-  exact securityReduction_real_bridge (F := F) (G := G) (gen := gen) gp hΔ adversary
+  exact securityReduction_real_bridge (gen := gen) gp hΔ adversary
 
 /-- **Random-branch lemma.**
 `Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]`.

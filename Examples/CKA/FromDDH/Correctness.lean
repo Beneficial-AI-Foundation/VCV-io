@@ -54,7 +54,7 @@ private lemma gameInvariant_init (x₀ : F) :
       { stA := .inr (x₀ • gen), stB := .inl x₀,
         lastRhoA := none, lastRhoB := none, lastKeyA := none, lastKeyB := none,
         b := false, correct := true, lastAction := none,
-        tA := 0, tB := 0, params := ⟨0, 0, .A⟩ } :=
+        tA := 0, tB := 0 } :=
   ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
@@ -73,10 +73,10 @@ set_option linter.flexible false in
 private lemma oracleSendA_preserves_gameInvariant :
     QueryImpl.PreservesInv (CKAScheme.oracleSendA (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .sendA
   case false =>
-    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩) := by
+    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩) := by
       simpa [CKAScheme.oracleSendA, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true =>
@@ -95,10 +95,10 @@ key check: `x•(y•g) = y•(x•g)` by `smul_comm`. -/
 private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
     QueryImpl.PreservesInv (CKAScheme.oracleRecvB (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .recvB
   case false =>
-    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩) := by
+    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩) := by
       simpa [CKAScheme.oracleRecvB, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true =>
@@ -108,7 +108,7 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
       subst correct
       have : z = ((), ⟨.inl y, .inr (y • gen),
           none, none, none, none, b, true,
-          some .recvB, epA, epB + 1, gp⟩) := by
+          some .recvB, epA, epB + 1⟩) := by
         simpa [CKAScheme.oracleRecvB, validStep,
           ddhCKA, ddhCKA.recv, smul_comm x y gen,
           StateT.run_bind, StateT.run_get,
@@ -122,10 +122,10 @@ set_option linter.flexible false in
 private lemma oracleSendB_preserves_gameInvariant :
     QueryImpl.PreservesInv (CKAScheme.oracleSendB (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .sendB
   case false =>
-    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩) := by
+    have : z = (none, ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩) := by
       simpa [CKAScheme.oracleSendB, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true =>
@@ -143,10 +143,10 @@ key check: `y•(x'•g) = x'•(y•g)` by `smul_comm`. -/
 private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
     QueryImpl.PreservesInv (CKAScheme.oracleRecvA (ddhCKA F G gen)) (gameInvariant gen) := by
   intro _ σ hσ z hz
-  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩
+  rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .recvA
   case false =>
-    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB, gp⟩) := by
+    have : z = ((), ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩) := by
       simpa [CKAScheme.oracleRecvA, hGuard, StateT.run_bind, StateT.run_get, pure_bind] using hz
     subst this; exact hσ
   case true =>
@@ -156,7 +156,7 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
       subst correct
       have : z = ((), ⟨.inr (x • gen), .inl x,
           none, none, none, none, b, true,
-          some .recvA, epA + 1, epB, gp⟩) := by
+          some .recvA, epA + 1, epB⟩) := by
         simpa [CKAScheme.oracleRecvA, validStep,
           ddhCKA, ddhCKA.recv, smul_comm y x gen,
           StateT.run_bind, StateT.run_get,
@@ -233,7 +233,7 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
         lastRhoA := none, lastRhoB := none,
         lastKeyA := none, lastKeyB := none,
         b := false, correct := true, lastAction := none,
-        tA := 0, tB := 0, params := ⟨0, 0, .A⟩ }
+        tA := 0, tB := 0 }
       (gameInvariant_init (gen := gen) x₀)
       out
       hout
