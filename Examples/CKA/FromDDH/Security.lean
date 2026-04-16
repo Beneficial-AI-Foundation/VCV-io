@@ -588,13 +588,16 @@ Notation for the bridge below:
 - `hybridWindowInv` marks the brief post-challenge interval where the two games may
   disagree internally, while still exposing the same oracle outputs.
 -/
-/-- Relational invariant between reduction and hybrid states. The hybrid state is the
-projection of the reduction state, the projected state is honest, and the reduction
-state still remembers enough of the challenged branch to justify the projection. -/
+/-- Relational invariant between reduction and hybrid states.
+
+`sH = hybridProj sR` gives the projection; `reachableShape sR` captures the shape
+invariant on the reduction side (correct-flag is normalized away by `hybridProj`);
+`hybridWindowInv sR` records the extra facts about the challenged branch needed
+to justify the projection. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
   sH = hybridProj (F := F) (gen := gen) gp a b sR ∧
-  reachableInv gen sH ∧
+  reachableShape gen sR ∧
   hybridWindowInv (F := F) (G := G) (gen := gen) gp a b sR
 
 /-- Map a reduction-side post-state to the corresponding hybrid-side post-state. -/
@@ -605,16 +608,15 @@ private noncomputable def hybridPostMap {α : Type} (gp : GameParams) (a b : F)
 section hybridHelpers
 omit [Fintype F] [SampleableType F] [SampleableType G]
 
-/-- If the projected state is reachable and the reduction-side window witness holds,
-then the pair of states satisfies `hybridRel`. -/
+/-- If the reduction-side shape holds and the window witness holds, then the pair
+`(s, hybridProj s)` satisfies `hybridRel`. -/
 private lemma hybridRel_mk (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G)
-    (hInv : reachableInv gen
-      (hybridProj (F := F) (gen := gen) gp a b s))
+    (hShape : reachableShape gen s)
     (hWin : hybridWindowInv (F := F) (G := G) (gen := gen) gp a b s) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b s
       (hybridProj (F := F) (gen := gen) gp a b s) :=
-  ⟨rfl, hInv, hWin⟩
+  ⟨rfl, hShape, hWin⟩
 
 section windowAndReachable
 omit [DecidableEq F] [DecidableEq G]
@@ -805,7 +807,7 @@ private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
   · symm
     cases hcp : gp.challengedParty <;>
       simp [hybridProj, initGameState, hcp]
-  · exact ⟨rfl, rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · simp [hybridWindowInv, initGameState]
 
 /-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
@@ -1099,6 +1101,11 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | recvA => exfalso; simp [hact, validStep] at hstep
           | recvB => exfalso; simp [hact, validStep] at hstep
           | challA => exfalso; simp [hact, validStep] at hstep
+          -- In the divergence window, hybridProj may set stA := .inl a/b,
+          -- causing hybrid recv to compute a different key than reduction recv.
+          -- This would set sH_new.correct := false, violating reachableInv.
+          -- Resolution requires extending hybridProj to also track lastKeyB,
+          -- or weakening hybridRel to allow correct differences.
           | sendB => sorry
           | challB => sorry
   -- sendB: symmetric to sendA for the challenged-A case
@@ -1141,6 +1148,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | sendB => exfalso; simp [hact, validStep] at hstep
           | recvB => exfalso; simp [hact, validStep] at hstep
           | challB => exfalso; simp [hact, validStep] at hstep
+          -- Symmetric window-divergence issue as in the recvA case.
           | sendA => sorry
           | challA => sorry
   -- challA: reduction uses (gB, gT) with stA := z; hybrid uses (b·G, ab·G) with stA := b;

@@ -40,10 +40,25 @@ def phaseShapeInv (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
       s.lastRhoA = none ∧ s.lastRhoB = some (x • gen) ∧
       s.lastKeyA = none ∧ s.lastKeyB = some (x • (y • gen))
 
+/-- Structural (correctness-independent) invariant: phase counter plus phase shape.
+Suitable for relations that normalize `correct` (e.g. `hybridProj`). -/
+def reachableShape (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
+  phaseCounterInv s ∧ phaseShapeInv gen s
+
 /-- Shared reachable-state invariant for the DDH-CKA construction. -/
 def reachableInv (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
   phaseCounterInv s ∧
   s.correct = true ∧
   phaseShapeInv gen s
+
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
+lemma reachableShape_of_reachableInv {gen : G} {s : GameState (F ⊕ G) G G}
+    (h : reachableInv gen s) : reachableShape gen s :=
+  ⟨h.1, h.2.2⟩
+
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
+lemma correct_of_reachableInv {gen : G} {s : GameState (F ⊕ G) G G}
+    (h : reachableInv gen s) : s.correct = true :=
+  h.2.1
 
 end ddhCKA
