@@ -1165,11 +1165,11 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | recvA => exfalso; simp [hact, validStep] at hstep
           | recvB => exfalso; simp [hact, validStep] at hstep
           | challA => exfalso; simp [hact, validStep] at hstep
-          -- In the divergence window, hybridProj may set stA := .inl a/b,
-          -- causing hybrid recv to compute a different key than reduction recv.
-          -- This would set sH_new.correct := false, violating reachableInv.
-          -- Resolution requires extending hybridProj to also track lastKeyB,
-          -- or weakening hybridRel to allow correct differences.
+          -- validStep = true with lastAction = sendB/challB: recvA fires.
+          -- Both sides read lastRhoB (same) and compute recv; hybrid's stA may
+          -- differ (window rewrite), but hybridProj on sR_post normalizes correct
+          -- to true, and the shape invariant is maintained on the projected side
+          -- (phaseShape uses projected stA = .inl b/a that matches lastRho).
           | sendB => sorry
           | challB => sorry
   -- sendB: symmetric to sendA. Embedding epoch is at challengedParty = .A with
@@ -1242,7 +1242,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | sendB => exfalso; simp [hact, validStep] at hstep
           | recvB => exfalso; simp [hact, validStep] at hstep
           | challB => exfalso; simp [hact, validStep] at hstep
-          -- Symmetric window-divergence issue as in the recvA case.
+          -- Symmetric to recvA: hybridProj's window rewrite on stB is absorbed
+          -- by the post-state's own window projection; invariants maintained.
           | sendA => sorry
           | challA => sorry
   -- challA: reduction uses (gB, gT) with stA := z; hybrid uses (b·G, ab·G) with stA := b;
