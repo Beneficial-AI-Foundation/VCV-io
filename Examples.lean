@@ -10,12 +10,14 @@ import Examples.CommitmentScheme.Hiding.LoggingBounds
 import Examples.CommitmentScheme.Hiding.LoggingBounds.Average
 import Examples.CommitmentScheme.Hiding.LoggingBounds.QuerySalt
 import Examples.CommitmentScheme.Hiding.Main
+import Examples.CompositionDiagram
 import Examples.ElGamal.Basic
 import Examples.ElGamal.Common
 import Examples.ElGamal.Hash
 import Examples.ElGamal.ReductionCost
 import Examples.FrankingProtocol
-import Examples.OneTimePad
+import Examples.OneTimePad.Basic
+import Examples.OneTimePad.LeakageFree
 import Examples.PRFTagReader
 import Examples.PRGfromPRF
 import Examples.Pedersen
@@ -31,5 +33,6 @@ import Examples.ProgramLogic.UnaryTriple
 import Examples.RF_RP_Switching_alt
 import Examples.Regev
 import Examples.Schnorr
+import Examples.SchnorrExtractorRuntime
 import Examples.Signature
 import Examples.SimpleTwoServerPIR
