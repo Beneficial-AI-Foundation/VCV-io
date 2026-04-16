@@ -166,10 +166,12 @@ def ckaSecuritySpec (St Rho I : Type) :=
 def isChallengeEpoch (gp : GameParams) (state : GameState St I Rho) : Bool :=
   state.tP gp.challengedParty == gp.tStar
 
-/-- The other party's send just before the challenge. Due to alternating
-communication with A going first:
+/-- The other party's send epoch just before the challenge. Due to alternating
+ping-pong communication with A going first:
 - challenging A: B-send at `tB = tStar - 1`
-- challenging B: A-send at `tA = tStar` -/
+- challenging B: A-send at `tA = tStar`
+
+This predicate can be used by the security reduction to modify oracle behaviour. -/
 def isOtherSendBeforeChall (gp : GameParams) (state : GameState St I Rho) : Bool :=
   match gp.challengedParty with
   | .A => state.tB == gp.tStar - 1
@@ -281,6 +283,7 @@ def oracleChallA (gp : GameParams) [SampleableType I]
   fun () => do
     let state ← get
     if validStep state.lastAction .challA then
+    -- tA++
       let state := { state with tA := state.tA + 1 }
       if gp.challengedParty == .A && isChallengeEpoch gp state then
         match ← liftM (cka.sendA state.stA) with
@@ -302,6 +305,7 @@ def oracleChallB (gp : GameParams) [SampleableType I]
   fun () => do
     let state ← get
     if validStep state.lastAction .challB then
+    -- tB++
       let state := { state with tB := state.tB + 1 }
       if gp.challengedParty == .B && isChallengeEpoch gp state then
         match ← liftM (cka.sendB state.stB) with
@@ -329,7 +333,7 @@ def oracleCorruptA (gp : GameParams) (St I Rho : Type) :
     if allowCorr gp state || finishedA gp state then return some state.stA
     else return none
 
-/-- **O-Corrupt-B.** `() → Option St`. Return `stB` if corruption is allowed. -/
+/-- **O-Corrupt-B.** Return `stB` if `allowCorr ∨ finishedB`. -/
 def oracleCorruptB (gp : GameParams) (St I Rho : Type) :
     QueryImpl (Unit →ₒ Option St) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do

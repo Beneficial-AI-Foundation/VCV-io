@@ -23,72 +23,79 @@ More precisely, there is an explicit DDH adversary
 `securityAdvantage(ddhCKA, 𝒜, ⟨tStar, 1, P⟩) ≤ ddhGuessAdvantage(gen, ℬ)`,
 with no multiplicative loss.*
 
-### Why `ΔCKA = 1` is necessary and sufficient
+### `ΔCKA = 1`
 
-`ΔCKA = 1` means corruption of party `Q` requires `tQ ≥ tStar + ΔCKA`:
-one recv after the challenge epoch. This is the smallest `ΔCKA` that
-works — `ΔCKA = 0` would allow corrupting `P` immediately after the
-challenge, revealing the challenge-epoch scalar.
-
-Following [ACD19, Fig. 3], every oracle (send, recv, chall) increments
-`tP` at the start, so `tP` counts total actions by party `P`. The
-challenge fires when the post-increment counter reaches `tStar`.
+`ΔCKA = 1` in the main theorem means the adversary is allowed to corrupt
+party `Q` only if `tQ ≥ tStar + ΔCKA`: one more action after the challenge.
+This is the smallest `ΔCKA` that works — with `ΔCKA = 0`:
+- Corrupting the challenged party `P` immediately after the challenge would
+  reveal the fresh scalar `z` used by the reduction.
+- Corrupting the other party `Q` is harmless (state is `gB ∈ G`, public),
+  but `ΔCKA` applies uniformly to both parties.
 
 Illustration with `P = A` challenged at `tA = tStar`:
 
 ```text
-          A (challenged)                                  B
-          ──────────────                                  ──
-               │                                           │
-  tA = t*      │  challA: z ←$ F                           │
-               │  A stores z                               │
-               │                                           │
-               │──── ρ = gB, key = gT ────────────────────▶│
-               │                                  tB++     │  recvB: B stores gB
-               │                                           │
-               │                             tB++, tB = t* │  sendB: x' ←$ F
-               │                                           │  B stores x'
-               │◀── ρ = x'•gen, key = x'•gB ──────────────│
-  tA++         │  recvA: A stores x'•gen                   │
-               │  (z overwritten)                          │
-               │                                           │
-          ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
-          finishedA (tA ≥ t*+1)       finishedB (tB ≥ t*+1)
-          corruptA reveals x'•gen     corruptB reveals x'
+         A (challenged)                              B
+         ──────────────                              ──
+              │                                       │
+              │                                       │ sendB: ...
+              │                                       │ B stores y
+              │◀──────── ρ = y•gen ──────────────────│
+              │                                       │
+ tA = t*  challA: z ←$ F                              │
+          A stores z                                  │
+          key_A = z•ρ                                 │
+          ρ' = z•gen                                  │
+              │──────── ρ' ─────────────────────────▶│
+              │                                  tB++ │ recvB: ...
+              │                                       │ B stores ρ' ∈ G
+              │                                       │
+              │                             tB = t*   │ sendB: x' ←$ F
+              │                                       │ key_B = x'•ρ'
+              │                                       │ B stores x'
+              │◀──────── ρ'' = x'•gen ──────────────│
+ tA++     recvA                                       │
+          key_A' = z•ρ'' = z•x'•gen                   │
+          A stores ρ'' ∈ G                            │
+          (z overwritten)                             │
+              │                                       │
+         ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─
+         finishedA (tA ≥ t*+1)    finishedB (tB ≥ t*+1)
+         corruptA → ρ'' ∈ G      corruptB → x' ∈ F
 ```
 
 At the point corruption is allowed, neither `stA` nor `stB` contains
-information about the challenge key `gT`.
+information about the challenge key `key_A = z•ρ`.
 
-## Proof overview — reduction diagram
+## Proof overview — reduction diagram (the constructed DDH adversary `ℬ`)
 
-The adversary `𝒜` challenges exactly one party at epoch `t*`. We show the
-case where `𝒜` calls `O-Chall-A` at `tA = t*`; the `O-Chall-B` case is
-symmetric.
+The given CKA adversary `𝒜` challenges exactly one party at epoch `t*`.
+We show the case where `𝒜` calls `O-Chall-A` at `tA = t*`.
 
-Given a DDH triple `(gen, gA, gB, gT)` with `gA = a • gen`,
-`gB = b • gen`, and `gT = c • gen` where `c = a·b` (real) or `c` is uniform:
+Given a DDH triple `(gen, gA, gB, gT)` with
+`gA = a • gen`,`gB = b • gen`, and `gT = c • gen` where `c = a·b` (real) or `c` is uniform:
 
 ```text
  DDH Challenger                 DDH Adversary ℬ = securityReduction gp 𝒜
 ┌──────────────┐               ┌──────────────────────────────────────────────────────────┐
-│              │ (gen,gA,gB,gT)│ sample x₀ ←$ F                                          │
-│  gA = a•gen  │──────────────▶│ init A with g₀ := x₀ • gen, init B with x₀              │
+│              │ (gen,gA,gB,gT)│ sample x₀ ←$ F                                           │
+│  gA = a•gen  │──────────────▶│ init A with g₀ := x₀ • gen, init B with x₀               │
 │  gB = b•gen  │               │                                                          │
-│  gT = c•gen  │               │ simulate CKA oracles for 𝒜 (honest except below):       │
+│  gT = c•gen  │               │ simulate CKA oracles for 𝒜 (honest except below):        │
 │              │               │                                                          │
 │  c = a·b     │               │          Honest CKA    │ Hybrid        │ Reduction       │
 │  or random   │               │ ─────────────────────────────────────────────────────────│
-│              │               │ O-Send-B, tB = t* - 1, state (xA, xA • gen):             │
+│              │               │ O-Send-B, tB = t* - 1, stA = xA ∈ F, stB = xA•gen ∈ G    │
 │              │               │   y ←$ F               │               │                 │
 │              │               │   ρ   = y • gen        │ ρ   = gA      │ ρ   = gA        │
 │              │               │   key = y • xA • gen   │ key = xA • gA │ key = xA • gA   │
 │              │               │   stB := y             │ stB := a      │ stB := y        │
 │              │               │ ─────────────────────────────────────────────────────────│
-│              │               │ recvA delivers ρ from above:                              │
+│              │               │ recvA delivers ρ from above:                             │
 │              │               │   stA := y • gen       │ stA := gA     │ stA := gA       │
 │              │               │ ─────────────────────────────────────────────────────────│
-│              │               │ O-Chall-A, tA = t*, state (stA, stB) from above:         │
+│              │               │ O-Chall-A, tA = t*, (stA, stB) as updated above:         │
 │              │               │   x ←$ F               │               │                 │
 │              │               │   ρ   = x • gen        │ ρ   = gB      │ ρ   = gB        │
 │              │               │   key = x • stA        │ key = gT      │ key = gT        │
