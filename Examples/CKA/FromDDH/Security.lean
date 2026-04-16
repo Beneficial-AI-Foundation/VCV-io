@@ -1558,6 +1558,14 @@ theorem security (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     securityAdvantage (ddhCKA F G gen) adversary gp ≤
       ddhGuessAdvantage gen (securityReduction gp adversary) := by
+  -- In fact the two advantages are equal. From the branch lemmas:
+  --   Pr[=true | ddhExpReal ℬ] = Pr[=false | FixedBit false] = 1 - Pr[=true | FixedBit false]
+  --   Pr[=true | ddhExpRand ℬ] = Pr[=false | FixedBit true]  = 1 - Pr[=true | FixedBit true]
+  -- Hence  Pr[=true|ddhReal] - Pr[=true|ddhRand] =
+  --         Pr[=true|FixedBit true] - Pr[=true|FixedBit false]
+  -- Combined with `ddhExp_probOutput_sub_half` and `securityExp_toReal_sub_half`:
+  --   Pr[=true|ddhExp] - 1/2 = Pr[=true|securityExp] - 1/2
+  -- Taking absolute values: `ddhGuessAdvantage = securityAdvantage` ≤ ddhGuessAdvantage.
   sorry
 
 /-- **DDH-CKA security (quantitative form)** [ACD19, Theorem 3].
