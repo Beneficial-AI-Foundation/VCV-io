@@ -550,6 +550,7 @@ private def hybridRel (gp : GameParams) (a b : F)
   sH = hybridProj (F := F) gp a b sR ∧
   hybridInvariant (F := F) (G := G) (gen := gen) sH
 
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- The projected initial state is already an honest hybrid state. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
@@ -561,6 +562,7 @@ private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
       simp [hybridProj, initGameState, hcp]
   · exact ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
 while leaving their respective states unchanged. -/
 private lemma hybridRel_query_unif (gp : GameParams) (a b : F) (t : unifSpec.Domain)
@@ -613,24 +615,32 @@ private lemma relTriple_of_map_eq
     subst hzEq
     exact hpost x hx
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `allowCorr`. -/
 private lemma allowCorr_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
     allowCorr gp (hybridProj (F := F) gp a b s) = allowCorr gp s := by
   simp [allowCorr, hybridProj]
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `finishedA`. -/
 private lemma finishedA_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
     finishedA gp (hybridProj (F := F) gp a b s) = finishedA gp s := by
   simp [finishedA, finishedP, GameState.tP, hybridProj]
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- `hybridProj` preserves the counters used by `finishedB`. -/
 private lemma finishedB_hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) :
     finishedB gp (hybridProj (F := F) gp a b s) = finishedB gp s := by
   simp [finishedB, finishedP, GameState.tP, hybridProj]
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptA` can never occur while `tA = tStar`. -/
 private lemma tA_ne_tStar_of_corruptA_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -648,6 +658,8 @@ private lemma tA_ne_tStar_of_corruptA_allowed
       simpa [finishedA, finishedP, hΔ] using hfin
     omega
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar - 1`. -/
 private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -665,6 +677,8 @@ private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
       simpa [finishedB, finishedP, hΔ] using hfin
     omega
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar`. -/
 private lemma tB_ne_tStar_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -682,6 +696,8 @@ private lemma tB_ne_tStar_of_corruptB_allowed
       simpa [finishedB, finishedP, hΔ] using hfin
     omega
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, the A-state projection window closes before `corruptA`
 can return a state. -/
 private lemma hybridProj_stA_eq_of_corruptA_allowed
@@ -694,6 +710,8 @@ private lemma hybridProj_stA_eq_of_corruptA_allowed
   cases hcp : gp.challengedParty <;> cases hsA : s.stA <;>
     simp [hybridProj, hcp, hsA, htA]
 
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+    [AddCommGroup G] [SampleableType G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, the B-state projection window closes before `corruptB`
 can return a state. -/
 private lemma hybridProj_stB_eq_of_corruptB_allowed
@@ -709,6 +727,7 @@ private lemma hybridProj_stB_eq_of_corruptB_allowed
       tB_ne_tStar_of_corruptB_allowed (F := F) gp s hΔ hallow
     cases hsB : s.stB <;> simp [hybridProj, hcp, hsB, htB]
 
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- `corruptA` preserves `hybridRel` once `ΔCKA = 1` is made explicit:
 the projection no longer changes the returned A-state when corruption is legal,
 and otherwise both sides return `none` while keeping the same states. -/
@@ -750,6 +769,7 @@ private lemma hybridRel_query_corruptA
         (b := ((none : Option (F ⊕ G)), hybridProj (F := F) gp a b sR))
         ⟨rfl, ⟨rfl, hInv⟩⟩)
 
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] [DecidableEq G] in
 /-- Symmetric corruption leaf for `corruptB`. -/
 private lemma hybridRel_query_corruptB
     (gp : GameParams) (a b : F) (sR sH : GameState (F ⊕ G) G G)
