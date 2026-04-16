@@ -1092,9 +1092,40 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
   cases_oracle t
   -- unif
   · exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
-  -- sendA: at embedding epoch, reduction samples fresh y for stA while hybrid uses a;
-  -- outputs (aG, xB·aG) agree, hybridProj absorbs the stA difference
-  · sorry
+  -- sendA: at embedding epoch (challengedParty = .B), reduction samples fresh y while
+  -- hybrid uses a; outputs (aG, xB·aG) agree, hybridProj absorbs the stA difference
+  · rcases hrel with ⟨rfl, hShape, hWin⟩
+    cases hstep : validStep sR.lastAction .sendA
+    · -- validStep = false: both return pure none
+      have hstepH :
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .sendA = false := by
+        simpa [hybridProj] using hstep
+      have hrunL :
+          ((reductionSendA (F := F) gp gen (a • gen)) ()).run sR = pure (none, sR) := by
+        simp [reductionSendA, hstep, StateT.run_bind, StateT.run_get, pure_bind]
+      have hrunH :
+          ((hybridSendA (F := F) gp gen a) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR) =
+            pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [hybridSendA, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((reductionSendA (F := F) gp gen (a • gen) ()).run sR)
+        ((hybridSendA (F := F) gp gen a ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((none : Option (G × G)), sR))
+          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+    · -- validStep = true: non-embedding vs embedding sub-cases
+      -- TODO: non-embedding (same code ddhCKA.send), embedding (fixed a vs fresh y)
+      sorry
   -- recvA: both sides run oracleRecvA; hybridProj does not change stA at recvA-reachable
   -- states (stA = .inl y after a preceding sendA/challA), so recv sees the same stA
   · rcases hrel with ⟨rfl, hInv, hWin⟩
@@ -1141,8 +1172,38 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           -- or weakening hybridRel to allow correct differences.
           | sendB => sorry
           | challB => sorry
-  -- sendB: symmetric to sendA for the challenged-A case
-  · sorry
+  -- sendB: symmetric to sendA. Embedding epoch is at challengedParty = .A with
+  -- tB = tStar - 1; outputs (aG, xA·aG) agree, hybridProj absorbs the stB difference.
+  · rcases hrel with ⟨rfl, hShape, hWin⟩
+    cases hstep : validStep sR.lastAction .sendB
+    · have hstepH :
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .sendB = false := by
+        simpa [hybridProj] using hstep
+      have hrunL :
+          ((reductionSendB (F := F) gp gen (a • gen)) ()).run sR = pure (none, sR) := by
+        simp [reductionSendB, hstep, StateT.run_bind, StateT.run_get, pure_bind]
+      have hrunH :
+          ((hybridSendB (F := F) gp gen a) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR) =
+            pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [hybridSendB, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((reductionSendB (F := F) gp gen (a • gen) ()).run sR)
+        ((hybridSendB (F := F) gp gen a ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((none : Option (G × G)), sR))
+          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+    · -- validStep = true: non-embedding vs embedding sub-cases
+      sorry
   -- recvB: symmetric to recvA; hybridProj does not change stB at recvB-reachable states
   · rcases hrel with ⟨rfl, hInv, hWin⟩
     cases hstep : validStep sR.lastAction .recvB
