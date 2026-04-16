@@ -1,4 +1,4 @@
-import Examples.CKA.FromDDH.Construction
+import Examples.CKA.FromDDH.Common
 
 /-!
 # CKA from DDH — Correctness
@@ -18,49 +18,22 @@ variable {gen : G}
 
 open CKAScheme
 
-/-- Game invariant for DDH-CKA correctness.
-
-Asserts `correct = true` and one of four phases for the game state
-`state = (stA, stB, ρA, ρB, kA, kB, b, correct, lastAction)`:
-
-- **Sync-A**: `(x•g, x, -, -, -, -, b, true, none/recvA)`.
-- **Pending-A→B**: `(y, x, y•g, -, y•(x•g), -, b, true, sendA/challA)`.
-- **Sync-B**: `(y, y•g, -, -, -, -, b, true, recvB)`.
-- **Pending-B→A**: `(y, x', -, x'•g, -, x'•(y•g), b, true, sendB/challB)`. -/
-private def gameInvariant (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
-  s.correct = true ∧
-  match s.lastAction with
-  | none | some .recvA =>
-    ∃ x : F, s.stA = .inr (x • gen) ∧ s.stB = .inl x ∧
-      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
-  | some .sendA | some .challA =>
-    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
-      s.lastRhoA = some (y • gen) ∧ s.lastRhoB = none ∧
-      s.lastKeyA = some (y • (x • gen)) ∧ s.lastKeyB = none
-  | some .recvB =>
-    ∃ y : F, s.stA = .inl y ∧ s.stB = .inr (y • gen) ∧
-      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
-  | some .sendB | some .challB =>
-    ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
-      s.lastRhoA = none ∧ s.lastRhoB = some (x • gen) ∧
-      s.lastKeyA = none ∧ s.lastKeyB = some (x • (y • gen))
-
 /-! ### Invariant preservation -/
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
-/-- `gameInvariant` holds on `initGameState` for any key `(x₀ • gen, x₀)`. -/
-private lemma gameInvariant_init (x₀ : F) :
-    gameInvariant gen
+/-- `reachableInv` holds on `initGameState` for any key `(x₀ • gen, x₀)`. -/
+private lemma reachableInv_init (x₀ : F) :
+    reachableInv gen
       { stA := .inr (x₀ • gen), stB := .inl x₀,
         lastRhoA := none, lastRhoB := none, lastKeyA := none, lastKeyB := none,
         b := false, correct := true, lastAction := none,
         tA := 0, tB := 0 } :=
-  ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
-/-- Uniform sampling preserves `gameInvariant` (state unchanged). -/
-private lemma oracleUnif_preserves_gameInvariant :
-    QueryImpl.PreservesInv (CKAScheme.oracleUnif (F ⊕ G) G G) (gameInvariant gen) := by
+/-- Uniform sampling preserves `reachableInv` (state unchanged). -/
+private lemma oracleUnif_preserves_reachableInv :
+    QueryImpl.PreservesInv (CKAScheme.oracleUnif (F ⊕ G) G G) (reachableInv gen) := by
   intro t σ hσ z hz
   have hz' : ∃ y : unifSpec.Range t, (y, σ) = z := by
     simpa [CKAScheme.oracleUnif] using hz
@@ -68,10 +41,10 @@ private lemma oracleUnif_preserves_gameInvariant :
   simpa using hσ
 
 set_option linter.flexible false in
-/-- `O-Send-A` preserves `gameInvariant`:
+/-- `O-Send-A` preserves `reachableInv`:
 `(x•g, x, -, -, -, -)` → sample `y` → `(y, x, y•g, -, y•(x•g), -)`. -/
-private lemma oracleSendA_preserves_gameInvariant :
-    QueryImpl.PreservesInv (CKAScheme.oracleSendA (ddhCKA F G gen)) (gameInvariant gen) := by
+private lemma oracleSendA_preserves_reachableInv :
+    QueryImpl.PreservesInv (CKAScheme.oracleSendA (ddhCKA F G gen)) (reachableInv gen) := by
   intro _ σ hσ z hz
   rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .sendA
@@ -82,18 +55,20 @@ private lemma oracleSendA_preserves_gameInvariant :
   case true =>
     rcases last with _ | ⟨_ | _ | _ | _ | _ | _⟩ <;> simp [validStep] at hGuard
     all_goals (
-      rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      rcases (by simpa [reachableInv, phaseCounterInv, phaseShapeInv] using hσ) with
+        ⟨hphase, hc, x, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       rw [CKAScheme.oracleSendA, StateT.run_bind, StateT.run_get] at hz
       have hz' := hz; simp [validStep, ddhCKA, ddhCKA.send] at hz'
       obtain ⟨y, _, rfl⟩ := hz'
-      exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩)
+      refine ⟨?_, rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      simpa [phaseCounterInv] using hphase)
 
-/-- `O-Recv-B` preserves `gameInvariant`:
+/-- `O-Recv-B` preserves `reachableInv`:
 `(y, x, y•g, -, y•(x•g), -)` → `(y, y•g, -, -, -, -)`;
 key check: `x•(y•g) = y•(x•g)` by `smul_comm`. -/
-private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
-    QueryImpl.PreservesInv (CKAScheme.oracleRecvB (ddhCKA F G gen)) (gameInvariant gen) := by
+private lemma oracleRecvB_preserves_reachableInv [DecidableEq G] :
+    QueryImpl.PreservesInv (CKAScheme.oracleRecvB (ddhCKA F G gen)) (reachableInv gen) := by
   intro _ σ hσ z hz
   rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .recvB
@@ -104,7 +79,8 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
   case true =>
     rcases last with _ | ⟨_ | _ | _ | _ | _ | _⟩ <;> simp [validStep] at hGuard
     all_goals (
-      rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      rcases (by simpa [reachableInv, phaseCounterInv, phaseShapeInv] using hσ) with
+        ⟨hphase, hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       have : z = ((), ⟨.inl y, .inr (y • gen),
           none, none, none, none, b, true,
@@ -114,13 +90,14 @@ private lemma oracleRecvB_preserves_gameInvariant [DecidableEq G] :
           StateT.run_bind, StateT.run_get,
           pure_bind] using hz
       subst this
-      exact ⟨rfl, y, rfl, rfl, rfl, rfl, rfl, rfl⟩)
+      refine ⟨?_, rfl, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      simpa [phaseCounterInv] using hphase)
 
 set_option linter.flexible false in
-/-- `O-Send-B` preserves `gameInvariant`:
+/-- `O-Send-B` preserves `reachableInv`:
 `(y, y•g, -, -, -, -)` → sample `x'` → `(y, x', -, x'•g, -, x'•(y•g))`. -/
-private lemma oracleSendB_preserves_gameInvariant :
-    QueryImpl.PreservesInv (CKAScheme.oracleSendB (ddhCKA F G gen)) (gameInvariant gen) := by
+private lemma oracleSendB_preserves_reachableInv :
+    QueryImpl.PreservesInv (CKAScheme.oracleSendB (ddhCKA F G gen)) (reachableInv gen) := by
   intro _ σ hσ z hz
   rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .sendB
@@ -130,18 +107,20 @@ private lemma oracleSendB_preserves_gameInvariant :
     subst this; exact hσ
   case true =>
     rcases last with _ | ⟨_ | _ | _ | _ | _ | _⟩ <;> simp [validStep] at hGuard
-    rcases (by simpa [gameInvariant] using hσ) with ⟨hc, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    rcases (by simpa [reachableInv, phaseCounterInv, phaseShapeInv] using hσ) with
+      ⟨hphase, hc, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
     subst correct
     rw [CKAScheme.oracleSendB, StateT.run_bind, StateT.run_get] at hz
     have hz' := hz; simp [validStep, ddhCKA, ddhCKA.send] at hz'
     obtain ⟨x, _, rfl⟩ := hz'
-    exact ⟨rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    refine ⟨?_, rfl, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    simpa [phaseCounterInv] using hphase.symm
 
-/-- `O-Recv-A` preserves `gameInvariant`:
+/-- `O-Recv-A` preserves `reachableInv`:
 `(y, x', -, x'•g, -, x'•(y•g))` → `(x'•g, x', -, -, -, -)`;
 key check: `y•(x'•g) = x'•(y•g)` by `smul_comm`. -/
-private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
-    QueryImpl.PreservesInv (CKAScheme.oracleRecvA (ddhCKA F G gen)) (gameInvariant gen) := by
+private lemma oracleRecvA_preserves_reachableInv [DecidableEq G] :
+    QueryImpl.PreservesInv (CKAScheme.oracleRecvA (ddhCKA F G gen)) (reachableInv gen) := by
   intro _ σ hσ z hz
   rcases σ with ⟨sA, sB, ρA, ρB, kA, kB, b, correct, last, epA, epB⟩
   cases hGuard : validStep last .recvA
@@ -152,7 +131,8 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
   case true =>
     rcases last with _ | ⟨_ | _ | _ | _ | _ | _⟩ <;> simp [validStep] at hGuard
     all_goals (
-      rcases (by simpa [gameInvariant] using hσ) with ⟨hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      rcases (by simpa [reachableInv, phaseCounterInv, phaseShapeInv] using hσ) with
+        ⟨hphase, hc, x, y, rfl, rfl, rfl, rfl, rfl, rfl⟩
       subst correct
       have : z = ((), ⟨.inr (x • gen), .inl x,
           none, none, none, none, b, true,
@@ -162,13 +142,14 @@ private lemma oracleRecvA_preserves_gameInvariant [DecidableEq G] :
           StateT.run_bind, StateT.run_get,
           pure_bind] using hz
       subst this
-      exact ⟨rfl, x, rfl, rfl, rfl, rfl, rfl, rfl⟩)
+      refine ⟨?_, rfl, x, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      simpa [phaseCounterInv] using hphase.symm)
 
-/-- The combined correctness oracle preserves `gameInvariant`. -/
+/-- The combined correctness oracle preserves `reachableInv`. -/
 private lemma correctnessImpl_preserves [DecidableEq G] :
     QueryImpl.PreservesInv
       (CKAScheme.ckaCorrectnessImpl (ddhCKA F G gen))
-      (gameInvariant gen) := by
+      (reachableInv gen) := by
   intro t σ hσ z hz
   cases t with
   | inl t =>
@@ -179,19 +160,19 @@ private lemma correctnessImpl_preserves [DecidableEq G] :
               cases t with
               | inl t =>
                   simpa [CKAScheme.ckaCorrectnessImpl] using
-                    oracleUnif_preserves_gameInvariant (gen := gen) t σ hσ z hz
+                    oracleUnif_preserves_reachableInv (gen := gen) t σ hσ z hz
               | inr _ =>
                   simpa [CKAScheme.ckaCorrectnessImpl] using
-                    oracleSendA_preserves_gameInvariant (gen := gen) () σ hσ z hz
+                    oracleSendA_preserves_reachableInv (gen := gen) () σ hσ z hz
           | inr _ =>
               simpa [CKAScheme.ckaCorrectnessImpl] using
-                oracleRecvA_preserves_gameInvariant (gen := gen) () σ hσ z hz
+                oracleRecvA_preserves_reachableInv (gen := gen) () σ hσ z hz
       | inr _ =>
           simpa [CKAScheme.ckaCorrectnessImpl] using
-            oracleSendB_preserves_gameInvariant (gen := gen) () σ hσ z hz
+            oracleSendB_preserves_reachableInv (gen := gen) () σ hσ z hz
   | inr _ =>
       simpa [CKAScheme.ckaCorrectnessImpl] using
-        oracleRecvB_preserves_gameInvariant (gen := gen) () σ hσ z hz
+        oracleRecvB_preserves_reachableInv (gen := gen) () σ hσ z hz
 
 /-! ### Correctness theorem -/
 
@@ -223,10 +204,10 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
   subst stA
   subst stB
   have hInv :
-      gameInvariant gen out.2 := by
+      reachableInv gen out.2 := by
     exact OracleComp.simulateQ_run_preservesInv
       (impl := CKAScheme.ckaCorrectnessImpl (ddhCKA F G gen))
-      (Inv := gameInvariant gen)
+      (Inv := reachableInv gen)
       (correctnessImpl_preserves (F := F) (G := G) (gen := gen))
       adv
       { stA := .inr (x₀ • gen), stB := .inl x₀,
@@ -234,12 +215,12 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
         lastKeyA := none, lastKeyB := none,
         b := false, correct := true, lastAction := none,
         tA := 0, tB := 0 }
-      (gameInvariant_init (gen := gen) x₀)
+      (reachableInv_init (gen := gen) x₀)
       out
       hout
   have hb' : b = out.2.correct := by
     simpa [mem_support_pure_iff] using hb
-  exact hb'.trans hInv.1
+  exact hb'.trans hInv.2.1
 
 /-- DDH-CKA correctness: `Pr[= true | correctnessExp] = 1`. -/
 theorem correctness [DecidableEq G] (adv : CorrectnessAdversary G G) :

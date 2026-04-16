@@ -1,5 +1,6 @@
 import Examples.BR93
 import Examples.CKA.Defs
+import Examples.CKA.FromDDH.Common
 import Examples.CKA.FromDDH.Construction
 import Examples.CKA.FromDDH.Correctness
 import Examples.CKA.FromDDH.Security
