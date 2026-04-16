@@ -1057,17 +1057,96 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
   cases_oracle t
   -- unif
   · exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
-  -- sendA
+  -- sendA: at embedding epoch, reduction samples fresh y for stA while hybrid uses a;
+  -- outputs (aG, xB·aG) agree, hybridProj absorbs the stA difference
   · sorry
-  -- recvA
+  -- recvA: both sides run oracleRecvA; hybridProj does not change stA at recvA-reachable
+  -- states (stA = .inl y after a preceding sendA/challA), so recv sees the same stA
+  · rcases hrel with ⟨rfl, hInv, hWin⟩
+    cases hstep : validStep sR.lastAction .recvA
+    · have hstepH :
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .recvA = false := by
+        simpa [hybridProj] using hstep
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((oracleRecvA (ddhCKA F G gen) ()).run sR)
+        ((oracleRecvA (ddhCKA F G gen) ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      have hrunL :
+          ((oracleRecvA (ddhCKA F G gen) ()).run sR) = pure ((), sR) := by
+        simp [oracleRecvA, hstep, StateT.run_bind, StateT.run_get, pure_bind]
+      have hrunH :
+          ((oracleRecvA (ddhCKA F G gen) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR)) =
+            pure ((), hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [oracleRecvA, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((), sR))
+          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+    · cases hact : sR.lastAction with
+      | none =>
+          exfalso; simp [hact, validStep] at hstep
+      | some act =>
+          cases act with
+          | sendA => exfalso; simp [hact, validStep] at hstep
+          | recvA => exfalso; simp [hact, validStep] at hstep
+          | recvB => exfalso; simp [hact, validStep] at hstep
+          | challA => exfalso; simp [hact, validStep] at hstep
+          | sendB => sorry
+          | challB => sorry
+  -- sendB: symmetric to sendA for the challenged-A case
   · sorry
-  -- sendB
+  -- recvB: symmetric to recvA; hybridProj does not change stB at recvB-reachable states
+  · rcases hrel with ⟨rfl, hInv, hWin⟩
+    cases hstep : validStep sR.lastAction .recvB
+    · have hstepH :
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .recvB = false := by
+        simpa [hybridProj] using hstep
+      change OracleComp.ProgramLogic.Relational.RelTriple
+        ((oracleRecvB (ddhCKA F G gen) ()).run sR)
+        ((oracleRecvB (ddhCKA F G gen) ()).run
+          (hybridProj (F := F) (gen := gen) gp a b sR))
+        (fun pR pH =>
+          pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      have hrunL :
+          ((oracleRecvB (ddhCKA F G gen) ()).run sR) = pure ((), sR) := by
+        simp [oracleRecvB, hstep, StateT.run_bind, StateT.run_get, pure_bind]
+      have hrunH :
+          ((oracleRecvB (ddhCKA F G gen) ()).run
+            (hybridProj (F := F) (gen := gen) gp a b sR)) =
+            pure ((), hybridProj (F := F) (gen := gen) gp a b sR) := by
+        simp [oracleRecvB, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
+      rw [hrunL, hrunH]
+      exact
+        (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+          (spec₁ := unifSpec) (spec₂ := unifSpec)
+          (R := fun pR pH =>
+            pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+          (a := ((), sR))
+          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR))
+          ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+    · cases hact : sR.lastAction with
+      | none =>
+          exfalso; simp [hact, validStep] at hstep
+      | some act =>
+          cases act with
+          | recvA => exfalso; simp [hact, validStep] at hstep
+          | sendB => exfalso; simp [hact, validStep] at hstep
+          | recvB => exfalso; simp [hact, validStep] at hstep
+          | challB => exfalso; simp [hact, validStep] at hstep
+          | sendA => sorry
+          | challA => sorry
+  -- challA: reduction uses (gB, gT) with stA := z; hybrid uses (b·G, ab·G) with stA := b;
+  -- outputs agree since gB = b·gen and gT = (a*b)·gen; hybridWindowInv tracks the window
   · sorry
-  -- recvB
-  · sorry
-  -- challA
-  · sorry
-  -- challB
+  -- challB: symmetric to challA for the challenged-B case
   · sorry
   -- corruptA
   · exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp a b sR sH hΔ hrel
@@ -1105,7 +1184,16 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
 
 /-- Second half of the real-branch bridge: `hybridOracleImpl` is the honest
 fixed-bit-false game with the two special challenge scalars sampled explicitly
-up front. -/
+up front.
+
+**Proof strategy.** The hybrid samples `a, b ← $F` up front and uses each exactly
+once (at the embedding send and challenge epochs respectively), whereas the honest
+game samples fresh scalars on demand. Since each external scalar is uniform and
+used at most once, eager sampling (hybrid) and lazy sampling (honest) produce the
+same marginal distribution. Formally this follows from `probOutput_bind_bind_swap`
+to commute the external samples past the `simulateQ` induction, together with
+`probOutput_bind_bijective_uniform_cross` (identity bijection) at the two embedding
+steps to absorb `a` into the honest oracle's `y ← $F` and `b` into `x ← $F`. -/
 private lemma securityReduction_hybrid_to_honest (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
