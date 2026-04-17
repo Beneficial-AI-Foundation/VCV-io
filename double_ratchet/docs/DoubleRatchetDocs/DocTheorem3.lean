@@ -1,7 +1,6 @@
 import VersoManual
 import VersoBlueprint
 import DoubleRatchet.Theorems.Theorem3
-import DoubleRatchetDocs.SourceBlock
 
 open Verso.Genre Manual
 open Informal
@@ -22,42 +21,80 @@ DDH-based CKA construction is secure with healing parameter `Delta = 1`.
 The Lean development presents that result in layers, because the auxiliary
 layers are useful when constructing the final proof.
 
-:::definition "single_epoch_theorem_layer" (lean := "CKA.ckaAdvToDDHAdv, CKA.ckaRealExp_eq_ddhExpReal, CKA.ckaRandExp_eq_ddhExpRand, CKA.ddh_implies_cka_security, CKA.ddh_implies_cka_security_single_epoch") (parent := "theorem3_core")
-The single-epoch layer is the warmup reduction. It already captures the core
-DDH idea, but it only talks about one send and one distinguishing challenge,
-not the adaptive Figure 3 game.
-:::
+# Single-Epoch Warmup Layer
+
+The single-epoch warmup layer contains the reduction map `ckaAdvToDDHAdv`, the
+distribution equalities `ckaRealExp_eq_ddhExpReal` and
+`ckaRandExp_eq_ddhExpRand`, and the concrete bound
+`ckaDistAdvantage (ddhCKA g) A ≤ ddhDistAdvantage g (ckaAdvToDDHAdv A)`.
+It captures the DDH algebra but not the adaptive Figure 3 game.
+
+Lean declarations:
+
+```
+def CKA.ckaAdvToDDHAdv : CKAAdversary G G → DDHAdversary F G
+
+theorem CKA.ckaRealExp_eq_ddhExpReal ...
+
+theorem CKA.ckaRandExp_eq_ddhExpRand ...
+
+theorem CKA.ddh_implies_cka_security ...
+
+theorem CKA.ddh_implies_cka_security_single_epoch ...
+```
 
 This warmup layer is mathematically useful because it isolates the algebra of
 the DDH embedding from the larger protocol interface. It is not the theorem the
 paper ultimately states, so the site treats it as preparation rather than as
 the endpoint.
 
-:::definition "figure3_bound_layer" (lean := "CKA.figure3Advantage_le_ddhAdvantage, CKA.figure3GuessAdvantage_le_ddhAdvantage, CKA.ddh_implies_figure3_cka_security_two_game") (parent := "theorem3_core")
-The next layer upgrades the argument to the full Figure 3 game. The helper
-two-game bound is kept for reduction-oriented reasoning, and the paper-facing
-hidden-bit bound is derived from it by the Figure 3 equivalence lemma.
-:::
+# Figure 3 Bound Layer
+
+The Figure 3 layer upgrades the warmup statement to the exact bounds
+`figure3Advantage ... ≤ ddhDistAdvantage ...` and
+`figure3GuessAdvantage ... ≤ ddhDistAdvantage ...`,
+and packages the helper two-game surface as
+`ddh_implies_figure3_cka_security_two_game`.
+
+Lean declarations:
+
+```
+theorem CKA.figure3Advantage_le_ddhAdvantage ...
+
+theorem CKA.figure3GuessAdvantage_le_ddhAdvantage ...
+
+theorem CKA.ddh_implies_figure3_cka_security_two_game ...
+```
 
 :::theorem "theorem3_paper" (lean := "CKA.ddh_implies_figure3_cka_security") (parent := "theorem3_core") (tags := "theorem3, figure3, ddh") (effort := "medium") (priority := "high")
-`CKA.ddh_implies_figure3_cka_security` is the current paper-facing endpoint:
-if every DDH adversary has advantage at most `epsilon`, then the DDH-based CKA
-scheme is secure in the hidden-bit Figure 3 game with `Delta = 1`.
-:::
+The exact paper-facing endpoint is:
+if
+`∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε`,
+then
+`Figure3.Figure3CKASecurePaper (ddhCKAWithCoins (F := F) g) 1 ε`.
 
-:::proof "theorem3_paper"
-Introduce the challenge epoch and the Figure 3 adversary, apply the concrete
-paper-facing pointwise bound
-`CKA.figure3GuessAdvantage_le_ddhAdvantage`, and finish with the assumed DDH
-security bound for the reduced adversary.
-:::
+Paper side, normalized:
 
-```source CKA.ddh_implies_figure3_cka_security
+```
+If G is (t, epsilon)-DDH-secure,
+then the DDH-based CKA scheme is (t, Delta, epsilon)-secure
+with Delta = 1.
+```
+
+Lean side, exact signature:
+
+```
+theorem CKA.ddh_implies_figure3_cka_security (g : G)
+    (hg : Function.Bijective (· • g : F → G))
+    (ε : ℝ)
+    (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
+    Figure3.Figure3CKASecurePaper (ddhCKAWithCoins (F := F) g) 1 ε
 ```
 
 The important point is that the paper-facing theorem itself is already proved.
 The admitted work sits underneath it, in the more detailed simulation and
 distribution-equality lemmas that justify the pointwise reduction bound.
+:::
 
 ```tex "theorem3_paper"
 \forall B,\; \mathrm{Adv}^{\mathrm{DDH}}(B) \le \varepsilon

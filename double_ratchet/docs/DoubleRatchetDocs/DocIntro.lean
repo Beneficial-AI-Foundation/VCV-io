@@ -26,12 +26,10 @@ The site is written for two readers at once:
 - a cryptographer who wants to verify that the Lean definitions really encode
   the paper's mathematics, not merely a loose approximation.
 
-:::definition "current_scope" (lean := "CKA.ddh_implies_figure3_cka_security") (parent := "scope_core")
 The current endpoint is the paper-facing theorem
 `CKA.ddh_implies_figure3_cka_security`: if DDH is secure, then the DDH-based
 CKA construction is secure in the full Figure 3 game with healing parameter
 `Delta = 1`.
-:::
 
 Several support layers exist around that endpoint:
 
@@ -41,11 +39,9 @@ Several support layers exist around that endpoint:
 - an asymptotic wrapper that packages the concrete pointwise bounds into a
   standard negligible-advantage statement.
 
-:::definition "status_boundary" (parent := "scope_core")
 Definitions are intended to be complete and executable. Some theorem proofs are
 still admitted with `sorry`, so this site distinguishes carefully between a
 formalized statement and a completed proof.
-:::
 
 That boundary matters for documentation quality. When a game definition is
 described as canonical or paper-faithful here, that claim refers to the Lean

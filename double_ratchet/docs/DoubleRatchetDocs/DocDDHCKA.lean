@@ -19,9 +19,45 @@ Diffie-Hellman construction. This is the concrete scheme that later appears in
 the Figure 3 reduction.
 
 :::definition "ddh_cka_construction" (lean := "CKA.ddhCKA, CKA.ddhCKAWithCoins") (parent := "ddhcka_core")
-`CKA.ddhCKA` is the DDH-based CKA scheme. `CKA.ddhCKAWithCoins` exposes the
-same construction with explicit sender coins so that Figure 3 can model the
-bad-randomness oracle directly.
+Paper side, normalized from Section 4.1.2:
+
+```
+k = (h, x0) with h = g^x0
+
+CKA-Init-A(k) returns h
+CKA-Init-B(k) returns x0
+
+CKA-S(h):
+  x <-$ F
+  T <- g^x
+  I <- h^x
+  gamma' <- x
+  return (gamma', T, I)
+
+CKA-R(x, T):
+  I <- T^x
+  gamma' <- T
+  return (gamma', I)
+```
+
+Lean side, exact definitions:
+
+```
+def CKA.ddhCKA (g : G) : CKAScheme F G F G G where
+  init k := pure (k • g, k)
+  send h := do
+    let x ← $ᵗ F
+    pure (x, x • g, x • h)
+  recv x msg := pure (msg, x • msg)
+
+def CKA.ddhCKAWithCoins (g : G) : CKASchemeWithCoins F G F G G F where
+  init k := pure (k • g, k)
+  sendDet h x := (x, x • g, x • h)
+  recv x msg := pure (msg, x • msg)
+```
+
+`ddhCKAWithCoins` is the explicit-coins version needed for the Figure 3
+bad-randomness oracle.
 :::
 
 The Lean code uses additive notation, following Mathlib and VCV-io:
@@ -44,10 +80,22 @@ Correctness comes from the same algebra the paper uses: both parties compute
 the same group element because scalar multiplication satisfies `smul_smul`.
 
 :::definition "cyclic_group_interface" (parent := "ddhcka_core")
-The construction is parameterized abstractly over a scalar field `F`, a group
-`G`, and a generator `g : G`. The later theorem statements also assume
-`Function.Bijective (fun a => a • g)`, which is the formal way this
-development expresses that `g` generates a cyclic prime-order group.
+Paper side:
+
+```
+G = <g>
+```
+
+Lean side:
+
+```
+variable {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+variable {G : Type} [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G]
+
+hg : Function.Bijective (fun a => a • g : F → G)
+```
+
+This is the VCV-io / Mathlib expression of the paper's cyclic-group assumption.
 :::
 
 This abstraction comes from VCV-io's DDH library. It is slightly more general
