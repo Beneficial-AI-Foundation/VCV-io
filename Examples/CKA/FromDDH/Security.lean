@@ -863,6 +863,39 @@ private lemma relTriple_of_map_eq
     subst hzEq
     exact hpost x hx
 
+/-- Distribution-level variant of `relTriple_of_map_eq`.
+
+If the `evalDist` of `f <$> oa` equals the `evalDist` of `ob`, we can couple
+each left sample `x` with the right sample `f x`, without needing syntactic
+equality of the programs. Useful when the right-hand side has a different
+syntactic form (e.g. `pure x` vs `$F >>= fun _ => pure x`) but the same
+distribution. -/
+private lemma relTriple_of_evalDist_map_eq
+    {α β : Type} {R : α → β → Prop}
+    {oa : ProbComp α} {ob : ProbComp β}
+    (f : α → β)
+    (hmap : evalDist (f <$> oa) = evalDist ob)
+    (hpost : ∀ x, x ∈ support (evalDist oa) → R x (f x)) :
+    OracleComp.ProgramLogic.Relational.RelTriple oa ob R := by
+  apply (OracleComp.ProgramLogic.Relational.relTriple_iff_relWP
+    (oa := oa) (ob := ob) (R := R)).2
+  refine ⟨⟨evalDist oa >>= fun x => pure (x, f x), ?_⟩, ?_⟩
+  · constructor
+    · simp
+    · calc
+        Prod.snd <$> (evalDist oa >>= fun x => pure (x, f x))
+          = f <$> evalDist oa := by simp
+        _ = evalDist (f <$> oa) := by simp [evalDist_map]
+        _ = evalDist ob := hmap
+  · intro z hz
+    rcases (mem_support_bind_iff
+      (evalDist oa) (fun x => (pure (x, f x) : SPMF (α × β))) z).1 hz with
+      ⟨x, hx, hz'⟩
+    have hzEq : z = (x, f x) := by
+      simpa [support_pure, Set.mem_singleton_iff] using hz'
+    subst hzEq
+    exact hpost x hx
+
 /-- Uniform helper for oracle branches where the two runs agree via `hybridProj`.
 
 If running `maR` on the reduction state `sR` and `maH` on the hybrid state
