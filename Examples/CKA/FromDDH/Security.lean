@@ -981,7 +981,8 @@ runs identically on both sides, and `hybridProj` preserves everything the
 oracles inspect). The remaining six cases — `sendA`, `recvA`, `sendB`,
 `recvB`, `challA`, `challB` — require the identity/embedding/challenge
 phase split described in the section header and are left as `sorry`. -/
-private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F)
+private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (hwf : wellFormedGP gp) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (sR sH : GameState (F ⊕ G) G G)
     (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
@@ -1010,7 +1011,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
 `hybridOracleImpl` on hidden intermediate state, but these differences remain
 unobservable under the healing predicate (`ΔCKA = 1`). -/
 private lemma securityReduction_real_to_hybrid (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+    (hΔ : gp.deltaCKA = 1) (hwf : wellFormedGP gp)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityHybridGame (gen := gen) gp adversary] := by
@@ -1029,7 +1030,7 @@ private lemma securityReduction_real_to_hybrid (gp : GameParams)
       (impl₂ := hybridOracleImpl (F := F) gp gen a b)
       (R_state := hybridRel (F := F) (G := G) (gen := gen) gp a b)
       adversary
-      (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp hΔ a b)
+      (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp hΔ hwf a b)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       hrel_init
@@ -1078,12 +1079,12 @@ Chains the four real-branch steps:
 `(3) securityReduction_hybrid_to_honest`,
 `(4) probOutput_securityExpFixedBit_false`. -/
 lemma securityReduction_real (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+    (hΔ : gp.deltaCKA = 1) (hwf : wellFormedGP gp)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= true | ddhExpReal gen (securityReduction gp adversary)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
   rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false,
-      securityReduction_real_to_hybrid (gen := gen) gp hΔ adversary]
+      securityReduction_real_to_hybrid (gen := gen) gp hΔ hwf adversary]
   exact securityReduction_hybrid_to_honest (gen := gen) gp hΔ adversary
 
 /-- **Random-branch lemma.**
@@ -1169,14 +1170,14 @@ fixed-bit games. The bound does not require the failure probabilities to
 coincide; that strengthening is encapsulated separately in
 `probFailure_securityExpFixedBit_eq`. -/
 lemma security_le_ddh_plus_failGap (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+    (hΔ : gp.deltaCKA = 1) (hwf : wellFormedGP gp)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     securityAdvantage (ddhCKA F G gen) adversary gp ≤
       ddhGuessAdvantage gen (securityReduction gp adversary) +
       securityFailGap (gen := gen) gp adversary / 2 := by
   -- Branch lemmas (ℬ's guess distribution on each DDH branch ↔ 𝒜's `=false` output)
-  have hReal := securityReduction_real (gen := gen) gp hΔ adversary
+  have hReal := securityReduction_real (gen := gen) gp hΔ hwf adversary
   have hRand := securityReduction_rand (gen := gen) gp hΔ hg adversary
   -- Advantage decomposition identities on each side
   have hDdh := ddhExp_probOutput_sub_half (F := F) gen
@@ -1273,12 +1274,12 @@ guess-advantage of the reduction `ℬ = securityReduction gp 𝒜`:
 Derived from `security_le_ddh_plus_failGap` by collapsing the failure gap
 using `probFailure_securityExpFixedBit_eq`. -/
 theorem security (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+    (hΔ : gp.deltaCKA = 1) (hwf : wellFormedGP gp)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     securityAdvantage (ddhCKA F G gen) adversary gp ≤
       ddhGuessAdvantage gen (securityReduction gp adversary) := by
-  have hBound := security_le_ddh_plus_failGap (gen := gen) gp hΔ hg adversary
+  have hBound := security_le_ddh_plus_failGap (gen := gen) gp hΔ hwf hg adversary
   have hFail := probFailure_securityExpFixedBit_eq (F := F) (G := G) (gen := gen) gp adversary
   have hGap : securityFailGap (gen := gen) gp adversary = 0 := by
     unfold securityFailGap
@@ -1295,7 +1296,7 @@ adversary, then for any CKA adversary `𝒜`:
 
   `securityAdvantage(ddhCKA, 𝒜, gp) ≤ ε` -/
 theorem ddhCKA_security (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+    (hΔ : gp.deltaCKA = 1) (hwf : wellFormedGP gp)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G)
     (ε : ℝ)
@@ -1304,7 +1305,7 @@ theorem ddhCKA_security (gp : GameParams)
     securityAdvantage (ddhCKA F G gen) adversary gp ≤ ε :=
   calc securityAdvantage (ddhCKA F G gen) adversary gp
       ≤ ddhGuessAdvantage gen (securityReduction gp adversary) :=
-        security gp hΔ hg adversary
+        security gp hΔ hwf hg adversary
     _ ≤ ε := hddh _
 
 end ddhCKA
