@@ -94,6 +94,11 @@ inductive CKAParty where
   | A | B
   deriving DecidableEq, Repr
 
+/-- The opposite party: `A.other = B` and `B.other = A`. -/
+def CKAParty.other : CKAParty → CKAParty
+  | .A => .B
+  | .B => .A
+
 /-- Protocol action expected next. -/
 inductive CKAExpected where
   | sendA | recvB | sendB | recvA
@@ -166,16 +171,16 @@ def ckaSecuritySpec (St Rho I : Type) :=
 def isChallengeEpoch (gp : GameParams) (state : GameState St I Rho) : Bool :=
   state.tP gp.challengedParty == gp.tStar
 
-/-- The other party's send epoch just before the challenge. Due to alternating
-ping-pong communication with A going first:
-- challenging A: B-send at `tB = tStar - 1`
-- challenging B: A-send at `tA = tStar`
+/-- The other party's send epoch just before the challenge.
+
+Under strict A-first alternation, the last opposite-party `send` before the
+challenge has post-counter `tStar - 1` on either side. Invoked inside
+`reductionSendA` / `reductionSendB` *after* the counter has been incremented,
+so `state.tP _` below is the post-increment value.
 
 This predicate can be used by the security reduction to modify oracle behaviour. -/
 def isOtherSendBeforeChall (gp : GameParams) (state : GameState St I Rho) : Bool :=
-  match gp.challengedParty with
-  | .A => state.tB == gp.tStar - 1
-  | .B => state.tA == gp.tStar
+  state.tP gp.challengedParty.other == gp.tStar - 1
 
 /-- Party `p` has healed: `tP ≥ tStar + ΔCKA`. -/
 def finishedP (gp : GameParams) (party : CKAParty) (state : GameState St I Rho) : Bool :=
