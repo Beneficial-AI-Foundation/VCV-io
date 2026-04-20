@@ -293,34 +293,89 @@ noncomputable def securityReduction (gp : GameParams)
 
 /-! ### Simulation: each DDH branch maps to the corresponding CKA branch
 
-The goal is to show that the adversary `𝒜` has the same view whether it interacts with the
-real CKA game or with the reduction's simulation.
+Goal: `𝒜`'s view in the CKA game equals its view in the reduction's simulation.
+The reduction `ℬ` returns `¬b'`, so the top-level branch identities are:
 
-The reduction `ℬ` returns `¬b'`. We show (see the module overview above):
+    Pr[ℬ ⇒ 1 | DDH_real] = Pr[𝒜 ⇒ 0 | CKA^{b = false}]   … (**real branch**)
+    Pr[ℬ ⇒ 1 | DDH_rand] = Pr[𝒜 ⇒ 0 | CKA^{b = true }]   … (**random branch**)
 
-    Pr[ℬ ⇒ 1 | DDH_real] = Pr[𝒜 ⇒ 0 | CKA^{b=0}]   … (real)
-    Pr[ℬ ⇒ 1 | DDH_rand] = Pr[𝒜 ⇒ 0 | CKA^{b=1}]   … (rand)
+Each branch is proved by a chain of distribution-preserving rewrites through a
+sequence of explicit "helper games" — one-shot `ProbComp Bool` definitions that
+wrap `simulateQ adversary` under a specific oracle implementation.
 
-The **real branch** uses three games (columns in the diagram above):
+#### Real branch: 4-step chain through 3 helper games
 
-- `G_R`   — `securityReductionRealGame`:  `𝒜` vs `reductionOracleImpl` (Reduction)
-- `G_H`   — `securityHybridGame`:       `𝒜` vs `hybridOracleImpl`          (Hybrid)
-- `G_CKA` — `securityExpFixedBitFalseGame`: `𝒜` vs `ckaSecurityImpl` (Honest CKA)
+```text
+┌──────────────────────────────┐   (1) probOutput_ddhExpReal_securityReduction
+│  Pr[ℬ ⇒ 1 | DDH_real]        │       unfolds ℬ = `!·` via `probOutput_not_map`
+└──────────────────────────────┘
+               ║
+               ▼
+┌──────────────────────────────┐   G_R := securityReductionRealGame
+│  Pr[G_R   ⇒ 0]               │         𝒜 vs `reductionOracleImpl g aG bG (ab)G`
+└──────────────────────────────┘
+               ║   (2) securityReduction_real_to_hybrid
+               ║        relational Hoare (`RelTriple`) with invariant
+               ║        `hybridRel` and state projection `hybridProj`;
+               ║        hidden-state differences at the embedding epochs
+               ║        are unobservable
+               ▼
+┌──────────────────────────────┐   G_H := securityHybridGame
+│  Pr[G_H   ⇒ 0]               │         𝒜 vs `hybridOracleImpl g a b`
+└──────────────────────────────┘
+               ║   (3) securityReduction_hybrid_to_honest
+               ║        eager-vs-lazy sampling equivalence:
+               ║        `probOutput_bind_bind_swap` to commute the up-front
+               ║        `a, b ← $F` past `simulateQ`, then
+               ║        `probOutput_bind_bijective_uniform_cross` at the two
+               ║        embedding steps
+               ▼
+┌──────────────────────────────┐   G_CKA := securityExpFixedBitFalseGame
+│  Pr[G_CKA ⇒ 0]               │         𝒜 vs `ckaSecurityImpl` (honest)
+└──────────────────────────────┘
+               ║   (4) probOutput_securityExpFixedBit_false
+               ║        definitional unfolding of `securityExpFixedBit`
+               ▼
+┌──────────────────────────────┐
+│  Pr[𝒜 ⇒ 0 | CKA^{b = false}] │
+└──────────────────────────────┘
+```
 
-    Pr[ℬ ⇒ 1 | DDH_real]
-      = Pr[G_R   ⇒ 0]        (ℬ negates; `probOutput_not_map`)
-      = Pr[G_H   ⇒ 0]        (`securityReduction_real_to_hybrid`)
-      = Pr[G_CKA ⇒ 0]        (`securityReduction_hybrid_to_honest`)  ∎
+Steps (2) and (3) are bundled into `securityReduction_real_bridge`; the full
+four-step chain is assembled in `securityReduction_real`. The three helper
+games correspond to the three oracle-impl columns in the diagram at the top
+of the file:
 
-The **random branch** follows from bijectivity of `(·) • gen`: `c • gen ≡ $ᵗ G`.
+- `G_R` := `securityReductionRealGame`
+  - oracles: `reductionOracleImpl g (a•gen) (b•gen) ((a*b)•gen)`
+  - role: entry point for the DDH reduction
+- `G_H` := `securityHybridGame`
+  - oracles: `hybridOracleImpl g a b`
+  - role: hidden-state bridge; same outputs as `G_R`
+- `G_CKA` := `securityExpFixedBitFalseGame`
+  - oracles: `ckaSecurityImpl g (ddhCKA F G gen)`
+  - role: honest CKA with `b = false`
+
+`G_H` is the crucial intermediate: `G_R` and `G_H` produce **identical
+observable transcripts** (they differ only on hidden party state, which
+`hybridProj` absorbs), while `G_H` and `G_CKA` have **identical output
+distributions** but different control flow (eager up-front sampling of
+`a, b ← $F` vs. lazy on-demand sampling).
+
+#### Random branch: no hybrid needed
+
+When `gT := c • gen` with uniform `c`, bijectivity of `(·) • gen`
+(hypothesis `hg` in `securityReduction_rand`) gives
+`c • gen ≡ $ᵗ G`, so the random DDH experiment couples directly with
+`securityExpFixedBit` at `b = true` without an intermediate hybrid.
 -/
 
-/-- Auxiliary game `G_real(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
+/-- Auxiliary game `G_R(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
 `R = reductionOracleImpl(g, ag, bg, abg)`, and returns `b'` (without negation).
 
-The full reduction returns `¬b'`, so `Pr[ℬ = true | real DDH] = Pr[G_real = false]`
+The full reduction returns `¬b'`, so `Pr[ℬ = true | real DDH] = Pr[G_R = false]`
 by `probOutput_not_map`. The bridge lemmas then show
-`Pr[G_real = false] = Pr[CKA(b=false) = false]`, completing `securityReduction_real`. -/
+`Pr[G_R = false] = Pr[CKA(b = false) = false]`, completing `securityReduction_real`. -/
 private noncomputable def securityReductionRealGame (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
@@ -499,25 +554,35 @@ private noncomputable def securityHybridGame (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
-/-- State map `π : GameState → GameState` from `R`-states to `H`-states,
-where `R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridOracleImpl(g, a, b)`.
+/-- Projection `π : RState → HState` used in the local coupling between
+`R := reductionOracleImpl(g, aG, bG, abG)` and `H := hybridOracleImpl(g, a, b)`.
 
-`R` and `H` agree on all outputs but diverge on hidden party state at the two
-embedding epochs for the challenged direction:
+Write `P := gp.challengedParty`, `t* := gp.tStar`, and
+`π(S_R) := hybridProj gp a b S_R sent`.
 
-- if `challengedParty = .A`, then `π` rewrites B's special send-state to `a`
-  and A's special challenge-state to `b`
-- if `challengedParty = .B`, then `π` rewrites A's special send-state to `a`
-  and B's special challenge-state to `b`
-- it also forgets the internal `correct` flag, which is unobservable in the
-  security game and can differ spuriously in the reduction after the embedded
-  challenge branch
+The two games expose the same oracle outputs. Their only possible discrepancy is in the
+hidden local state during the challenge window (the epochs around `t*`):
 
-All other fields (outputs, counters, flags) pass through unchanged. -/
+- for `P = A`, the reduction may hold
+  - B's special pre-challenge scalar-state, which `π` rewrites to the scalar-state `a`,
+  - A's special challenge scalar-state, which `π` rewrites to the scalar-state `b`;
+- for `P = B`, symmetrically,
+  - A's special pre-challenge scalar-state is rewritten to `a`,
+  - B's special challenge scalar-state is rewritten to `b`.
+
+Equivalently, `π` replaces the reduction's fresh hidden scalars by the DDH scalars that
+define the hybrid game, while leaving the visible transcript unchanged. The additional
+Boolean parameter `sent` records whether the special pre-challenge embedding send has
+already occurred, which is exactly the provenance needed in the two ambiguous scalar
+states that follow that send.
+
+Here `(.inl x : F ⊕ G)` denotes the scalar-state carrying `x ∈ F` and
+`(.inr g : F ⊕ G)` denotes the G-state carrying `g ∈ G`.
+
+All remaining state components pass through unchanged. -/
 private noncomputable def hybridProj (gp : GameParams) (a b : F)
-    (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
+    (s : GameState (F ⊕ G) G G) (sent : Bool := false) : GameState (F ⊕ G) G G :=
   { s with
-    correct := true
     stA := match gp.challengedParty, s.stA with
       | .A, .inl _ =>
           if (s.lastAction = some .challA && s.tA == gp.tStar) ||
@@ -532,8 +597,8 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
               (s.lastAction = some .sendA ||
                (s.lastAction = some .recvB &&
                  s.stB = (.inr (a • gen) : F ⊕ G)) ||
-               s.lastAction = some .sendB ||
-               s.lastAction = some .challB)
+               (sent && (s.lastAction = some .sendB ||
+                 s.lastAction = some .challB)))
           then (.inl a : F ⊕ G)
           else s.stA
       | _, .inr _ => s.stA
@@ -542,8 +607,8 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
           if s.tB == gp.tStar - 1 &&
               (s.lastAction = some .sendB ||
                s.lastAction = some .recvA ||
-               s.lastAction = some .sendA ||
-               s.lastAction = some .challA)
+               (sent && (s.lastAction = some .sendA ||
+                 s.lastAction = some .challA)))
           then (.inl a : F ⊕ G)
           else s.stB
       | .B, .inl _ =>
@@ -555,13 +620,26 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
           else s.stB
       | _, .inr _ => s.stB }
 
-/-- Reduction-side witness for the short post-challenge window where the reduction and
-the hybrid differ only in hidden state.
+/-- Window predicate for the coupling `S_H = hybridProj gp a b S_R`.
 
-At the challenged challenge step, this records the DDH transcript still pending on the
-wire. At the following receive step, it records that the receiver now stores the DDH
-challenge message. Outside these windows, the predicate is trivial. This is exactly the
-extra fact needed to justify the rewrites performed by `hybridProj`. -/
+Write `P := gp.challengedParty`, `t* := gp.tStar`, and
+`W(S_R) := hybridWindowInv gp a b S_R`. Then
+
+`W(S_R) =`
+- `S_R.tA = t* → S_R.lastRhoA = b • gen ∧ S_R.lastKeyA = (a * b) • gen`
+  if `(P, S_R.lastAction) = (A, challA)`
+- `S_R.tA = t* → S_R.stB = (.inr (b • gen) : F ⊕ G)`
+  if `(P, S_R.lastAction) = (A, recvB)`
+- `S_R.tB = t* → S_R.lastRhoB = b • gen ∧ S_R.lastKeyB = (a * b) • gen`
+  if `(P, S_R.lastAction) = (B, challB)`
+- `S_R.tB = t* → S_R.stA = (.inr (b • gen) : F ⊕ G)`
+  if `(P, S_R.lastAction) = (B, recvA)`
+- `True`
+  otherwise.
+
+Thus `W` is a state predicate that, on the challenge-window cases, specifies
+the DDH equalities needed by `hybridProj`. Here `(.inr g : F ⊕ G)` denotes the
+G-state carrying `g`. -/
 private def hybridWindowInv (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) : Prop :=
   match gp.challengedParty, s.lastAction with
@@ -581,43 +659,70 @@ private def hybridWindowInv (gp : GameParams) (a b : F)
         s.stA = (.inr (b • gen) : F ⊕ G)
   | _, _ => True
 
+/-- Hybrid-side shape invariant for the local bridge.
+
+It is the honest reachable-shape predicate, extended by the special challenge states
+where the hybrid writes the DDH challenge transcript `(b • gen, (a * b) • gen)` before
+the corresponding embedding send has normalized the peer's scalar state. -/
+private def hybridShapeInv (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) : Prop :=
+  reachableShape gen s ∨
+    (gp.challengedParty = .A ∧
+      s.lastAction = some .challA ∧
+      s.tA = gp.tStar ∧
+      s.tB = gp.tStar - 1 ∧
+      ∃ x : F, s.stA = (.inl b : F ⊕ G) ∧ s.stB = (.inl x : F ⊕ G) ∧
+        s.lastRhoA = some (b • gen) ∧ s.lastRhoB = none ∧
+        s.lastKeyA = some ((a * b) • gen) ∧ s.lastKeyB = none) ∨
+    (gp.challengedParty = .B ∧
+      s.lastAction = some .challB ∧
+      s.tA = gp.tStar - 1 ∧
+      s.tB = gp.tStar ∧
+      ∃ x : F, s.stA = (.inl x : F ⊕ G) ∧ s.stB = (.inl b : F ⊕ G) ∧
+        s.lastRhoA = none ∧ s.lastRhoB = some (b • gen) ∧
+        s.lastKeyA = none ∧ s.lastKeyB = some ((a * b) • gen))
+
 /-
 Notation for the bridge below:
-- `sR` is the concrete reduction state.
-- `sH` is the corresponding hybrid state, obtained from `sR` by `hybridProj`.
+- `S_R` is the concrete reduction state.
+- `S_H` is the corresponding hybrid state, obtained from `S_R` by `hybridProj`.
 - `hybridWindowInv` marks the brief post-challenge interval where the two games may
   disagree internally, while still exposing the same oracle outputs.
 -/
 /-- Relational invariant between reduction and hybrid states.
 
-`sH = hybridProj sR` gives the projection; `reachableShape sH` captures the shape
-invariant on the projected hybrid state (where `hybridProj`'s rewrites realign
-the reduction's fresh scalars with the embedded DDH values, so `phaseShapeInv`
-holds even in the embedding window); `hybridWindowInv sR` records the extra
-facts about the challenged branch needed to justify the projection. -/
+`S_H = hybridProj gp a b S_R sent` gives the projection, where `sent` remembers
+whether the special pre-challenge embedding send has already occurred.
+`hybridShapeInv S_H` is the hybrid-side structural invariant: usually it is just
+`reachableShape`, but it also admits the single direct-`challA` challenge state that
+is specific to the explicit hybrid. `hybridWindowInv S_R` records the extra facts
+about the challenged branch needed to justify the projection. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  sH = hybridProj (F := F) (gen := gen) gp a b sR ∧
-  reachableShape gen sH ∧
-  hybridWindowInv (F := F) (G := G) (gen := gen) gp a b sR
+  ∃ sent : Bool,
+    sH = hybridProj (F := F) (gen := gen) gp a b sR sent ∧
+    hybridShapeInv (F := F) (G := G) (gen := gen) gp a b sH ∧
+    hybridWindowInv (F := F) (G := G) (gen := gen) gp a b sR
 
 /-- Map a reduction-side post-state to the corresponding hybrid-side post-state. -/
 private noncomputable def hybridPostMap {α : Type} (gp : GameParams) (a b : F)
-    (p : α × GameState (F ⊕ G) G G) : α × GameState (F ⊕ G) G G :=
-  (p.1, hybridProj (F := F) (gen := gen) gp a b p.2)
+    (sent : Bool) (p : α × GameState (F ⊕ G) G G) : α × GameState (F ⊕ G) G G :=
+  (p.1, hybridProj (F := F) (gen := gen) gp a b p.2 sent)
 
 section hybridHelpers
 omit [Fintype F] [SampleableType F] [SampleableType G]
 
-/-- If the projected state has the reachable shape and the window witness holds,
+/-- If the projected state has the hybrid shape and the window witness holds,
 then the pair `(s, hybridProj s)` satisfies `hybridRel`. -/
 private lemma hybridRel_mk (gp : GameParams) (a b : F)
+    (sent : Bool)
     (s : GameState (F ⊕ G) G G)
-    (hShape : reachableShape gen (hybridProj (F := F) (gen := gen) gp a b s))
+    (hShape : hybridShapeInv (F := F) (G := G) (gen := gen) gp a b
+      (hybridProj (F := F) (gen := gen) gp a b s sent))
     (hWin : hybridWindowInv (F := F) (G := G) (gen := gen) gp a b s) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b s
-      (hybridProj (F := F) (gen := gen) gp a b s) :=
-  ⟨rfl, hShape, hWin⟩
+      (hybridProj (F := F) (gen := gen) gp a b s sent) :=
+  ⟨sent, rfl, hShape, hWin⟩
 
 section windowAndReachable
 omit [DecidableEq F] [DecidableEq G]
@@ -753,6 +858,20 @@ private lemma reachableInv_none_or_recvA
   | inr hrecvA =>
       simpa [phaseShapeInv, hrecvA] using hshape
 
+/-- Shape-only version of `reachableInv_none_or_recvA`. -/
+private lemma reachableShape_none_or_recvA
+    (s : GameState (F ⊕ G) G G)
+    (hShape : reachableShape gen s)
+    (hact : s.lastAction = none ∨ s.lastAction = some .recvA) :
+    ∃ x : F, s.stA = .inr (x • gen) ∧ s.stB = .inl x ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none := by
+  rcases hShape with ⟨_, hshape⟩
+  cases hact with
+  | inl hnone =>
+      simpa [phaseShapeInv, hnone] using hshape
+  | inr hrecvA =>
+      simpa [phaseShapeInv, hrecvA] using hshape
+
 /-- A reachable state with `lastAction = sendA` or `challA` is in the pending
 `A → B` phase with scalar witnesses on both sides. -/
 private lemma reachableInv_sendA_or_challA
@@ -780,6 +899,16 @@ private lemma reachableInv_recvB
   rcases hInv with ⟨_, _, hshape⟩
   simpa [phaseShapeInv, hact] using hshape
 
+/-- Shape-only version of `reachableInv_recvB`. -/
+private lemma reachableShape_recvB
+    (s : GameState (F ⊕ G) G G)
+    (hShape : reachableShape gen s)
+    (hact : s.lastAction = some .recvB) :
+    ∃ y : F, s.stA = .inl y ∧ s.stB = .inr (y • gen) ∧
+      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none := by
+  rcases hShape with ⟨_, hshape⟩
+  simpa [phaseShapeInv, hact] using hshape
+
 /-- A reachable state with `lastAction = sendB` or `challB` is in the pending
 `B → A` phase with scalar witnesses on both sides. -/
 private lemma reachableInv_sendB_or_challB
@@ -798,17 +927,14 @@ private lemma reachableInv_sendB_or_challB
 
 end windowAndReachable
 
-/-- The projected initial state is already an honest hybrid state. -/
+/-- The projected initial reduction state is already an honest hybrid state. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  unfold hybridRel
-  refine ⟨?_, ?_, ?_⟩
-  · symm
-    cases hcp : gp.challengedParty <;>
-      simp [hybridProj, initGameState, hcp]
-  · exact ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  refine ⟨false, ?_, ?_, ?_⟩
+  · cases hcp : gp.challengedParty <;> simp [hybridProj, initGameState, hcp]
+  · exact Or.inl ⟨rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · simp [hybridWindowInv, initGameState]
 
 /-- Uniform sampling preserves `hybridRel`: both sides sample the same random value
@@ -910,40 +1036,79 @@ private lemma hybridRel_of_run_eq
     {α : Type}
     (maR maH : StateT (GameState (F ⊕ G) G G) ProbComp α)
     (sR : GameState (F ⊕ G) G G) (gp : GameParams) (a b : F)
-    (hrun_eq : (fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2))
+    (sentPre sentPost : Bool)
+    (hrun_eq : (fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
         <$> maR.run sR =
-      maH.run (hybridProj (F := F) (gen := gen) gp a b sR))
+      maH.run (hybridProj (F := F) (gen := gen) gp a b sR sentPre))
     (hShape_post : ∀ p ∈ support (evalDist (maR.run sR)),
-      reachableShape gen (hybridProj (F := F) (gen := gen) gp a b p.2))
+      hybridShapeInv (F := F) (G := G) (gen := gen) gp a b
+        (hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
     (hWin_post : ∀ p ∈ support (evalDist (maR.run sR)),
       hybridWindowInv (F := F) (G := G) (gen := gen) gp a b p.2) :
     OracleComp.ProgramLogic.Relational.RelTriple
       (maR.run sR)
-      (maH.run (hybridProj (F := F) (gen := gen) gp a b sR))
+      (maH.run (hybridProj (F := F) (gen := gen) gp a b sR sentPre))
       (fun pR pH => pR.1 = pH.1 ∧
         hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
   refine relTriple_of_map_eq
-    (f := fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2))
+    (f := fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
     hrun_eq ?_
   intro p hp
-  exact ⟨rfl, rfl, hShape_post p hp, hWin_post p hp⟩
+  exact ⟨rfl, sentPost, rfl, hShape_post p hp, hWin_post p hp⟩
+
+/-- Distribution-level variant of `hybridRel_of_run_eq`.
+
+When the reduction-side program samples internal randomness (for example `z ← $F`
+in `reductionChallA`) while the hybrid side is deterministic at the same step,
+the map `(p.1, hybridProj p.2 sentPost)` applied to the reduction run is only
+`evalDist`-equal to the hybrid run, not syntactically equal. This version uses
+`relTriple_of_evalDist_map_eq` and is the right tool for the sample-absorbing
+embedding/challenge branches. -/
+private lemma hybridRel_of_run_evalDist_eq
+    {α : Type}
+    (maR maH : StateT (GameState (F ⊕ G) G G) ProbComp α)
+    (sR : GameState (F ⊕ G) G G) (gp : GameParams) (a b : F)
+    (sentPre sentPost : Bool)
+    (hrun_eq : evalDist
+        ((fun p : α × _ =>
+            (p.1, hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
+          <$> maR.run sR) =
+      evalDist (maH.run (hybridProj (F := F) (gen := gen) gp a b sR sentPre)))
+    (hShape_post : ∀ p ∈ support (evalDist (maR.run sR)),
+      hybridShapeInv (F := F) (G := G) (gen := gen) gp a b
+        (hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
+    (hWin_post : ∀ p ∈ support (evalDist (maR.run sR)),
+      hybridWindowInv (F := F) (G := G) (gen := gen) gp a b p.2) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      (maR.run sR)
+      (maH.run (hybridProj (F := F) (gen := gen) gp a b sR sentPre))
+      (fun pR pH => pR.1 = pH.1 ∧
+        hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
+  refine relTriple_of_evalDist_map_eq
+    (f := fun p : α × _ => (p.1, hybridProj (F := F) (gen := gen) gp a b p.2 sentPost))
+    hrun_eq ?_
+  intro p hp
+  exact ⟨rfl, sentPost, rfl, hShape_post p hp, hWin_post p hp⟩
 
 /-- `hybridProj` preserves the counters used by `allowCorr`. -/
 private lemma allowCorr_hybridProj (gp : GameParams) (a b : F)
+    (sent : Bool)
     (s : GameState (F ⊕ G) G G) :
-    allowCorr gp (hybridProj (F := F) (gen := gen) gp a b s) = allowCorr gp s := by
+    allowCorr gp (hybridProj (F := F) (gen := gen) gp a b s sent) = allowCorr gp s := by
   rfl
 
 /-- `hybridProj` preserves the counters used by `finishedA`. -/
 private lemma finishedA_hybridProj (gp : GameParams) (a b : F)
+    (sent : Bool)
     (s : GameState (F ⊕ G) G G) :
-    finishedA gp (hybridProj (F := F) (gen := gen) gp a b s) = finishedA gp s := by
+    finishedA gp (hybridProj (F := F) (gen := gen) gp a b s sent) = finishedA gp s := by
   rfl
 
 /-- `hybridProj` preserves the counters used by `finishedB`. -/
 private lemma finishedB_hybridProj (gp : GameParams) (a b : F)
+    (sent : Bool)
     (s : GameState (F ⊕ G) G G) :
-    finishedB gp (hybridProj (F := F) (gen := gen) gp a b s) = finishedB gp s := by
+    finishedB gp (hybridProj (F := F) (gen := gen) gp a b s sent) = finishedB gp s := by
   rfl
 
 omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
@@ -1004,9 +1169,10 @@ private lemma tB_ne_tStar_of_corruptB_allowed
 can return a state. -/
 private lemma hybridProj_stA_eq_of_corruptA_allowed
     (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
+    (sent : Bool)
     (hΔ : gp.deltaCKA = 1)
     (hallow : allowCorr gp s || finishedA gp s = true) :
-    (hybridProj (F := F) (gen := gen) gp a b s).stA = s.stA := by
+    (hybridProj (F := F) (gen := gen) gp a b s sent).stA = s.stA := by
   have htA : s.tA ≠ gp.tStar :=
     tA_ne_tStar_of_corruptA_allowed (F := F) gp s hΔ hallow
   cases hcp : gp.challengedParty <;> cases hsA : s.stA <;>
@@ -1016,9 +1182,10 @@ private lemma hybridProj_stA_eq_of_corruptA_allowed
 can return a state. -/
 private lemma hybridProj_stB_eq_of_corruptB_allowed
     (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G)
+    (sent : Bool)
     (hΔ : gp.deltaCKA = 1)
     (hallow : allowCorr gp s || finishedB gp s = true) :
-    (hybridProj (F := F) (gen := gen) gp a b s).stB = s.stB := by
+    (hybridProj (F := F) (gen := gen) gp a b s sent).stB = s.stB := by
   cases hcp : gp.challengedParty
   · have htB : s.tB ≠ gp.tStar - 1 :=
       tB_ne_tStar_sub_one_of_corruptB_allowed (F := F) gp s hΔ hallow
@@ -1039,25 +1206,25 @@ private lemma hybridRel_query_corruptA
       ((oracleCorruptA gp (F ⊕ G) G G ()).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  rcases hrel with ⟨rfl, hInv, hWin⟩
+  rcases hrel with ⟨sent, rfl, hInv, hWin⟩
   by_cases hallow : allowCorr gp sR = true ∨ finishedA gp sR = true
   · have hallowBool : allowCorr gp sR || finishedA gp sR = true := by
       simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
-    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
-        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR) = true := by
+    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true ∨
+        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true := by
       simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
     have hstA := hybridProj_stA_eq_of_corruptA_allowed
-      (F := F) (gen := gen) gp a b sR hΔ hallowBool
+      (F := F) (gen := gen) gp a b sR sent hΔ hallowBool
     simpa [oracleCorruptA, hallow, hallowH, hstA] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
         (spec₁ := unifSpec) (spec₂ := unifSpec)
         (R := fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := (some sR.stA, sR))
-        (b := (some sR.stA, hybridProj (F := F) (gen := gen) gp a b sR))
-        ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
-  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
-        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR) = true) := by
+        (b := (some sR.stA, hybridProj (F := F) (gen := gen) gp a b sR sent))
+        ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true ∨
+        finishedA gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true) := by
       simpa [allowCorr_hybridProj, finishedA_hybridProj] using hallow
     simpa [oracleCorruptA, hallow, hallowH] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
@@ -1065,8 +1232,8 @@ private lemma hybridRel_query_corruptA
         (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := ((none : Option (F ⊕ G)), sR))
-        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR))
-        ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR sent))
+        ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
 
 /-- Symmetric corruption leaf for `corruptB`. -/
 private lemma hybridRel_query_corruptB
@@ -1078,25 +1245,25 @@ private lemma hybridRel_query_corruptB
       ((oracleCorruptB gp (F ⊕ G) G G ()).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  rcases hrel with ⟨rfl, hInv, hWin⟩
+  rcases hrel with ⟨sent, rfl, hInv, hWin⟩
   by_cases hallow : allowCorr gp sR = true ∨ finishedB gp sR = true
   · have hallowBool : allowCorr gp sR || finishedB gp sR = true := by
       simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
-    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
-        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR) = true := by
+    have hallowH : allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true ∨
+        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true := by
       simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
     have hstB := hybridProj_stB_eq_of_corruptB_allowed
-      (F := F) (gen := gen) gp a b sR hΔ hallowBool
+      (F := F) (gen := gen) gp a b sR sent hΔ hallowBool
     simpa [oracleCorruptB, hallow, hallowH, hstB] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
         (spec₁ := unifSpec) (spec₂ := unifSpec)
         (R := fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := (some sR.stB, sR))
-        (b := (some sR.stB, hybridProj (F := F) (gen := gen) gp a b sR))
-        ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
-  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR) = true ∨
-        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR) = true) := by
+        (b := (some sR.stB, hybridProj (F := F) (gen := gen) gp a b sR sent))
+        ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
+  · have hallowH : ¬(allowCorr gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true ∨
+        finishedB gp (hybridProj (F := F) (gen := gen) gp a b sR sent) = true) := by
       simpa [allowCorr_hybridProj, finishedB_hybridProj] using hallow
     simpa [oracleCorruptB, hallow, hallowH] using
       (OracleComp.ProgramLogic.Relational.relTriple_pure_pure
@@ -1104,8 +1271,8 @@ private lemma hybridRel_query_corruptB
         (R := fun (pR pH : Option (F ⊕ G) × GameState (F ⊕ G) G G) =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         (a := ((none : Option (F ⊕ G)), sR))
-        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR))
-        ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+        (b := ((none : Option (F ⊕ G)), hybridProj (F := F) (gen := gen) gp a b sR sent))
+        ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
 
 end hybridHelpers
 
@@ -1127,24 +1294,25 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
   · exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
   -- sendA: at embedding epoch (challengedParty = .B), reduction samples fresh y while
   -- hybrid uses a; outputs (aG, xB·aG) agree, hybridProj absorbs the stA difference
-  · rcases hrel with ⟨rfl, hShape, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hShape, hWin⟩
     cases hstep : validStep sR.lastAction .sendA
     · -- validStep = false: both return pure none
       have hstepH :
-          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .sendA = false := by
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .sendA
+            = false := by
         simpa [hybridProj] using hstep
       have hrunL :
           ((reductionSendA (F := F) gp gen (a • gen)) ()).run sR = pure (none, sR) := by
         simp [reductionSendA, hstep, StateT.run_bind, StateT.run_get, pure_bind]
       have hrunH :
           ((hybridSendA (F := F) gp gen a) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR) =
-            pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent) =
+            pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [hybridSendA, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((reductionSendA (F := F) gp gen (a • gen) ()).run sR)
         ((hybridSendA (F := F) gp gen a ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       rw [hrunL, hrunH]
@@ -1154,22 +1322,23 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           (R := fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((none : Option (G × G)), sR))
-          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
     · -- validStep = true: non-embedding vs embedding sub-cases
       -- TODO: non-embedding (same code ddhCKA.send), embedding (fixed a vs fresh y)
       sorry
   -- recvA: both sides run oracleRecvA; hybridProj does not change stA at recvA-reachable
   -- states (stA = .inl y after a preceding sendA/challA), so recv sees the same stA
-  · rcases hrel with ⟨rfl, hInv, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hInv, hWin⟩
     cases hstep : validStep sR.lastAction .recvA
     · have hstepH :
-          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .recvA = false := by
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .recvA
+            = false := by
         simpa [hybridProj] using hstep
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((oracleRecvA (ddhCKA F G gen) ()).run sR)
         ((oracleRecvA (ddhCKA F G gen) ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       have hrunL :
@@ -1177,8 +1346,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
         simp [oracleRecvA, hstep, StateT.run_bind, StateT.run_get, pure_bind]
       have hrunH :
           ((oracleRecvA (ddhCKA F G gen) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR)) =
-            pure ((), hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent)) =
+            pure ((), hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [oracleRecvA, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
       rw [hrunL, hrunH]
       exact
@@ -1187,8 +1356,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           (R := fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((), sR))
-          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
     · cases hact : sR.lastAction with
       | none =>
           exfalso; simp [hact, validStep] at hstep
@@ -1200,30 +1369,31 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | challA => exfalso; simp [hact, validStep] at hstep
           -- validStep = true with lastAction = sendB/challB: recvA fires.
           -- Both sides read lastRhoB (same) and compute recv; hybrid's stA may
-          -- differ (window rewrite), but hybridProj on sR_post normalizes correct
-          -- to true, and the shape invariant is maintained on the projected side
+          -- differ (window rewrite), but `hybridProj` on the post-state restores
+          -- the intended hybrid-side scalar, and the shape invariant is maintained
           -- (phaseShape uses projected stA = .inl b/a that matches lastRho).
           | sendB => sorry
           | challB => sorry
   -- sendB: symmetric to sendA. Embedding epoch is at challengedParty = .A with
   -- tB = tStar - 1; outputs (aG, xA·aG) agree, hybridProj absorbs the stB difference.
-  · rcases hrel with ⟨rfl, hShape, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hShape, hWin⟩
     cases hstep : validStep sR.lastAction .sendB
     · have hstepH :
-          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .sendB = false := by
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .sendB
+            = false := by
         simpa [hybridProj] using hstep
       have hrunL :
           ((reductionSendB (F := F) gp gen (a • gen)) ()).run sR = pure (none, sR) := by
         simp [reductionSendB, hstep, StateT.run_bind, StateT.run_get, pure_bind]
       have hrunH :
           ((hybridSendB (F := F) gp gen a) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR) =
-            pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent) =
+            pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [hybridSendB, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((reductionSendB (F := F) gp gen (a • gen) ()).run sR)
         ((hybridSendB (F := F) gp gen a ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       rw [hrunL, hrunH]
@@ -1233,20 +1403,21 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           (R := fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((none : Option (G × G)), sR))
-          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+          (b := ((none : Option (G × G)), hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
     · -- validStep = true: non-embedding vs embedding sub-cases
       sorry
   -- recvB: symmetric to recvA; hybridProj does not change stB at recvB-reachable states
-  · rcases hrel with ⟨rfl, hInv, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hInv, hWin⟩
     cases hstep : validStep sR.lastAction .recvB
     · have hstepH :
-          validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .recvB = false := by
+          validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .recvB
+            = false := by
         simpa [hybridProj] using hstep
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((oracleRecvB (ddhCKA F G gen) ()).run sR)
         ((oracleRecvB (ddhCKA F G gen) ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       have hrunL :
@@ -1254,8 +1425,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
         simp [oracleRecvB, hstep, StateT.run_bind, StateT.run_get, pure_bind]
       have hrunH :
           ((oracleRecvB (ddhCKA F G gen) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR)) =
-            pure ((), hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent)) =
+            pure ((), hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [oracleRecvB, hstepH, StateT.run_bind, StateT.run_get, pure_bind]
       rw [hrunL, hrunH]
       exact
@@ -1264,8 +1435,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           (R := fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((), sR))
-          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hInv, hWin⟩⟩)
+          (b := ((), hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hInv, hWin⟩⟩)
     · cases hact : sR.lastAction with
       | none =>
           exfalso; simp [hact, validStep] at hstep
@@ -1281,7 +1452,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           | challA => sorry
   -- challA: reduction uses (gB, gT) with stA := z; hybrid uses (b·G, ab·G) with stA := b;
   -- outputs agree since gB = b·gen and gT = (a*b)·gen; hybridWindowInv tracks the window
-  · rcases hrel with ⟨rfl, hShape, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hShape, hWin⟩
     -- The oracle only fires when challengedParty = .A ∧ validStep ∧ isChallengeEpoch.
     -- Otherwise returns pure none on both sides with hybridProj's output agreeing.
     by_cases hcpA : gp.challengedParty = .A
@@ -1289,14 +1460,199 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
       · by_cases hchal : isChallengeEpoch gp { sR with tA := sR.tA + 1 } = true
         · -- Fires: reduction samples z, hybrid uses b. Outputs agree (both (bG, abG)).
           -- Post-states coincide under hybridProj (challA window rewrites stA := .inl b).
-          -- TODO: detailed proof — requires state extensionality and invariant preservation.
-          sorry
+          have htA : sR.tA + 1 = gp.tStar := by
+            simpa [isChallengeEpoch, hcpA] using hchal
+          have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challA
+              = true := by
+            simpa [hybridProj] using hvs
+          have hchalH : isChallengeEpoch gp
+              { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                tA := (hybridProj (F := F) (gen := gen) gp a b sR sent).tA + 1 } = true := by
+            simpa [isChallengeEpoch, hybridProj] using hchal
+          have hReach :
+              reachableShape gen (hybridProj (F := F) (gen := gen) gp a b sR sent) := by
+            cases hShape with
+            | inl hReach => exact hReach
+            | inr hRest =>
+                cases hRest with
+                | inl hDirectA =>
+                    exfalso
+                    simpa [hDirectA.2.1, validStep] using hvsH
+                | inr hDirectB =>
+                    exfalso
+                    simpa [hDirectB.2.1, validStep] using hvsH
+          cases hact : sR.lastAction with
+          | none =>
+              have hactH :
+                  (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction = none := by
+                simpa [hybridProj] using hact
+              rcases reachableShape_none_or_recvA
+                  (F := F) (G := G) (gen := gen)
+                  (hybridProj (F := F) (gen := gen) gp a b sR sent) hReach (Or.inl hactH) with
+                ⟨x, hstApre, hstBpre, hrApre, hrBpre, hkApre, hkBpre⟩
+              have htB : sR.tB = gp.tStar - 1 := by
+                rcases hReach with ⟨hCtr, _⟩
+                have htEqH :
+                    (hybridProj (F := F) (gen := gen) gp a b sR sent).tA =
+                      (hybridProj (F := F) (gen := gen) gp a b sR sent).tB := by
+                  simpa [phaseCounterInv, hactH] using hCtr
+                have htEq : sR.tA = sR.tB := by
+                  simpa [hybridProj] using htEqH
+                omega
+              have hrunR :
+                  ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR =
+                    (($ᵗ F : ProbComp F) >>= fun z =>
+                      pure
+                        ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                          { sR with
+                            tA := sR.tA + 1
+                            stA := (.inl z : F ⊕ G)
+                            lastRhoA := some (b • gen)
+                            lastKeyA := some ((a * b) • gen)
+                            lastAction := some .challA })) := by
+                simp [reductionChallA, hcpA, hvs, hchal, StateT.run_bind, StateT.run_get,
+                  pure_bind, StateT.run_pure]
+              have hrunH :
+                  ((hybridChallA (F := F) gp gen a b) ()).run
+                    (hybridProj (F := F) (gen := gen) gp a b sR sent) =
+                    pure
+                      ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                        { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                          tA := (hybridProj (F := F) (gen := gen) gp a b sR sent).tA + 1
+                          stA := (.inl b : F ⊕ G)
+                          lastRhoA := some (b • gen)
+                          lastKeyA := some ((a * b) • gen)
+                          lastAction := some .challA }) := by
+                simp [hybridChallA, hcpA, hvsH, hchalH, StateT.run_bind, StateT.run_get,
+                  pure_bind, StateT.run_pure]
+              refine hybridRel_of_run_evalDist_eq
+                (F := F) (G := G) (gen := gen)
+                (maR := (reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ())
+                (maH := (hybridChallA (F := F) gp gen a b) ())
+                (sR := sR) (gp := gp) (a := a) (b := b) (sentPre := sent) (sentPost := false)
+                ?_ ?_ ?_
+              · rw [hrunR, hrunH]
+                apply evalDist_ext
+                intro q
+                simp [hybridProj, hcpA, hact, htA]
+              · intro p hp
+                rw [hrunR] at hp
+                simp at hp
+                rcases hp with ⟨z, _, rfl⟩
+                refine Or.inr (Or.inl ?_)
+                refine ⟨hcpA, rfl, ?_, ?_, x, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                · simp [hybridProj, htA]
+                · exact htB
+                · simp [hybridProj, hcpA, htA]
+                · simpa [hybridProj, hcpA, hact] using hstBpre
+                · simp [hybridProj]
+                · simpa [hybridProj, hcpA, hact] using hrBpre
+                · simp [hybridProj]
+                · simpa [hybridProj, hcpA, hact] using hkBpre
+              · intro p hp
+                rw [hrunR] at hp
+                simp at hp
+                rcases hp with ⟨z, _, rfl⟩
+                exact hybridWindowInv_reductionChallA_post
+                  (F := F) (G := G) (gen := gen) gp a b z sR hcpA
+          | some act =>
+              cases act with
+              | sendA => exfalso; simp [hact, validStep] at hvs
+              | recvA =>
+                  have hactH :
+                      (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction =
+                        some .recvA := by
+                    simpa [hybridProj] using hact
+                  rcases reachableShape_none_or_recvA
+                      (F := F) (G := G) (gen := gen)
+                      (hybridProj (F := F) (gen := gen) gp a b sR sent) hReach (Or.inr hactH) with
+                    ⟨x, hstApre, hstBpre, hrApre, hrBpre, hkApre, hkBpre⟩
+                  have htB : sR.tB = gp.tStar - 1 := by
+                    rcases hReach with ⟨hCtr, _⟩
+                    have htEqH :
+                        (hybridProj (F := F) (gen := gen) gp a b sR sent).tA =
+                          (hybridProj (F := F) (gen := gen) gp a b sR sent).tB := by
+                      simpa [phaseCounterInv, hactH] using hCtr
+                    have htEq : sR.tA = sR.tB := by
+                      simpa [hybridProj] using htEqH
+                    omega
+                  have hneqB : gp.tStar - 1 ≠ gp.tStar := by
+                    omega
+                  have hsB : ∃ w : F, sR.stB = (.inl w : F ⊕ G) := by
+                    cases hsb : sR.stB with
+                    | inl w =>
+                        exact ⟨w, rfl⟩
+                    | inr g =>
+                        simp [hybridProj, hcpA, hact, htB, hsb] at hstBpre
+                  have hrunR :
+                      ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR =
+                        (($ᵗ F : ProbComp F) >>= fun z =>
+                          pure
+                            ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                              { sR with
+                                tA := sR.tA + 1
+                                stA := (.inl z : F ⊕ G)
+                                lastRhoA := some (b • gen)
+                                lastKeyA := some ((a * b) • gen)
+                                lastAction := some .challA })) := by
+                    simp [reductionChallA, hcpA, hvs, hchal, StateT.run_bind, StateT.run_get,
+                      pure_bind, StateT.run_pure]
+                  have hrunH :
+                      ((hybridChallA (F := F) gp gen a b) ()).run
+                        (hybridProj (F := F) (gen := gen) gp a b sR sent) =
+                        pure
+                          ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                            { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                              tA := (hybridProj (F := F) (gen := gen) gp a b sR sent).tA + 1
+                              stA := (.inl b : F ⊕ G)
+                              lastRhoA := some (b • gen)
+                              lastKeyA := some ((a * b) • gen)
+                              lastAction := some .challA }) := by
+                    simp [hybridChallA, hcpA, hvsH, hchalH, StateT.run_bind, StateT.run_get,
+                      pure_bind, StateT.run_pure]
+                  refine hybridRel_of_run_evalDist_eq
+                    (F := F) (G := G) (gen := gen)
+                    (maR := (reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ())
+                    (maH := (hybridChallA (F := F) gp gen a b) ())
+                    (sR := sR) (gp := gp) (a := a) (b := b) (sentPre := sent) (sentPost := true)
+                    ?_ ?_ ?_
+                  · rw [hrunR, hrunH]
+                    apply evalDist_ext
+                    intro q
+                    simp [hybridProj, hcpA, hact, htA, htB, hneqB]
+                  · intro p hp
+                    rw [hrunR] at hp
+                    simp at hp
+                    rcases hp with ⟨z, _, rfl⟩
+                    refine Or.inl ?_
+                    refine ⟨?_, ?_⟩
+                    · have hphase : gp.tStar = gp.tStar - 1 + 1 := by
+                        omega
+                      simpa [phaseCounterInv, hybridProj, htA, htB] using hphase
+                    · refine ⟨a, b, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                      · simp [hybridProj, hcpA, htA, htB]
+                      · rcases hsB with ⟨w, hsb⟩
+                        simp [hybridProj, hcpA, htA, htB, hsb]
+                      · simp [hybridProj]
+                      · simpa [hybridProj, hcpA, hact] using hrBpre
+                      · simpa [hybridProj, smul_smul, mul_comm, mul_left_comm, mul_assoc]
+                      · simpa [hybridProj, hcpA, hact] using hkBpre
+                  · intro p hp
+                    rw [hrunR] at hp
+                    simp at hp
+                    rcases hp with ⟨z, _, rfl⟩
+                    exact hybridWindowInv_reductionChallA_post
+                      (F := F) (G := G) (gen := gen) gp a b z sR hcpA
+              | recvB => exfalso; simp [hact, validStep] at hvs
+              | sendB => exfalso; simp [hact, validStep] at hvs
+              | challA => exfalso; simp [hact, validStep] at hvs
+              | challB => exfalso; simp [hact, validStep] at hvs
         · -- validStep ok, not in challenge epoch: returns pure none
-          have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challA
+          have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challA
               = true := by simpa [hybridProj] using hvs
           have hchalH : isChallengeEpoch gp
-              { hybridProj (F := F) (gen := gen) gp a b sR with
-                tA := (hybridProj (F := F) (gen := gen) gp a b sR).tA + 1 } = false := by
+              { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                tA := (hybridProj (F := F) (gen := gen) gp a b sR sent).tA + 1 } = false := by
             have : isChallengeEpoch gp { sR with tA := sR.tA + 1 } = false := by
               cases h : isChallengeEpoch gp { sR with tA := sR.tA + 1 }
               · rfl
@@ -1309,16 +1665,16 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
               pure_bind, StateT.run_pure]
           have hrunH :
               ((hybridChallA (F := F) gp gen a b) ()).run
-                (hybridProj (F := F) (gen := gen) gp a b sR)
-                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
-            have hcpAH : (hybridProj (F := F) (gen := gen) gp a b sR).lastAction
+                (hybridProj (F := F) (gen := gen) gp a b sR sent)
+                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
+            have hcpAH : (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction
                 = sR.lastAction := by simp [hybridProj]
             simp [hybridChallA, hcpA, hvsH, hchalH, StateT.run_bind, StateT.run_get,
               pure_bind, StateT.run_pure]
           change OracleComp.ProgramLogic.Relational.RelTriple
             ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
             ((hybridChallA (F := F) gp gen a b ()).run
-              (hybridProj (F := F) (gen := gen) gp a b sR))
+              (hybridProj (F := F) (gen := gen) gp a b sR sent))
             (fun pR pH =>
               pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           rw [hrunL, hrunH]
@@ -1329,14 +1685,14 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
                 pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
               (a := ((none : Option (G × G)), sR))
               (b := ((none : Option (G × G)),
-                hybridProj (F := F) (gen := gen) gp a b sR))
-              ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+                hybridProj (F := F) (gen := gen) gp a b sR sent))
+              ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
       · -- validStep false: returns pure none
         have hvs' : validStep sR.lastAction .challA = false := by
           cases h : validStep sR.lastAction .challA
           · rfl
           · exact absurd h hvs
-        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challA
+        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challA
             = false := by simpa [hybridProj] using hvs'
         have hrunL :
             ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
@@ -1344,13 +1700,13 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           simp [reductionChallA, hcpA, hvs', StateT.run_pure]
         have hrunH :
             ((hybridChallA (F := F) gp gen a b) ()).run
-              (hybridProj (F := F) (gen := gen) gp a b sR)
-              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+              (hybridProj (F := F) (gen := gen) gp a b sR sent)
+              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
           simp [hybridChallA, hcpA, hvsH, StateT.run_pure]
         change OracleComp.ProgramLogic.Relational.RelTriple
           ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
           ((hybridChallA (F := F) gp gen a b ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR))
+            (hybridProj (F := F) (gen := gen) gp a b sR sent))
           (fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         rw [hrunL, hrunH]
@@ -1361,8 +1717,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
               pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
             (a := ((none : Option (G × G)), sR))
             (b := ((none : Option (G × G)),
-              hybridProj (F := F) (gen := gen) gp a b sR))
-            ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+              hybridProj (F := F) (gen := gen) gp a b sR sent))
+            ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
     · -- challengedParty ≠ .A: returns pure none on both sides
       have hrunL :
           ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
@@ -1370,13 +1726,13 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
         simp [reductionChallA, hcpA, StateT.run_pure]
       have hrunH :
           ((hybridChallA (F := F) gp gen a b) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR)
-            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent)
+            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [hybridChallA, hcpA, StateT.run_pure]
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((reductionChallA (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
         ((hybridChallA (F := F) gp gen a b ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       rw [hrunL, hrunH]
@@ -1387,19 +1743,123 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((none : Option (G × G)), sR))
           (b := ((none : Option (G × G)),
-            hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+            hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
   -- challB: symmetric to challA for the challenged-B case
-  · rcases hrel with ⟨rfl, hShape, hWin⟩
+  · rcases hrel with ⟨sent, rfl, hShape, hWin⟩
     by_cases hcpB : gp.challengedParty = .B
     · by_cases hvs : validStep sR.lastAction .challB = true
       · by_cases hchal : isChallengeEpoch gp { sR with tB := sR.tB + 1 } = true
-        · sorry
-        · have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challB
+        · have htB : sR.tB + 1 = gp.tStar := by
+            simpa [isChallengeEpoch, hcpB] using hchal
+          have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challB
+              = true := by
+            simpa [hybridProj] using hvs
+          have hchalH : isChallengeEpoch gp
+              { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                tB := (hybridProj (F := F) (gen := gen) gp a b sR sent).tB + 1 } = true := by
+            simpa [isChallengeEpoch, hybridProj] using hchal
+          have hReach :
+              reachableShape gen (hybridProj (F := F) (gen := gen) gp a b sR sent) := by
+            cases hShape with
+            | inl hReach => exact hReach
+            | inr hRest =>
+                cases hRest with
+                | inl hA =>
+                    exfalso
+                    simpa [hcpB] using hA.1
+                | inr hB =>
+                    exfalso
+                    simpa [hB.2.1, validStep] using hvsH
+          cases hact : sR.lastAction with
+          | none => exfalso; simp [hact, validStep] at hvs
+          | some act =>
+              cases act with
+              | sendA => exfalso; simp [hact, validStep] at hvs
+              | recvA => exfalso; simp [hact, validStep] at hvs
+              | sendB => exfalso; simp [hact, validStep] at hvs
+              | challA => exfalso; simp [hact, validStep] at hvs
+              | challB => exfalso; simp [hact, validStep] at hvs
+              | recvB =>
+                  have hactH :
+                      (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction =
+                        some .recvB := by
+                    simpa [hybridProj] using hact
+                  rcases reachableShape_recvB
+                      (F := F) (G := G) (gen := gen)
+                      (hybridProj (F := F) (gen := gen) gp a b sR sent) hReach hactH with
+                    ⟨x, hstApre, hstBpre, hrApre, hrBpre, hkApre, hkBpre⟩
+                  have htA : sR.tA = gp.tStar - 1 := by
+                    rcases hReach with ⟨hCtr, _⟩
+                    have htEqH :
+                        (hybridProj (F := F) (gen := gen) gp a b sR sent).tA =
+                          (hybridProj (F := F) (gen := gen) gp a b sR sent).tB := by
+                      simpa [phaseCounterInv, hactH] using hCtr
+                    have htEq : sR.tA = sR.tB := by
+                      simpa [hybridProj] using htEqH
+                    omega
+                  have hneqA : gp.tStar - 1 ≠ gp.tStar := by
+                    omega
+                  have hrunR :
+                      ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR =
+                        (($ᵗ F : ProbComp F) >>= fun z =>
+                          pure
+                            ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                              { sR with
+                                tB := sR.tB + 1
+                                stB := (.inl z : F ⊕ G)
+                                lastRhoB := some (b • gen)
+                                lastKeyB := some ((a * b) • gen)
+                                lastAction := some .challB })) := by
+                    simp [reductionChallB, hcpB, hvs, hchal, StateT.run_bind, StateT.run_get,
+                      pure_bind]
+                  have hrunH :
+                      ((hybridChallB (F := F) gp gen a b) ()).run
+                        (hybridProj (F := F) (gen := gen) gp a b sR sent) =
+                        pure
+                          ((some ((b • gen), ((a * b) • gen)) : Option (G × G)),
+                            { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                              tB := (hybridProj (F := F) (gen := gen) gp a b sR sent).tB + 1
+                              stB := (.inl b : F ⊕ G)
+                              lastRhoB := some (b • gen)
+                              lastKeyB := some ((a * b) • gen)
+                              lastAction := some .challB }) := by
+                    simp [hybridChallB, hcpB, hvsH, hchalH, StateT.run_bind, StateT.run_get,
+                      pure_bind]
+                  refine hybridRel_of_run_evalDist_eq
+                    (F := F) (G := G) (gen := gen)
+                    (maR := (reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ())
+                    (maH := (hybridChallB (F := F) gp gen a b) ())
+                    (sR := sR) (gp := gp) (a := a) (b := b) (sentPre := sent) (sentPost := sent)
+                    ?_ ?_ ?_
+                  · rw [hrunR, hrunH]
+                    apply evalDist_ext
+                    intro q
+                    simp [hybridProj, hcpB, hact, htA, htB, hneqA]
+                  · intro p hp
+                    rw [hrunR] at hp
+                    simp at hp
+                    rcases hp with ⟨z, _, rfl⟩
+                    refine Or.inr (Or.inr ?_)
+                    refine ⟨hcpB, rfl, htA, ?_, x, ?_, ?_, ?_, ?_, ?_, ?_⟩
+                    · simp [hybridProj, htB]
+                    · simpa [hybridProj, hcpB, hact, htA, hneqA] using hstApre
+                    · simp [hybridProj, hcpB, htA, htB]
+                    · simpa [hybridProj, hcpB, hact] using hrApre
+                    · simp [hybridProj]
+                    · simpa [hybridProj, hcpB, hact, htA] using hkApre
+                    · simp [hybridProj]
+                  · intro p hp
+                    rw [hrunR] at hp
+                    simp at hp
+                    rcases hp with ⟨z, _, rfl⟩
+                    exact hybridWindowInv_reductionChallB_post
+                      (F := F) (G := G) (gen := gen) gp a b z sR hcpB
+        · have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challB
               = true := by simpa [hybridProj] using hvs
           have hchalH : isChallengeEpoch gp
-              { hybridProj (F := F) (gen := gen) gp a b sR with
-                tB := (hybridProj (F := F) (gen := gen) gp a b sR).tB + 1 } = false := by
+              { hybridProj (F := F) (gen := gen) gp a b sR sent with
+                tB := (hybridProj (F := F) (gen := gen) gp a b sR sent).tB + 1 } = false := by
             have : isChallengeEpoch gp { sR with tB := sR.tB + 1 } = false := by
               cases h : isChallengeEpoch gp { sR with tB := sR.tB + 1 }
               · rfl
@@ -1411,13 +1871,13 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
             simp [reductionChallB, hcpB, hvs, hchal, StateT.run_pure]
           have hrunH :
               ((hybridChallB (F := F) gp gen a b) ()).run
-                (hybridProj (F := F) (gen := gen) gp a b sR)
-                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+                (hybridProj (F := F) (gen := gen) gp a b sR sent)
+                = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
             simp [hybridChallB, hcpB, hvsH, hchalH, StateT.run_pure]
           change OracleComp.ProgramLogic.Relational.RelTriple
             ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
             ((hybridChallB (F := F) gp gen a b ()).run
-              (hybridProj (F := F) (gen := gen) gp a b sR))
+              (hybridProj (F := F) (gen := gen) gp a b sR sent))
             (fun pR pH =>
               pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           rw [hrunL, hrunH]
@@ -1428,13 +1888,13 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
                 pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
               (a := ((none : Option (G × G)), sR))
               (b := ((none : Option (G × G)),
-                hybridProj (F := F) (gen := gen) gp a b sR))
-              ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+                hybridProj (F := F) (gen := gen) gp a b sR sent))
+              ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
       · have hvs' : validStep sR.lastAction .challB = false := by
           cases h : validStep sR.lastAction .challB
           · rfl
           · exact absurd h hvs
-        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR).lastAction .challB
+        have hvsH : validStep (hybridProj (F := F) (gen := gen) gp a b sR sent).lastAction .challB
             = false := by simpa [hybridProj] using hvs'
         have hrunL :
             ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
@@ -1442,13 +1902,13 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
           simp [reductionChallB, hcpB, hvs', StateT.run_pure]
         have hrunH :
             ((hybridChallB (F := F) gp gen a b) ()).run
-              (hybridProj (F := F) (gen := gen) gp a b sR)
-              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+              (hybridProj (F := F) (gen := gen) gp a b sR sent)
+              = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
           simp [hybridChallB, hcpB, hvsH, StateT.run_pure]
         change OracleComp.ProgramLogic.Relational.RelTriple
           ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
           ((hybridChallB (F := F) gp gen a b ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR))
+            (hybridProj (F := F) (gen := gen) gp a b sR sent))
           (fun pR pH =>
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
         rw [hrunL, hrunH]
@@ -1459,21 +1919,21 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
               pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
             (a := ((none : Option (G × G)), sR))
             (b := ((none : Option (G × G)),
-              hybridProj (F := F) (gen := gen) gp a b sR))
-            ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+              hybridProj (F := F) (gen := gen) gp a b sR sent))
+            ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
     · have hrunL :
           ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ()).run sR
             = pure (none, sR) := by
         simp [reductionChallB, hcpB, StateT.run_pure]
       have hrunH :
           ((hybridChallB (F := F) gp gen a b) ()).run
-            (hybridProj (F := F) (gen := gen) gp a b sR)
-            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR) := by
+            (hybridProj (F := F) (gen := gen) gp a b sR sent)
+            = pure (none, hybridProj (F := F) (gen := gen) gp a b sR sent) := by
         simp [hybridChallB, hcpB, StateT.run_pure]
       change OracleComp.ProgramLogic.Relational.RelTriple
         ((reductionChallB (F := F) gp (b • gen) ((a * b) • gen) ()).run sR)
         ((hybridChallB (F := F) gp gen a b ()).run
-          (hybridProj (F := F) (gen := gen) gp a b sR))
+          (hybridProj (F := F) (gen := gen) gp a b sR sent))
         (fun pR pH =>
           pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
       rw [hrunL, hrunH]
@@ -1484,8 +1944,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
             pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
           (a := ((none : Option (G × G)), sR))
           (b := ((none : Option (G × G)),
-            hybridProj (F := F) (gen := gen) gp a b sR))
-          ⟨rfl, ⟨rfl, hShape, hWin⟩⟩)
+            hybridProj (F := F) (gen := gen) gp a b sR sent))
+          ⟨rfl, ⟨sent, rfl, hShape, hWin⟩⟩)
   -- corruptA
   · exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp a b sR sH hΔ hrel
   -- corruptB
