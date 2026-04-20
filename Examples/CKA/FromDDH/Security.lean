@@ -607,8 +607,9 @@ F ⊕ G`) in a narrow **challenge window** around `gp.tStar`:
 | `tB = t*`,     `lastAction = challB`| `.inl z` fresh | `.inl b` DDH exp |
 
 `hybridProj` rewrites the hidden scalar to the DDH scalar inside the
-window and is the identity outside; `hybridRel gp a b sR sH := sH =
-hybridProj gp a b sR`.
+window and is the identity outside; `hybridRel gp a b sR sH := ∃ c, sH =
+{hybridProj gp a b sR with correct := c}` (the `correct` field is cosmetic:
+the security game discards it).
 
 The oracle-step lemma `hybridRel_query` splits into three phases:
 
@@ -696,10 +697,16 @@ private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
       refine ⟨h.1, h.2.1, ?_⟩
       exact le_trans h.2.2 (by first | exact hB | exact hA)
 
-/-- Hybrid coupling invariant: `sH` is the projection of `sR`. -/
+/-- Hybrid coupling invariant: `sH` is the projection of `sR`, up to the
+`correct` field. `correct` is an accumulator tracked by `oracleRecvA/B` that
+only affects the *correctness* experiment (`CKAScheme.correctnessExp`); the
+security game discards the final state and returns only the adversary's guess
+`b'`, so `correct` divergences — which can happen when `hybridProj` rewrites a
+hidden scalar (`.inl y → .inl a` or `.inl z → .inl b`) inside the challenge
+window — are unobservable. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  sH = hybridProj (F := F) (gen := gen) gp a b sR
+  ∃ c : Bool, sH = { hybridProj (F := F) (gen := gen) gp a b sR with correct := c }
 
 omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- Base case: `init` has `lastAction = none`, which makes every
@@ -708,7 +715,7 @@ private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  change _ = hybridProj (F := F) (gen := gen) gp a b _
+  refine ⟨true, ?_⟩
   unfold hybridProj windowRewrite
   cases gp.challengedParty <;>
     simp [initGameState, ite_self]
@@ -811,20 +818,22 @@ private lemma hybridRel_query_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((oracleCorruptA gp (F ⊕ G) G G t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  have hsHeq : sH = hybridProj (F := F) (gen := gen) gp a b sR := hrel
+  obtain ⟨c, hsHeq⟩ := hrel
   have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
   have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
+  have htA' : sH.tA = sR.tA := by subst hsHeq; simpa using htA
+  have htB' : sH.tB = sR.tB := by subst hsHeq; simpa using htB
   have hallow_eq : allowCorr gp sH = allowCorr gp sR := by
-    subst hsHeq; simp [allowCorr, htA, htB]
+    simp [allowCorr, htA', htB']
   have hfin_eq : finishedA gp sH = finishedA gp sR := by
-    subst hsHeq; simp [finishedA, finishedP, GameState.tP, htA]
+    simp [finishedA, finishedP, GameState.tP, htA']
   have hstA_eq : allowCorr gp sR = true ∨ finishedA gp sR = true →
       sH.stA = sR.stA := by
     intro hguard
     subst hsHeq
     rcases hguard with ha | hf
-    · rw [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
-    · exact hybridProj_stA_of_finishedA (F := F) (gen := gen) gp hΔ a b sR hf
+    · simp [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
+    · simp [hybridProj_stA_of_finishedA (F := F) (gen := gen) gp hΔ a b sR hf]
   have hvalue_eq :
       (if allowCorr gp sR || finishedA gp sR then some sR.stA else none) =
       (if allowCorr gp sH || finishedA gp sH then some sH.stA else none) := by
@@ -841,7 +850,7 @@ private lemma hybridRel_query_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     intro s; simp [oracleCorruptA]; split_ifs <;> rfl
   rw [heq sR, heq sH]
   refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
-  exact ⟨by rw [hvalue_eq], hrel⟩
+  exact ⟨by rw [hvalue_eq], ⟨c, hsHeq⟩⟩
 
 omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- `O-Corrupt-B`: symmetric to `hybridRel_query_corruptA`. -/
@@ -853,20 +862,22 @@ private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((oracleCorruptB gp (F ⊕ G) G G t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  have hsHeq : sH = hybridProj (F := F) (gen := gen) gp a b sR := hrel
+  obtain ⟨c, hsHeq⟩ := hrel
   have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
   have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
+  have htA' : sH.tA = sR.tA := by subst hsHeq; simpa using htA
+  have htB' : sH.tB = sR.tB := by subst hsHeq; simpa using htB
   have hallow_eq : allowCorr gp sH = allowCorr gp sR := by
-    subst hsHeq; simp [allowCorr, htA, htB]
+    simp [allowCorr, htA', htB']
   have hfin_eq : finishedB gp sH = finishedB gp sR := by
-    subst hsHeq; simp [finishedB, finishedP, GameState.tP, htB]
+    simp [finishedB, finishedP, GameState.tP, htB']
   have hstB_eq : allowCorr gp sR = true ∨ finishedB gp sR = true →
       sH.stB = sR.stB := by
     intro hguard
     subst hsHeq
     rcases hguard with ha | hf
-    · rw [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
-    · exact hybridProj_stB_of_finishedB (F := F) (gen := gen) gp hΔ a b sR hf
+    · simp [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
+    · simp [hybridProj_stB_of_finishedB (F := F) (gen := gen) gp hΔ a b sR hf]
   have hvalue_eq :
       (if allowCorr gp sR || finishedB gp sR then some sR.stB else none) =
       (if allowCorr gp sH || finishedB gp sH then some sH.stB else none) := by
@@ -883,7 +894,7 @@ private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     intro s; simp [oracleCorruptB]; split_ifs <;> rfl
   rw [heq sR, heq sH]
   refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
-  exact ⟨by rw [hvalue_eq], hrel⟩
+  exact ⟨by rw [hvalue_eq], ⟨c, hsHeq⟩⟩
 
 /-- One-step simulation for the reduction/hybrid coupling.
 
