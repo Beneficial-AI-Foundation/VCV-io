@@ -621,18 +621,53 @@ The oracle-step lemma `hybridRel_query` splits into three phases:
 
 Corruption is gated out of the window by `gp.deltaCKA = 1`. -/
 
+/-- Well-formed game parameters. Under strict `sendA → recvB → sendB → recvA`
+alternation starting from `tA = tB = 0`, the challenged party's counter
+reaches `tStar` only at compatible parities:
+
+- `P = .A`: the first `sendA` is at `tA = 1`, and `sendA/challA` slots are
+  `tA ∈ {1, 3, 5, …}`, i.e. odd. The embedding `sendB` before the challenge
+  is at `tB = tStar - 1`, which requires `tStar ≥ 3`.
+- `P = .B`: the first `sendB` is at `tB = 2`, and `sendB/challB` slots are
+  `tB ∈ {2, 4, 6, …}`, i.e. even with `tStar ≥ 2`.
+
+These parity constraints are what `inferSent` previously baked in; hoisting
+them to an explicit hypothesis makes the `hybridRel_query` subcases
+tractable by collapsing `inferSent` to a pure counter threshold. -/
+private def wellFormedGP (gp : GameParams) : Prop :=
+  match gp.challengedParty with
+  | .A => Odd gp.tStar ∧ gp.tStar ≥ 3
+  | .B => Even gp.tStar ∧ gp.tStar ≥ 2
+
 /-- Challenge window: some party's counter is in `{t* - 1, t*}`. Outside,
 `hybridProj gp a b s = s`. -/
 private def inChallWindow (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
   (s.tA == gp.tStar - 1) || (s.tA == gp.tStar) ||
     (s.tB == gp.tStar - 1) || (s.tB == gp.tStar)
 
-/-- State-derived "pre-challenge embedding has fired" bit, monotone in
-`(s.tA, s.tB)` (see `inferSent_mono`). -/
+/-- "The other party has reached the pre-challenge epoch", i.e. the embedding
+`sendA`/`sendB` has already fired. Under `gp.WellFormed`, `inferSent` is
+equivalent to the uniform counter threshold
+`s.tP gp.challengedParty.other ≥ gp.tStar - 1`; see `inferSent_eq_ge`. -/
 private def inferSent (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
   match gp.challengedParty with
   | .A => decide (Odd gp.tStar ∧ gp.tStar ≥ 3 ∧ s.tB ≥ gp.tStar - 1)
   | .B => decide (Even gp.tStar ∧ gp.tStar ≥ 2 ∧ s.tA ≥ gp.tStar - 1)
+
+omit [DecidableEq F] [DecidableEq G] [Fintype F] [SampleableType F] [SampleableType G]
+    [Field F] [AddCommGroup G] [Module F G] in
+/-- Under `wellFormedGP`, `inferSent` reduces to a simple counter threshold
+on the other party's epoch. -/
+private lemma inferSent_of_wellFormed (gp : GameParams) (hwf : wellFormedGP gp)
+    (s : GameState (F ⊕ G) G G) :
+    inferSent gp s =
+      decide (s.tP gp.challengedParty.other ≥ gp.tStar - 1) := by
+  unfold inferSent wellFormedGP at *
+  rcases hP : gp.challengedParty <;>
+    · rw [hP] at hwf
+      simp only [CKAParty.other, GameState.tP]
+      obtain ⟨hparity, hmin⟩ := hwf
+      simp [hparity, hmin]
 
 /-- In-window rewrite: `.inl y` / `.inl z` on the reduction side ↦ `.inl a`
 / `.inl b` on the hybrid side (see the per-epoch table in the section
