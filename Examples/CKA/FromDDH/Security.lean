@@ -593,70 +593,49 @@ private noncomputable def securityHybridGame (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
-/-! ### Hybrid coupling: projection, invariant, and oracle-step lemma
+/-! ### Hybrid coupling: projection, invariant, oracle-step lemma
 
-This section couples `reductionOracleImpl` with `hybridOracleImpl` on a
-per-step basis, which is the key simulation lemma behind
-`securityReduction_real_to_hybrid`.
+`reductionOracleImpl` and `hybridOracleImpl` agree on every
+transcript-visible field but store different hidden scalars (`stA`, `stB :
+F ⊕ G`) in a narrow **challenge window** around `gp.tStar`:
 
-### Architecture
+| Epoch                               | Reduction      | Hybrid           |
+|-------------------------------------|----------------|------------------|
+| `tA = t* - 1`, `lastAction = sendA` | `.inl y` fresh | `.inl a` DDH exp |
+| `tB = t* - 1`, `lastAction = sendB` | `.inl y` fresh | `.inl a` DDH exp |
+| `tA = t*`,     `lastAction = challA`| `.inl z` fresh | `.inl b` DDH exp |
+| `tB = t*`,     `lastAction = challB`| `.inl z` fresh | `.inl b` DDH exp |
 
-The two oracle implementations agree on every transcript-visible field but
-differ internally on the parties' hidden scalars (`stA`, `stB : F ⊕ G`)
-during a narrow **challenge window** around `gp.tStar`:
+`hybridProj` rewrites the hidden scalar to the DDH scalar inside the
+window and is the identity outside; `hybridRel gp a b sR sH := sH =
+hybridProj gp a b sR`.
 
-| Epoch                               | Reduction's hidden scalar | Hybrid's hidden scalar |
-|-------------------------------------|---------------------------|------------------------|
-| `tA = t* - 1`, `lastAction = sendA` | `.inl y` (fresh)          | `.inl a` (DDH exp.)    |
-| `tB = t* - 1`, `lastAction = sendB` | `.inl y` (fresh)          | `.inl a` (DDH exp.)    |
-| `tA = t*`,     `lastAction = challA`| `.inl z` (fresh)          | `.inl b` (DDH exp.)    |
-| `tB = t*`,     `lastAction = challB`| `.inl z` (fresh)          | `.inl b` (DDH exp.)    |
+The oracle-step lemma `hybridRel_query` splits into three phases:
 
-The projection `hybridProj : GameState → GameState` rewrites these hidden
-scalars into the DDH scalars `a, b` inside the window and is the identity
-outside. The invariant `hybridRel gp a b sR sH := sH = hybridProj gp a b sR`
-says simply: *the hybrid state equals the projected reduction state*.
+- **identity**: outside the window (or shared code inside) both oracles
+  run the same code on the same state;
+- **embedding**: one `sendA`/`sendB` step absorbs `y ← $F` into `a` by
+  identity-bijection coupling;
+- **challenge**: the symmetric `challA`/`challB` step absorbs `z` into `b`.
 
-### Proof skeleton for `hybridRel_query`
+Corruption is gated out of the window by `gp.deltaCKA = 1`. -/
 
-Every oracle step falls into one of three categories:
-
-- **Identity steps** (outside the window, or shared code inside): both
-  oracles run the same code on the same (projected) state, so the
-  `RelTriple` closes with output/state equality under `hybridProj`.
-- **Embedding steps** (`sendA` at `P = .B` with `tA + 1 = t*`, or `sendB`
-  at `P = .A` with `tB + 1 = t*`): the reduction samples `y ← $F`; the
-  hybrid stores `a`. Coupling via the identity bijection absorbs `y` into
-  `a`.
-- **Challenge steps** (`challA` at `P = .A` / `challB` at `P = .B`, both
-  with `t_P + 1 = t*`): symmetric, coupling `z` with `b`.
-
-Corruption queries are blocked inside the challenge window by the
-`gp.deltaCKA = 1` hypothesis and pass through identically outside.
--/
-
-/-- Coarse counter-based challenge window. `inChallWindow gp s = true` iff
-at least one of the two parties' counters lies in `{t* - 1, t*}` — the
-interval inside which the reduction and hybrid oracle implementations may
-differ on hidden state. Outside this window, `hybridProj gp a b s = s`. -/
+/-- Challenge window: some party's counter is in `{t* - 1, t*}`. Outside,
+`hybridProj gp a b s = s`. -/
 private def inChallWindow (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
   (s.tA == gp.tStar - 1) || (s.tA == gp.tStar) ||
     (s.tB == gp.tStar - 1) || (s.tB == gp.tStar)
 
-/-- Deterministic reconstruction, from `(gp, s)`, of the bit "the reduction's
-pre-challenge embedding send has already fired". Monotone in `(s.tA, s.tB)`
-(see `inferSent_mono`): once `true`, stays `true` on every reachable
-successor. -/
+/-- State-derived "pre-challenge embedding has fired" bit, monotone in
+`(s.tA, s.tB)` (see `inferSent_mono`). -/
 private def inferSent (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
   match gp.challengedParty with
   | .A => decide (Odd gp.tStar ∧ gp.tStar ≥ 3 ∧ s.tB ≥ gp.tStar - 1)
   | .B => decide (Even gp.tStar ∧ gp.tStar ≥ 2 ∧ s.tA ≥ gp.tStar - 1)
 
-/-- Canonical state rewrite applied inside the challenge window. Maps the
-reduction's fresh hidden scalar (`.inl y` at the embedding, `.inl z` at the
-challenge) to the DDH scalar (`.inl a` / `.inl b`). See the overview above
-for the full table. Outside the window, `hybridProj` returns the state
-unchanged and this function is unused. -/
+/-- In-window rewrite: `.inl y` / `.inl z` on the reduction side ↦ `.inl a`
+/ `.inl b` on the hybrid side (see the per-epoch table in the section
+header). -/
 private noncomputable def windowRewrite (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
   { s with
@@ -698,9 +677,8 @@ private noncomputable def windowRewrite (gp : GameParams) (a b : F)
           else s.stB
       | _, .inr _ => s.stB }
 
-/-- State projection `π : GameState → GameState` coupling the reduction and
-hybrid oracles. Identity outside the challenge window, canonical rewrite
-inside. -/
+/-- Coupling projection `π : GameState → GameState`: identity outside the
+window, `windowRewrite` inside. -/
 private noncomputable def hybridProj (gp : GameParams) (a b : F)
     (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
   if inChallWindow gp s then windowRewrite (F := F) (gen := gen) gp a b s
@@ -708,9 +686,8 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
 
 omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
      [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G] in
-/-- `inferSent` is monotone in the counters `(tA, tB)`. Since every oracle
-step is counter-monotone, once the pre-challenge embedding has fired the
-bit stays `true` on all successor states. -/
+/-- `inferSent` is monotone in `(s.tA, s.tB)`: oracle steps only increase
+counters, so the bit is sticky. -/
 private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
     (hA : s.tA ≤ s'.tA) (hB : s.tB ≤ s'.tB)
     (h : inferSent gp s = true) : inferSent gp s' = true := by
@@ -719,38 +696,25 @@ private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
       refine ⟨h.1, h.2.1, ?_⟩
       exact le_trans h.2.2 (by first | exact hB | exact hA)
 
-/-- **Hybrid coupling invariant**: the hybrid state equals the projection of
-the reduction state. This replaces the earlier existential-over-`sent`
-formulation: `inferSent` (a pure state function) reconstructs the
-provenance bit deterministically, so no existential is needed. -/
+/-- Hybrid coupling invariant: `sH` is the projection of `sR`. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
   sH = hybridProj (F := F) (gen := gen) gp a b sR
 
-/-- Base case. Initial states have `lastAction = none` and counters zero, so
-every `windowRewrite` guard fails and `hybridProj gp a b init = init`,
-giving `init = init` reflexively. -/
+/-- Base case: `init` has `lastAction = none`, which makes every
+`windowRewrite` guard `false`, so `hybridProj gp a b init = init`. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  -- On `init`, `lastAction = none` so every `windowRewrite` guard is `false`
-  -- (each disjunct requires `lastAction = some …`), giving
-  -- `windowRewrite gp a b init = init`. Hence `hybridProj gp a b init =
-  -- init` regardless of whether `inChallWindow gp init` is true or false.
-  sorry
+  show _ = hybridProj (F := F) (gen := gen) gp a b _
+  unfold hybridProj windowRewrite
+  cases gp.challengedParty <;>
+    simp [initGameState, ite_self]
 
-/-- **One-step simulation lemma** for the reduction/hybrid coupling.
-
-For every oracle query `t` and every related pre-state pair
-`(sR, sH)`, running `t` under `reductionOracleImpl` on `sR` and under
-`hybridOracleImpl` on `sH` yields equi-distributed outputs with
-post-states that remain related by `hybridRel`.
-
-The proof follows the three-phase skeleton described in the section
-header: identity steps (outside the window), embedding steps (absorbing
-`y` into `a`), and challenge steps (absorbing `z` into `b`). Corruption is
-gated out of the window by `hΔ : gp.deltaCKA = 1`. -/
+/-- One-step simulation for the reduction/hybrid coupling. Proved by the
+three-phase split (identity / embedding / challenge) described in the
+section header; corruption is gated by `hΔ : gp.deltaCKA = 1`. -/
 private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (sR sH : GameState (F ⊕ G) G G)
@@ -760,12 +724,6 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
       (((hybridOracleImpl (F := F) gp gen a b) t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  -- Placeholder. The full proof is a case split on the oracle tag
-  -- (`cases_oracle t`) followed by the three-phase dispatch described in the
-  -- section header. Closed sub-cases from the previous monolithic version
-  -- have been removed in the step A/B/C refactor; they will be reinstated
-  -- as phase lemmas (`hybridRel_query_identity`, `hybridRel_query_embed`,
-  -- `hybridRel_query_chall`) in the follow-up that fills in this `sorry`.
   sorry
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
