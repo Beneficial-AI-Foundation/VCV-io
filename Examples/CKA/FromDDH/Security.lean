@@ -701,16 +701,189 @@ private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
   sH = hybridProj (F := F) (gen := gen) gp a b sR
 
+omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- Base case: `init` has `lastAction = none`, which makes every
 `windowRewrite` guard `false`, so `hybridProj gp a b init = init`. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  show _ = hybridProj (F := F) (gen := gen) gp a b _
+  change _ = hybridProj (F := F) (gen := gen) gp a b _
   unfold hybridProj windowRewrite
   cases gp.challengedParty <;>
     simp [initGameState, ite_self]
+
+/-! #### Counter / scalar preservation under `hybridProj`
+
+`windowRewrite` only edits `stA`/`stB`; all other fields (counters,
+`lastAction`, `lastRho?`, `lastKey?`, `corrupted?`) pass through unchanged. -/
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_tA (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).tA = s.tA := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_tB (gp : GameParams) (a b : F) (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).tB = s.tB := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- When `allowCorr` holds, both counters sit strictly below the challenge
+window, so `hybridProj` is the identity. -/
+private lemma hybridProj_eq_self_of_allowCorr (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) (h : allowCorr gp s = true) :
+    hybridProj (F := F) (gen := gen) gp a b s = s := by
+  simp only [allowCorr, decide_eq_true_eq] at h
+  have hwin : inChallWindow gp s = false := by
+    simp only [inChallWindow, Bool.or_eq_false_iff, beq_eq_false_iff_ne, ne_eq]
+    refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> omega
+  unfold hybridProj; simp [hwin]
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- When `finishedA ∧ ΔCKA = 1`, we have `tA ≥ t* + 1`, which rules out both
+`stA`-rewrite guards in `windowRewrite`; hence `stA` is preserved. -/
+private lemma hybridProj_stA_of_finishedA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (a b : F) (s : GameState (F ⊕ G) G G) (h : finishedA gp s = true) :
+    (hybridProj (F := F) (gen := gen) gp a b s).stA = s.stA := by
+  simp only [finishedA, finishedP, GameState.tP, decide_eq_true_eq, hΔ] at h
+  unfold hybridProj
+  split_ifs with _
+  · unfold windowRewrite
+    cases gp.challengedParty <;> cases s.stA <;>
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, decide_eq_true_eq,
+        ite_eq_right_iff, Sum.inl.injEq]
+    all_goals (intros; omega)
+  · rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- Symmetric version: `finishedB ∧ ΔCKA = 1` preserves `stB`. -/
+private lemma hybridProj_stB_of_finishedB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (a b : F) (s : GameState (F ⊕ G) G G) (h : finishedB gp s = true) :
+    (hybridProj (F := F) (gen := gen) gp a b s).stB = s.stB := by
+  simp only [finishedB, finishedP, GameState.tP, decide_eq_true_eq, hΔ] at h
+  unfold hybridProj
+  split_ifs with _
+  · unfold windowRewrite
+    cases gp.challengedParty <;> cases s.stB <;>
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, decide_eq_true_eq,
+        ite_eq_right_iff, Sum.inl.injEq]
+    all_goals (intros; omega)
+  · rfl
+
+/-! #### Oracle-step coupling: easy cases
+
+`unif` is state-preserving and runs the same code on both sides; `corruptA`
+and `corruptB` are state-preserving and their guards (`allowCorr ∨ finishedP`)
+are preserved by `hybridProj`, as is the relevant `stP` component. -/
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- Uniform oracle: state unchanged, uniform output; `hrel` passes through. -/
+private lemma hybridRel_query_unif (gp : GameParams) (a b : F)
+    (t : unifSpec.Domain) (sR sH : GameState (F ⊕ G) G G)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((oracleUnif (F ⊕ G) G G t).run sR)
+      ((oracleUnif (F ⊕ G) G G t).run sH)
+      (fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
+  simpa [oracleUnif] using
+    (OracleComp.ProgramLogic.Relational.relTriple_map
+      (R := fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2)
+      (f := fun u => (u, sR)) (g := fun u => (u, sH))
+      (OracleComp.ProgramLogic.Relational.relTriple_post_mono
+        (OracleComp.ProgramLogic.Relational.relTriple_query (spec₁ := unifSpec) t)
+        (fun _ _ hEq => by
+          dsimp [OracleComp.ProgramLogic.Relational.EqRel] at hEq
+          subst hEq
+          exact ⟨rfl, hrel⟩)))
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- `O-Corrupt-A`: state unchanged on both sides. The guard
+`allowCorr ∨ finishedA` depends only on counters (preserved by `hybridProj`),
+and in both disjuncts `(hybridProj sR).stA = sR.stA`, so the read matches. -/
+private lemma hybridRel_query_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (a b : F) (t : Unit) (sR sH : GameState (F ⊕ G) G G)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((oracleCorruptA gp (F ⊕ G) G G t).run sR)
+      ((oracleCorruptA gp (F ⊕ G) G G t).run sH)
+      (fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
+  have hsHeq : sH = hybridProj (F := F) (gen := gen) gp a b sR := hrel
+  have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
+  have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
+  have hallow_eq : allowCorr gp sH = allowCorr gp sR := by
+    subst hsHeq; simp [allowCorr, htA, htB]
+  have hfin_eq : finishedA gp sH = finishedA gp sR := by
+    subst hsHeq; simp [finishedA, finishedP, GameState.tP, htA]
+  have hstA_eq : allowCorr gp sR = true ∨ finishedA gp sR = true →
+      sH.stA = sR.stA := by
+    intro hguard
+    subst hsHeq
+    rcases hguard with ha | hf
+    · rw [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
+    · exact hybridProj_stA_of_finishedA (F := F) (gen := gen) gp hΔ a b sR hf
+  have hvalue_eq :
+      (if allowCorr gp sR || finishedA gp sR then some sR.stA else none) =
+      (if allowCorr gp sH || finishedA gp sH then some sH.stA else none) := by
+    rw [hallow_eq, hfin_eq]
+    split_ifs with hc
+    · rcases Bool.or_eq_true_iff.mp hc with h | h
+      · exact congrArg some (hstA_eq (Or.inl h)).symm
+      · exact congrArg some (hstA_eq (Or.inr h)).symm
+    · rfl
+  have heq : ∀ s : GameState (F ⊕ G) G G,
+      (oracleCorruptA gp (F ⊕ G) G G t).run s =
+        (pure ((if allowCorr gp s || finishedA gp s then some s.stA else none), s) :
+          ProbComp _) := by
+    intro s; simp [oracleCorruptA]; split_ifs <;> rfl
+  rw [heq sR, heq sH]
+  refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
+  exact ⟨by rw [hvalue_eq], hrel⟩
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- `O-Corrupt-B`: symmetric to `hybridRel_query_corruptA`. -/
+private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (a b : F) (t : Unit) (sR sH : GameState (F ⊕ G) G G)
+    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((oracleCorruptB gp (F ⊕ G) G G t).run sR)
+      ((oracleCorruptB gp (F ⊕ G) G G t).run sH)
+      (fun pR pH =>
+        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
+  have hsHeq : sH = hybridProj (F := F) (gen := gen) gp a b sR := hrel
+  have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
+  have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
+  have hallow_eq : allowCorr gp sH = allowCorr gp sR := by
+    subst hsHeq; simp [allowCorr, htA, htB]
+  have hfin_eq : finishedB gp sH = finishedB gp sR := by
+    subst hsHeq; simp [finishedB, finishedP, GameState.tP, htB]
+  have hstB_eq : allowCorr gp sR = true ∨ finishedB gp sR = true →
+      sH.stB = sR.stB := by
+    intro hguard
+    subst hsHeq
+    rcases hguard with ha | hf
+    · rw [hybridProj_eq_self_of_allowCorr (F := F) (gen := gen) gp a b sR ha]
+    · exact hybridProj_stB_of_finishedB (F := F) (gen := gen) gp hΔ a b sR hf
+  have hvalue_eq :
+      (if allowCorr gp sR || finishedB gp sR then some sR.stB else none) =
+      (if allowCorr gp sH || finishedB gp sH then some sH.stB else none) := by
+    rw [hallow_eq, hfin_eq]
+    split_ifs with hc
+    · rcases Bool.or_eq_true_iff.mp hc with h | h
+      · exact congrArg some (hstB_eq (Or.inl h)).symm
+      · exact congrArg some (hstB_eq (Or.inr h)).symm
+    · rfl
+  have heq : ∀ s : GameState (F ⊕ G) G G,
+      (oracleCorruptB gp (F ⊕ G) G G t).run s =
+        (pure ((if allowCorr gp s || finishedB gp s then some s.stB else none), s) :
+          ProbComp _) := by
+    intro s; simp [oracleCorruptB]; split_ifs <;> rfl
+  rw [heq sR, heq sH]
+  refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
+  exact ⟨by rw [hvalue_eq], hrel⟩
 
 /-- One-step simulation for the reduction/hybrid coupling. Proved by the
 three-phase split (identity / embedding / challenge) described in the
