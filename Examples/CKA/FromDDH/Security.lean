@@ -736,6 +736,48 @@ private lemma hybridProj_tB (gp : GameParams) (a b : F) (s : GameState (F ⊕ G)
   unfold hybridProj; split_ifs <;> rfl
 
 omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_lastAction (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).lastAction = s.lastAction := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_lastRhoA (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).lastRhoA = s.lastRhoA := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_lastRhoB (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).lastRhoB = s.lastRhoB := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_lastKeyA (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).lastKeyA = s.lastKeyA := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_lastKeyB (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).lastKeyB = s.lastKeyB := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_b (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).b = s.b := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+private lemma hybridProj_correct (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G) :
+    (hybridProj (F := F) (gen := gen) gp a b s).correct = s.correct := by
+  unfold hybridProj; split_ifs <;> rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- When `allowCorr` holds, both counters sit strictly below the challenge
 window, so `hybridProj` is the identity. -/
 private lemma hybridProj_eq_self_of_allowCorr (gp : GameParams) (a b : F)
