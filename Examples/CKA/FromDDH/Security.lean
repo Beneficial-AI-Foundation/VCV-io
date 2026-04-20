@@ -362,12 +362,9 @@ observable transcripts** (they differ only on hidden party state, which
 distributions** but different control flow (eager up-front sampling of
 `a, b ← $F` vs. lazy on-demand sampling).
 
-#### Random branch: no hybrid needed
+#### Random branch
 
-When `gT := c • gen` with uniform `c`, bijectivity of `(·) • gen`
-(hypothesis `hg` in `securityReduction_rand`) gives
-`c • gen ≡ $ᵗ G`, so the random DDH experiment couples directly with
-`securityExpFixedBit` at `b = true` without an intermediate hybrid.
+No hybrid is needed; see `securityReduction_rand` below for the argument.
 -/
 
 /-- Auxiliary game `G_R(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
@@ -2021,7 +2018,9 @@ lemma securityReduction_real (gp : GameParams)
 
 /-- **Random-branch lemma.**
 `Pr[ℬ outputs true | random DDH] = Pr[𝒜 guesses false | CKA b = true]`.
-Needs bijectivity of `· • gen` to couple `c • gen` with `$ᵗ G`. -/
+
+Bijectivity of `(·) • gen : F → G` (hypothesis `hg`) couples `c • gen` with
+`$ᵗ G`, matching the honest challenge `(x • gen, $ᵗ G)` at `b = true`. -/
 lemma securityReduction_rand (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))

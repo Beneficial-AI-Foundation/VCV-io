@@ -5,6 +5,8 @@ Authors: Devon Tuma, Quang Dao
 -/
 import ToMathlib.ProbabilityTheory.Coupling
 import VCVio.EvalDist.Defs.NeverFails
+import VCVio.EvalDist.Defs.Instances
+import VCVio.EvalDist.Monad.Basic
 import VCVio.EvalDist.Instances.OptionT
 import VCVio.OracleComp.SimSemantics.SimulateQ
 import VCVio.OracleComp.SimSemantics.StateT
