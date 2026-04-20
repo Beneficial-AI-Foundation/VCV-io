@@ -996,12 +996,116 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     QueryImpl.add_apply_inl, QueryImpl.add_apply_inr])
   · -- unif
     exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
-  · sorry -- sendA
-  · sorry -- recvA
-  · sorry -- sendB
-  · sorry -- recvB
-  · sorry -- challA
-  · sorry -- challB
+  · -- sendA: reductionSendA vs hybridSendA.
+    --
+    -- Structure (three sub-branches, routed by the state-preserving guards
+    -- `validStep sR.lastAction .sendA` and `gp.challengedParty == .B &&
+    -- isOtherSendBeforeChall gp post_state`, which match on both sides because
+    -- `hybridProj` preserves `lastAction`, `tA`, `tB`):
+    --
+    --   (A) `validStep = false`: both sides `pure (none, state)`; trivial
+    --       `relTriple_pure_pure` using `hrel`.
+    --   (B) valid + not embedding: both sides delegate to `ddhCKA.send gen
+    --       state.stA`. Requires `sH.stA = sR.stA`; this holds because the
+    --       only ways to enter `sendA` are from `lastAction ∈ {none, recvA}`
+    --       (by `validStep`), and neither triggers a `stA` rewrite in
+    --       `windowRewrite`. Coupling by `relTriple_bind` on the shared
+    --       `$ᵗ F` sample, then `relTriple_pure_pure` on the post-state.
+    --       Post-state preservation of `hybridRel` requires a lemma
+    --       `hybridProj_commutes_with_sendA_nonembedding`.
+    --   (C) valid + embedding (`challenged = .B ∧ tA_post = tStar - 1`): the
+    --       reduction samples `y ← $ᵗ F` and stores `.inl y` in `stA`; the
+    --       hybrid stores `.inl a` with no sample. This is the core coupling
+    --       step. Two viable strategies:
+    --         (i) Refactor `hybridOracleImpl` to sample `a` *inside* the
+    --             oracle at the embedding epoch (instead of up front) and
+    --             swap the outer `$ᵗ F` past `simulateQ` via
+    --             `probOutput_bind_bind_swap` at the `securityHybridGame`
+    --             level. Then the coupling becomes an identity
+    --             `relTriple_uniformSample_refl`.
+    --         (ii) Prove a one-sided "absorb" rule
+    --             `relTriple_bind_uniformSample_pure` that says, for
+    --             post-conditions depending only on the hybrid side and a
+    --             function of the sample, `$F >>= f ~ g` iff `∀ y, f y ~ g`
+    --             via a bijective coupling witnessed by `a` (requires `f`
+    --             to be "insensitive" to y on observable fields). This is
+    --             more bespoke but avoids the game-level refactor.
+    --
+    -- Post-state invariant at embedding epoch: after the step,
+    --   sR'.stA = .inl y, sH'.stA = .inl a, sR'.lastAction = sH'.lastAction = sendA,
+    --   sR'.tA = sH'.tA = gp.tStar - 1.
+    -- Then `windowRewrite` rewrites `sR'.stA` to `.inl a` under the
+    -- `challenged = .B, lastAction = sendA, tA = tStar - 1` guard, so
+    -- `(hybridProj sR').stA = .inl a = sH'.stA`. All other fields coincide,
+    -- and `correct` is unchanged by sendA, so `hybridRel` holds with the same
+    -- witness `c` as pre-state.
+    sorry
+  · -- recvA: oracleRecvA vs oracleRecvA.
+    --
+    -- Both sides run the SAME code (ddhCKA.recv). The only divergence is via
+    -- `state.stA` and `state.lastKeyB` (used in the correctness check).
+    --
+    --   (A) `validStep = false`: trivial pure_pure.
+    --   (B) `lastRhoB = none`: trivial (no state change beyond incrementing
+    --       tA, which is symmetric). Need `sH.lastRhoB = sR.lastRhoB` (from
+    --       `hybridProj_lastRhoB`) to match guards.
+    --   (C) `lastRhoB = some ρ`: case on `ddhCKA.recv state.stA ρ`.
+    --       - `none`: trivial.
+    --       - `some (keyA, stA')`: updates `stA := stA'`, may update
+    --         `correct`. Here `stA'` depends on `state.stA`, which may differ
+    --         between sR and sH inside the window. Specifically, at
+    --         lastAction ∈ {sendB, challB} (the valid predecessors of
+    --         recvA), the hybrid `stA` may already be rewritten to `.inl a`
+    --         or `.inl b` while the reduction has fresh `.inl y` or `.inl z`.
+    --         The `recv` output `(x • ρ, .inr ρ)` will differ on both sides,
+    --         which is observable. This requires the coupling to be "one
+    --         step behind" — i.e., we need to establish that at the time
+    --         recvA fires, the reduction and hybrid hidden scalars match
+    --         ON THIS RECV (because a previous challA/sendB step was
+    --         coupled via challenge coupling, leaving `stA` synchronized
+    --         modulo window rewrite).
+    --
+    -- Resolution: the `correct` field divergence is handled by the weakened
+    -- `hybridRel` (cosmetic `∃ c`). The key-output divergence is handled
+    -- by observing that recvA is NOT called in the challenge window in the
+    -- admissible adversary schedule — but this is a SEMANTIC fact about
+    -- `validStep` and `ΔCKA = 1`, not a syntactic one. The clean approach
+    -- is to strengthen `hybridRel` to include "stA matches when lastAction
+    -- is a valid pre-recvA" or equivalently, include in `windowRewrite`
+    -- the inverse rewrite so that `(hybridProj sR').stA = sH'.stA` after
+    -- recvA absorbs the scalar. This needs a window-rewrite audit.
+    sorry
+  · -- sendB: symmetric to sendA, with guards `challenged = .A` and
+    -- `isOtherSendBeforeChall gp post_state` (where other = B, so
+    -- `state.tB == tStar - 1`). Same three-branch structure; same embedding
+    -- coupling issue. See sendA roadmap.
+    sorry
+  · -- recvB: symmetric to recvA. See recvA roadmap.
+    sorry
+  · -- challA: reductionChallA vs hybridChallA (only fires when challenged = A).
+    --
+    --   (A) `challenged ≠ .A` or `validStep = false`: trivial pure_pure
+    --       (both return `none`).
+    --   (B) `challenged = .A ∧ valid ∧ ¬isChallengeEpoch`: trivial (both
+    --       return `none`).
+    --   (C) `challenged = .A ∧ valid ∧ isChallengeEpoch` (= `tA_post =
+    --       tStar`): reduction samples `z ← $F`, outputs `(gB, gT)`, sets
+    --       `stA := .inl z`. Hybrid computes `gB := b • gen`, `gT := (a*b) •
+    --       gen`, outputs `(gB, gT)`, sets `stA := .inl b`. Output matches
+    --       because hybrid's `gB = (b • gen)` and reduction's `gB = b • gen`
+    --       (given gB parameter was set via DDH tuple in
+    --       securityReductionRealGame). But the reduction's gB is the
+    --       function parameter, passed in as `(b • gen)` — that's the real
+    --       branch; the coupling holds definitionally. Same embedding issue
+    --       as sendA: `z` on reduction vs `b` on hybrid. Same coupling
+    --       strategy (see sendA).
+    --
+    -- Post-state: windowRewrite at `challenged = .A, lastAction = challA,
+    -- tA = tStar` rewrites `stA` to `.inl b`, matching the hybrid. `stB` may
+    -- need matching treatment via the `recvA` / later steps.
+    sorry
+  · -- challB: symmetric to challA. See challA roadmap.
+    sorry
   · -- corruptA
     exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp hΔ a b t sR sH hrel
   · -- corruptB
