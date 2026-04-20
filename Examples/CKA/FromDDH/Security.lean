@@ -908,11 +908,34 @@ symmetric embedding point (`tA == gp.tStar - 1`, with the four-case
 `sendA / recvB / sendB / challB` window mirroring P=A's `stA` window and no
 longer threading `sent`). The companion invariants `hybridWindowInv` and
 `hybridShapeInv` did not need counter updates under the fix — their P=B
-clauses already use the symmetric `(tStar - 1, tStar)` coordinates. Remaining
-mechanical work for the migration: prove an `inferSent` preservation lemma for
-a single oracle step (e.g. the non-challenged-side `sendB`), then bulk-migrate
-the sorried P=B branches of `hybridRel_query` through
-`map_run_simulateQ_eq_of_query_map_eq_inv'`. -/
+clauses already use the symmetric `(tStar - 1, tStar)` coordinates.
+
+Residual `sent` use on P=A `stB`: the `sent && (sendA || challA)` clause in
+the P=A `stB` branch cannot be simplified away in the same fashion because of
+the `t* = 1` edge case: with `t* = 1`, `t* - 1 = 0`, so the initial/post-none
+state already has `tB = t* - 1` with `lastAction = none`, and the post-
+challA state reaches `tB = t* - 1` *without* any preceding `sendB`-embedding
+(`t* = 1` has no valid embedding send at all). Threading `sent` through
+these two clauses keeps the projection honest on the `t* = 1` and other
+edge trajectories where the embedding never fires. `inferSent` correctly
+yields `false` on those states (the conjunct `t* ≥ 3` fails), so the
+`hybridProj' = hybridProj · (inferSent ·)` definition is still a faithful
+totalisation; the refactor simply replaces the existential over `sent` by
+`sent := inferSent gp s`.
+
+Counter monotonicity: `inferSent_mono` (see below) shows that `inferSent gp`
+is monotone in `(s.tA, s.tB)`. Since every oracle step in `G_R` / `G_H` only
+ever increases the counters, the provenance bit is *sticky*: once it flips to
+`true` it stays `true` on every reachable successor. This is all the
+preservation one needs for the `StateProjection` gate: for steps that do not
+change the challenged-embedding timing, the pre-condition `inferSent gp s₁`
+is carried along by monotonicity, while steps that *do* flip the bit (the
+single pre-challenge `sendA` / `sendB` embedding) are precisely the ones
+whose post-condition is `inferSent gp s₂ = true`.
+
+Remaining mechanical work for the migration: bulk-migrate the sorried P=B
+branches of `hybridRel_query` through `map_run_simulateQ_eq_of_query_map_eq_inv'`,
+using `inferSent_mono` wherever a sub-case needs `inferSent` preservation. -/
 
 /-- Deterministic reconstruction of the `sent` provenance bit from
 `(gp, state)`. See the section note above for the correctness argument. -/
@@ -952,6 +975,26 @@ private lemma inferSent_of_tOther_zero (gp : GameParams) (s : GameState (F ⊕ G
                  GameState.tP, CKAParty.other]
       intro _ _
       omega
+
+omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
+     [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G] in
+/-- `inferSent` is monotone in the counters `tA` and `tB`. Since every oracle
+step can only *increase* `tA` and `tB` (the underlying game counters are
+monotonically non-decreasing), once the pre-challenge embedding has fired at
+some state (i.e. `inferSent` returns `true`) it continues to return `true` on
+all reachable successors. This is the key monotonicity fact that lets a
+state-only `inferSent` track the provenance bit `sent` across execution. -/
+private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
+    (hA : s.tA ≤ s'.tA) (hB : s.tB ≤ s'.tB)
+    (h : inferSent (F := F) (G := G) gp s = true) :
+    inferSent (F := F) (G := G) gp s' = true := by
+  rcases hP : gp.challengedParty with _ | _ <;>
+    · simp only [inferSent, hP, CKAParty.other, GameState.tP, decide_eq_true_eq] at h ⊢
+      refine ⟨h.1, h.2.1, ?_⟩
+      have hmono : s.tP gp.challengedParty.other ≤ s'.tP gp.challengedParty.other := by
+        cases hP' : gp.challengedParty.other <;>
+          simp [GameState.tP, hP'] <;> [exact hA; exact hB]
+      exact le_trans h.2.2 (by simpa [hP, GameState.tP, CKAParty.other] using hmono)
 
 /-- Map a reduction-side post-state to the corresponding hybrid-side post-state. -/
 private noncomputable def hybridPostMap {α : Type} (gp : GameParams) (a b : F)
