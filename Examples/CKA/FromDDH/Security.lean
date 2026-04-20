@@ -638,24 +638,30 @@ The four match-arms in full (each bullet contributes one disjunct to the
 guard). See the observations block afterwards for the three ways in which the
 cases differ beyond a party-name swap.
 
-**(1) `(P = A, stA = .inl _) → .inl b`** — all disjuncts also require `tA = t*`:
-- `lastAction = challA`.
-- `lastAction = recvB`  and  `stB = .inr (b • gen)`.
-- `lastAction = sendB`  and  `tB = t* + 1`.
+**(1) `(P = A, stA = .inl _) → .inl b`** — forward sequence after `challA`
+tracked through the remaining "challenge window", before the next `recvA`
+overwrites `stA`:
+- `lastAction = challA`   and  `tA = t*`.
+- `lastAction = recvB`    and  `tA = t*`  and  `stB = .inr (b • gen)`.
+- `lastAction = sendB`    and  `tA = t*`  and  `tB = t* + 1`.
 
-**(2) `(P = B, stA = .inl _) → .inl a`** — all disjuncts also require `tA = t*`:
-- `lastAction = sendA`.
-- `lastAction = recvB`  and  `stB = .inr (a • gen)`.
-- `lastAction = sendB`   and  `sent = true`.
-- `lastAction = challB`  and  `sent = true`.
+**(2) `(P = B, stA = .inl _) → .inl a`** — forward sequence after the
+embedding `sendA`, tracked until the next `recvA` overwrites `stA`. Symmetric
+mirror of case (3) below:
+- `lastAction = sendA`    and  `tA = t* - 1`.
+- `lastAction = recvB`    and  `tA = t* - 1`  and  `stB = .inr (a • gen)`.
+- `lastAction = sendB`    and  `tA = t* - 1`  and  `tB = t*`.
+- `lastAction = challB`   and  `tA = t* - 1`  and  `tB = t*`.
 
-**(3) `(P = A, stB = .inl _) → .inl a`** — all disjuncts also require `tB = t* - 1`:
+**(3) `(P = A, stB = .inl _) → .inl a`** — all disjuncts also require
+`tB = t* - 1`:
 - `lastAction = sendB`.
 - `lastAction = recvA`.
-- `lastAction = sendA`   and  `sent = true`.
-- `lastAction = challA`  and  `sent = true`.
+- `lastAction = sendA`    and  `sent = true`.
+- `lastAction = challA`   and  `sent = true`.
 
-**(4) `(P = B, stB = .inl _) → .inl b`** — all disjuncts also require `tB = t*`:
+**(4) `(P = B, stB = .inl _) → .inl b`** — all disjuncts also require
+`tB = t*`:
 - `lastAction = challB`.
 - `lastAction = recvA`.
 - `lastAction = sendA`.
@@ -664,16 +670,21 @@ Observations:
 - The **challenged party's own state** (cases 1, 4) never consults `sent`; the
   `lastAction` and counter are already enough to pin down the challenge
   post-state.
-- The **other party's state** (cases 2, 3) uses `sent` on exactly the two
-  clauses where the `lastAction` alone would be ambiguous.
+- Case (2) also never consults `sent`: the guard `tA = t* - 1` combined with
+  each `lastAction` uniquely identifies the post-embedding window (any earlier
+  `recvB`/`sendB`/`challB` has `tA < t* - 1` and any later one has
+  `tA ≥ t*` once `recvA` has fired). Case (3) still uses `sent` on the
+  `sendA`/`challA` clauses pending a matching simplification.
 - The peer-state image check (`stB = .inr (b • gen)` in case 1 vs.
   `stB = .inr (a • gen)` in case 2) flips between the **challenge** message
   `bG` (when P = A, so B received B's own challenge draft as the peer read)
   and the **embedding** message `aG` (when P = B, so A received the embedded
   send from B before B's challenge).
-- The counter guards `tA = t*` vs `tB = t* - 1` reflect the protocol: A sends
-  first, so when B is mid-epoch at `tB = t* - 1` (just before its own
-  challenge), A is already at `tA = t*`.
+- The counter guards `tA = t*` (case 1) and `tA = t* - 1` (case 2) reflect
+  the two embedding points: A's challenge lands at `tA = t*`, while B's
+  "other-party pre-challenge send" lands at `tA = t* - 1`. Similarly
+  `tB = t* - 1` (case 3) vs `tB = t*` (case 4) under the symmetric embedding
+  for A-challenged games.
 
 ### The `sent` parameter
 
@@ -700,12 +711,13 @@ private noncomputable def hybridProj (gp : GameParams) (a b : F)
           then (.inl b : F ⊕ G)
           else s.stA
       | .B, .inl _ =>
-          if s.tA == gp.tStar &&
-              (s.lastAction = some .sendA ||
-               (s.lastAction = some .recvB &&
-                 s.stB = (.inr (a • gen) : F ⊕ G)) ||
-               (sent && (s.lastAction = some .sendB ||
-                 s.lastAction = some .challB)))
+          if (s.lastAction = some .sendA && s.tA == gp.tStar - 1) ||
+              (s.lastAction = some .recvB && s.tA == gp.tStar - 1 &&
+                s.tB == gp.tStar - 1) ||
+              (s.lastAction = some .sendB && s.tA == gp.tStar - 1 &&
+                s.tB == gp.tStar) ||
+              (s.lastAction = some .challB && s.tA == gp.tStar - 1 &&
+                s.tB == gp.tStar)
           then (.inl a : F ⊕ G)
           else s.stA
       | _, .inr _ => s.stA
@@ -891,14 +903,16 @@ is a total projection suitable for
 invariant `hybridStateInv` bundles the reduction-side window witness and the
 hybrid-side shape witness into a single `Prop` on reduction states.
 
-Pending alignment: `hybridProj`'s P=B `stA` clause currently guards on
-`tA == gp.tStar` (matching the old asymmetric embedding point). Under the
-symmetric embedding, the post-embedding post-sendA state has `tA = tStar - 1`,
-so that guard must become `tA == gp.tStar - 1` (with the lastAction list
-possibly widened to cover the post-embedding-but-pre-recvA window). Similarly
-for `hybridWindowInv` P=B cases. These updates, together with reproving the
-P=B branches of `hybridRel_query`, are the remaining mechanical work for the
-migration. -/
+Alignment state: `hybridProj`'s P=B `stA` clause has been migrated to the
+symmetric embedding point (`tA == gp.tStar - 1`, with the four-case
+`sendA / recvB / sendB / challB` window mirroring P=A's `stA` window and no
+longer threading `sent`). The companion invariants `hybridWindowInv` and
+`hybridShapeInv` did not need counter updates under the fix — their P=B
+clauses already use the symmetric `(tStar - 1, tStar)` coordinates. Remaining
+mechanical work for the migration: prove an `inferSent` preservation lemma for
+a single oracle step (e.g. the non-challenged-side `sendB`), then bulk-migrate
+the sorried P=B branches of `hybridRel_query` through
+`map_run_simulateQ_eq_of_query_map_eq_inv'`. -/
 
 /-- Deterministic reconstruction of the `sent` provenance bit from
 `(gp, state)`. See the section note above for the correctness argument. -/
@@ -1365,6 +1379,24 @@ private lemma tA_ne_tStar_of_corruptA_allowed
     omega
 
 omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
+/-- With `ΔCKA = 1`, `corruptA` can never occur while `tA = tStar - 1`. -/
+private lemma tA_ne_tStar_sub_one_of_corruptA_allowed
+    (gp : GameParams) (s : GameState (F ⊕ G) G G)
+    (hΔ : gp.deltaCKA = 1)
+    (hallow : allowCorr gp s || finishedA gp s = true) :
+    s.tA ≠ gp.tStar - 1 := by
+  intro htA
+  have hcases : allowCorr gp s = true ∨ finishedA gp s = true := by
+    simpa [Bool.or_eq_true_eq_eq_true_or_eq_true] using hallow
+  rcases hcases with hcorr | hfin
+  · have hcorr' : max s.tA s.tB + 2 ≤ gp.tStar := by
+      simpa [allowCorr] using hcorr
+    omega
+  · have hfin' : gp.tStar + 1 ≤ s.tA := by
+      simpa [finishedA, finishedP, hΔ] using hfin
+    omega
+
+omit [Field F] [DecidableEq F] [AddCommGroup G] [Module F G] [DecidableEq G] in
 /-- With `ΔCKA = 1`, `corruptB` can never occur while `tB = tStar - 1`. -/
 private lemma tB_ne_tStar_sub_one_of_corruptB_allowed
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
@@ -1410,8 +1442,10 @@ private lemma hybridProj_stA_eq_of_corruptA_allowed
     (hybridProj (F := F) (gen := gen) gp a b s sent).stA = s.stA := by
   have htA : s.tA ≠ gp.tStar :=
     tA_ne_tStar_of_corruptA_allowed (F := F) gp s hΔ hallow
+  have htA' : s.tA ≠ gp.tStar - 1 :=
+    tA_ne_tStar_sub_one_of_corruptA_allowed (F := F) gp s hΔ hallow
   cases hcp : gp.challengedParty <;> cases hsA : s.stA <;>
-    simp [hybridProj, hcp, hsA, htA]
+    simp [hybridProj, hcp, hsA, htA, htA']
 
 /-- With `ΔCKA = 1`, the B-state projection window closes before `corruptB`
 can return a state. -/
@@ -2223,6 +2257,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
                               lastAction := some .challB }) := by
                     simp [hybridChallB, hcpB, hvsH, hchalH, StateT.run_bind, StateT.run_get,
                       pure_bind]
+                  have htBpre : sR.tB = gp.tStar - 1 := by omega
+                  have htStarPos : gp.tStar - 1 + 1 = gp.tStar := by omega
                   refine hybridRel_of_run_evalDist_eq
                     (F := F) (G := G) (gen := gen)
                     (maR := (reductionChallB (F := F) gp (b • gen) ((a * b) • gen)) ())
@@ -2232,7 +2268,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
                   · rw [hrunR, hrunH]
                     apply evalDist_ext
                     intro q
-                    simp [hybridProj, hcpB, hact, htA, htB, hneqA]
+                    simp [hybridProj, hcpB, hact, htA, htBpre, htStarPos, hneqA]
                   · intro p hp
                     rw [hrunR] at hp
                     simp at hp
@@ -2240,7 +2276,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
                     refine Or.inr (Or.inr ?_)
                     refine ⟨hcpB, rfl, htA, ?_, x, ?_, ?_, ?_, ?_, ?_, ?_⟩
                     · simp [hybridProj, htB]
-                    · simpa [hybridProj, hcpB, hact, htA, hneqA] using hstApre
+                    · simpa [hybridProj, hcpB, hact, htA, htBpre, htStarPos, hneqA] using hstApre
                     · simp [hybridProj, hcpB, htA, htB]
                     · simpa [hybridProj, hcpB, hact] using hrApre
                     · simp [hybridProj]
