@@ -885,9 +885,14 @@ private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
   refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
   exact ⟨by rw [hvalue_eq], hrel⟩
 
-/-- One-step simulation for the reduction/hybrid coupling. Proved by the
-three-phase split (identity / embedding / challenge) described in the
-section header; corruption is gated by `hΔ : gp.deltaCKA = 1`. -/
+/-- One-step simulation for the reduction/hybrid coupling.
+
+Dispatches on the nine oracles via `cases_oracle`. The cases for `unif`,
+`corruptA`, `corruptB` are closed by the dedicated helpers above (the code
+runs identically on both sides, and `hybridProj` preserves everything the
+oracles inspect). The remaining six cases — `sendA`, `recvA`, `sendB`,
+`recvB`, `challA`, `challB` — require the identity/embedding/challenge
+phase split described in the section header and are left as `sorry`. -/
 private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (sR sH : GameState (F ⊕ G) G G)
@@ -897,7 +902,21 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F
       (((hybridOracleImpl (F := F) gp gen a b) t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  sorry
+  cases_oracle t
+  all_goals (simp only [reductionOracleImpl, hybridOracleImpl,
+    QueryImpl.add_apply_inl, QueryImpl.add_apply_inr])
+  · -- unif
+    exact hybridRel_query_unif (F := F) (G := G) (gen := gen) gp a b t sR sH hrel
+  · sorry -- sendA
+  · sorry -- recvA
+  · sorry -- sendB
+  · sorry -- recvB
+  · sorry -- challA
+  · sorry -- challB
+  · -- corruptA
+    exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp hΔ a b t sR sH hrel
+  · -- corruptB
+    exact hybridRel_query_corruptB (F := F) (G := G) (gen := gen) gp hΔ a b t sR sH hrel
 
 /-- First half of the real-branch bridge: the concrete reduction may differ from
 `hybridOracleImpl` on hidden intermediate state, but these differences remain
