@@ -1224,13 +1224,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
                 unfold hybridProj
                 simp [hNoWinSR, hNoWinPost]
               · -- sR.lastAction = some .recvA: tA = tB (hTeq).
-                -- Under recvA, `windowRewrite` rewrites `stA` never and `stB`
-                -- only when `tB = tStar`. Post-state has lastAction = sendA;
-                -- `stA` is never rewritten (sendA+tA=tStar-1 excluded by ¬hEmbed);
-                -- `stB` rewrite condition is the same (tB = tStar).
-                -- Pending: simp/ext dispatch on the record equality; the
-                -- pair-match `match .B, sR.stX with ...` needs targeted
-                -- reduction that plain `split_ifs <;> rfl` doesn't handle.
+                -- Pending: state-match proof for recvA sub-case.
                 sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
