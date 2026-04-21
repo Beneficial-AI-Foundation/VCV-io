@@ -875,6 +875,35 @@ private lemma hybridProj_stB_of_finishedB (gp : GameParams) (hΔ : gp.deltaCKA =
     all_goals (intros; omega)
   · rfl
 
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- At pre-sendA/pre-challA states (`lastAction ∈ {none, some .recvA}`),
+`hybridProj` preserves `stA`: no `stA`-rewrite guard in `windowRewrite`
+matches these `lastAction` values for either challenged party. -/
+private lemma hybridProj_stA_of_preSendA (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G)
+    (h : s.lastAction = none ∨ s.lastAction = some .recvA) :
+    (hybridProj (F := F) (gen := gen) gp a b s).stA = s.stA := by
+  unfold hybridProj
+  split_ifs
+  · unfold windowRewrite
+    rcases h with hL | hL <;>
+      cases gp.challengedParty <;> cases s.stA <;>
+        simp [hL]
+  · rfl
+
+omit [Fintype F] [SampleableType F] [SampleableType G] in
+/-- At pre-sendB/pre-challB states (`lastAction = some .recvB`), `hybridProj`
+preserves `stB`: no `stB`-rewrite guard matches `recvB`. -/
+private lemma hybridProj_stB_of_preSendB (gp : GameParams) (a b : F)
+    (s : GameState (F ⊕ G) G G)
+    (h : s.lastAction = some .recvB) :
+    (hybridProj (F := F) (gen := gen) gp a b s).stB = s.stB := by
+  unfold hybridProj
+  split_ifs
+  · unfold windowRewrite
+    cases gp.challengedParty <;> cases s.stB <;> simp [h]
+  · rfl
+
 /-! #### Oracle-step coupling: easy cases
 
 `unif` is state-preserving and runs the same code on both sides; `corruptA`
