@@ -1156,8 +1156,8 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           have hStA : sH.stA = sR.stA := by
             subst hsHeq
             exact hybridProj_stA_of_preSendA (F := F) (gen := gen) gp a b sR hLrec
-          -- Pending: close via relTriple_bind on shared `ddhCKA.send gen sR.stA`.
-          -- For each result, prove post-state hybridRel preservation.
+          -- Pending: full Branch B closure via relTriple_bind on shared
+          -- `ddhCKA.send gen sR.stA`.
           sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
