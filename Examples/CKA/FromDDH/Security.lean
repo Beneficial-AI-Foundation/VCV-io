@@ -1115,10 +1115,18 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
             cases sR.stB <;> rfl
         · -- Branch B sub-case: challenged = .B but not embedding.
           -- Both sides take the `else` branch and run `ddhCKA.send gen state.stA`.
+          have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
+            rcases hL : sR.lastAction with _ | act
+            · left; rfl
+            · rcases act with _ | _ | _ | _ | _ | _ <;>
+                simp [hL, validStep] at hvalid
+              right; rfl
+          have hTeq : sR.tA = sR.tB := by
+            unfold ddhCKA.phaseCounterInv at hpinv
+            rcases hLrec with hL | hL <;> rw [hL] at hpinv <;> exact hpinv
           -- sH.stA = sR.stA (pre-sendA lastAction ∈ {none, recvA}, neither
-          -- triggers stA rewrite).
-          -- Pending: full Branch B proof via relTriple_bind on shared
-          -- ddhCKA.send, plus post-state hybridRel preservation.
+          -- triggers stA rewrite in windowRewrite).
+          -- Pending hStA helper + full Branch B proof.
           sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         -- Symmetric reasoning: both sides run shared ddhCKA.send.
