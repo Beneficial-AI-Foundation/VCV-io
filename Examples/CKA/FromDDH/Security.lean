@@ -1197,13 +1197,35 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
             · -- init clause: sendA ≠ none.
               intro h; simp at h
             · -- state match: sH_post_x = {hybridProj sR_post_x with correct := sH.correct}.
-              -- Pending: requires case split on inChallWindow status of sR_post_x
-              -- and sR, plus windowRewrite analysis. Under ¬hEmbed (sR.tA + 1 ≠
-              -- tStar - 1), the `.B` stA rewrite guard `sendA ∧ tA = tStar-1`
-              -- fails in the post-state. For stB, the guard depends on
-              -- `sR.tB == tStar`, with consistent behavior between pre and post
-              -- under the lastAction ∈ {none, recvA} + phaseCounterInv constraint.
-              sorry
+              subst hsHeq
+              -- Case on lastAction to get tighter control.
+              rcases hLrec with hL | hL
+              · -- sR.lastAction = none: tA = tB = 0 (hinit).
+                obtain ⟨hTA0, hTB0⟩ := hinit hL
+                -- Under wellFormedGP .B (Even tStar ∧ tStar ≥ 2) and ¬hEmbed,
+                -- tStar ≥ 4 (tStar = 2 would give sR.tA + 1 = tStar - 1).
+                unfold wellFormedGP at hwf
+                rw [hP] at hwf
+                obtain ⟨hEven, hTstar⟩ := hwf
+                have hTstar4 : gp.tStar ≥ 4 := by
+                  by_contra hc
+                  have hc' : gp.tStar < 4 := by omega
+                  have : gp.tStar = 2 ∨ gp.tStar = 3 := by omega
+                  rcases this with h | h
+                  · apply hEmbed; omega
+                  · rw [h] at hEven
+                    exact (by decide : ¬ Even 3) hEven
+                have hNoWinSR : inChallWindow gp sR = false := by
+                  simp [inChallWindow]
+                  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> omega
+                have hNoWinPost : inChallWindow gp ({sR with tA := sR.tA + 1, stA := Sum.inl x1, lastRhoA := some (x1 • gen), lastKeyA := some (x1 • h), lastAction := some CKAAction.sendA} : GameState (F ⊕ G) G G) = false := by
+                  simp [inChallWindow]
+                  refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> omega
+                unfold hybridProj
+                simp [hNoWinSR, hNoWinPost]
+              · -- sR.lastAction = some .recvA: tA = tB (hTeq).
+                -- Pending: case split on whether sR.tA or sR.tB is in the window.
+                sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
           rcases hL : sR.lastAction with _ | act
