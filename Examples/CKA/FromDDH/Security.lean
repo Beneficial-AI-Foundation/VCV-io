@@ -1153,12 +1153,26 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           have hTeq : sR.tA = sR.tB := by
             unfold ddhCKA.phaseCounterInv at hpinv
             rcases hLrec with hL | hL <;> rw [hL] at hpinv <;> exact hpinv
-          -- sH.stA = sR.stA (pre-sendA lastAction ∈ {none, recvA}, neither
-          -- triggers stA rewrite in windowRewrite).
-          -- Pending hStA helper + full Branch B proof.
+          have hStA : sH.stA = sR.stA := by
+            subst hsHeq
+            exact hybridProj_stA_of_preSendA (F := F) (gen := gen) gp a b sR hLrec
+          -- Pending: close via relTriple_bind on shared `ddhCKA.send gen sR.stA`.
+          -- For each result, prove post-state hybridRel preservation.
           sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
-        -- Symmetric reasoning: both sides run shared ddhCKA.send.
+        have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
+          rcases hL : sR.lastAction with _ | act
+          · left; rfl
+          · rcases act with _ | _ | _ | _ | _ | _ <;>
+              simp [hL, validStep] at hvalid
+            right; rfl
+        have hTeq : sR.tA = sR.tB := by
+          unfold ddhCKA.phaseCounterInv at hpinv
+          rcases hLrec with hL | hL <;> rw [hL] at hpinv <;> exact hpinv
+        have hStA : sH.stA = sR.stA := by
+          subst hsHeq
+          exact hybridProj_stA_of_preSendA (F := F) (gen := gen) gp a b sR hLrec
+        -- Pending: close symmetrically.
         sorry
   · -- recvA. Both sides run `ddhCKA.recv`, so the challenge is purely
     -- about matching post-states. Sub-branches:
