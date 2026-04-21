@@ -1297,8 +1297,36 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
             cases sR.stA <;> rfl
         · -- Branch B sub-case: challenged = .A but not embedding.
           -- Same shape as sendA Branch B.
+          have hLrec : sR.lastAction = some .recvB := by
+            rcases hL : sR.lastAction with _ | act
+            · simp [hL, validStep] at hvalid
+            · rcases act with _ | _ | _ | _ | _ | _ <;>
+                simp [hL, validStep] at hvalid
+              rfl
+          have hTeq : sR.tA = sR.tB := by
+            unfold ddhCKA.phaseCounterInv at hpinv
+            rw [hLrec] at hpinv
+            exact hpinv
+          have hStB : sH.stB = sR.stB := by
+            subst hsHeq
+            exact hybridProj_stB_of_preSendB (F := F) (gen := gen) gp a b sR hLrec
+          -- Pending: close via relTriple_bind on shared `ddhCKA.send gen sR.stB`.
           sorry
       · -- Branch B: challenged ≠ .A, always non-embedding.
+        have hLrec : sR.lastAction = some .recvB := by
+          rcases hL : sR.lastAction with _ | act
+          · simp [hL, validStep] at hvalid
+          · rcases act with _ | _ | _ | _ | _ | _ <;>
+              simp [hL, validStep] at hvalid
+            rfl
+        have hTeq : sR.tA = sR.tB := by
+          unfold ddhCKA.phaseCounterInv at hpinv
+          rw [hLrec] at hpinv
+          exact hpinv
+        have hStB : sH.stB = sR.stB := by
+          subst hsHeq
+          exact hybridProj_stB_of_preSendB (F := F) (gen := gen) gp a b sR hLrec
+        -- Pending: close symmetrically.
         sorry
   · -- recvB: symmetric to recvA (pre-recvB positions = {sendA, challA}).
     obtain ⟨hpinv, hinit, c, hsHeq⟩ := hrel
