@@ -1114,8 +1114,14 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
               beq_self_eq_true, reduceCtorEq, Option.some.injEq]
             cases sR.stB <;> rfl
         · -- Branch B sub-case: challenged = .B but not embedding.
+          -- Both sides take the `else` branch and run `ddhCKA.send gen state.stA`.
+          -- sH.stA = sR.stA (pre-sendA lastAction ∈ {none, recvA}, neither
+          -- triggers stA rewrite).
+          -- Pending: full Branch B proof via relTriple_bind on shared
+          -- ddhCKA.send, plus post-state hybridRel preservation.
           sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
+        -- Symmetric reasoning: both sides run shared ddhCKA.send.
         sorry
   · -- recvA. Both sides run `ddhCKA.recv`, so the challenge is purely
     -- about matching post-states. Sub-branches:
@@ -1239,8 +1245,9 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
               beq_self_eq_true, reduceCtorEq, Option.some.injEq]
             cases sR.stA <;> rfl
         · -- Branch B sub-case: challenged = .A but not embedding.
+          -- Same shape as sendA Branch B.
           sorry
-      · -- Branch B: challenged ≠ .A.
+      · -- Branch B: challenged ≠ .A, always non-embedding.
         sorry
   · -- recvB: symmetric to recvA (pre-recvB positions = {sendA, challA}).
     obtain ⟨hpinv, hinit, c, hsHeq⟩ := hrel
