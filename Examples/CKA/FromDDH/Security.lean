@@ -1156,6 +1156,43 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
         obtain ⟨z, _, hx'⟩ := (mem_support_bind_iff _ _ _).mp hx
         have hx_eq : x = (some (b • gen, (a * b) • gen), ({ sR with tA := sR.tA + 1, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA } : GameState (F ⊕ G) G G)) := (mem_support_pure_iff _ _).mp hx'
         subst hx_eq
+        refine ⟨rfl, ?_⟩
+        -- Prove `hybridRel gp a b sR_z sH'`.
+        -- From validStep challA: sR.lastAction ∈ {none, recvA}; phaseCounterInv
+        -- gives sR.tA = sR.tB in both cases.
+        have hTeq : sR.tA = sR.tB := by
+          unfold ddhCKA.phaseCounterInv at hpinv
+          rcases hL : sR.lastAction with _ | act
+          · simpa [hL] using hpinv
+          · rcases act with _ | _ | _ | _ | _ | _ <;>
+              simp [hL, validStep] at hstep ⊢ <;> simpa [hL] using hpinv
+        -- Under wellFormedGP .A (tStar ≥ 3) and sR.tA = tStar-1 ≥ 2, we have
+        -- tA > 0; since validStep challA restricts lastAction ∈ {none, recvA},
+        -- the `none` case is ruled out (would require tA = 0). So lastAction = recvA.
+        have hLrec : sR.lastAction = some .recvA := by
+          unfold wellFormedGP at hwf
+          rw [hP] at hwf
+          obtain ⟨_, hTstar⟩ := hwf
+          have hTA : sR.tA ≥ 2 := by omega
+          rcases hL : sR.lastAction with _ | act
+          · simp [hL] at hstep ⊢
+            -- In the none case, we derive tA = 0 from phaseCounterInv.
+            unfold ddhCKA.phaseCounterInv at hpinv
+            simp [hL] at hpinv
+            -- hpinv: tA = tB (but we need tA > 0 contradiction)
+            -- Actually can't directly conclude; need the phaseShape or more.
+            -- For now, derive contradiction via tA ≥ 2 and by induction on
+            -- protocol history—leave this precise derivation as a later step.
+            exfalso
+            -- This branch requires tA = 0 for lastAction = none, but tA ≥ 2.
+            -- We'd need reachability invariants tying lastAction = none to
+            -- the initial state (tA = tB = 0). Pending.
+            sorry
+          · rcases act with _ | _ | _ | _ | _ | _ <;>
+              simp [hL, validStep] at hstep
+            -- Only recvA survives
+            rfl
+        -- Pending: complete the `hybridRel` witness using hTeq and hLrec.
         sorry
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
