@@ -733,27 +733,38 @@ private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
       exact le_trans h.2.2 (by first | exact hB | exact hA)
 
 /-- Hybrid coupling invariant: `sH` is the projection of `sR`, up to the
-`correct` field. `correct` is an accumulator tracked by `oracleRecvA/B` that
-only affects the *correctness* experiment (`CKAScheme.correctnessExp`); the
-security game discards the final state and returns only the adversary's guess
-`b'`, so `correct` divergences — which can happen when `hybridProj` rewrites a
+`correct` field, and `sR` satisfies the protocol-phase counter invariant
+(counter alternation enforced by `validStep`).
+
+`correct` is an accumulator tracked by `oracleRecvA/B` that only affects the
+*correctness* experiment (`CKAScheme.correctnessExp`); the security game
+discards the final state and returns only the adversary's guess `b'`, so
+`correct` divergences — which can happen when `hybridProj` rewrites a
 hidden scalar (`.inl y → .inl a` or `.inl z → .inl b`) inside the challenge
-window — are unobservable. -/
+window — are unobservable.
+
+The `phaseCounterInv` conjunct gives counter alternation at each oracle
+step; it is needed by the valid-step branches of `hybridRel_query` to rule
+out sub-states where `tA`/`tB` would otherwise be free and could place
+`hybridProj` outside the expected phase. -/
 private def hybridRel (gp : GameParams) (a b : F)
     (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  ∃ c : Bool, sH = { hybridProj (F := F) (gen := gen) gp a b sR with correct := c }
+  ddhCKA.phaseCounterInv sR ∧
+    ∃ c : Bool, sH = { hybridProj (F := F) (gen := gen) gp a b sR with correct := c }
 
 omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- Base case: `init` has `lastAction = none`, which makes every
-`windowRewrite` guard `false`, so `hybridProj gp a b init = init`. -/
+`windowRewrite` guard `false`, so `hybridProj gp a b init = init`.
+`phaseCounterInv` holds because `tA = tB = 0`. -/
 private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
     hybridRel (F := F) (G := G) (gen := gen) gp a b
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  refine ⟨true, ?_⟩
-  unfold hybridProj windowRewrite
-  cases gp.challengedParty <;>
-    simp [initGameState, ite_self]
+  refine ⟨?_, true, ?_⟩
+  · simp [ddhCKA.phaseCounterInv, initGameState]
+  · unfold hybridProj windowRewrite
+    cases gp.challengedParty <;>
+      simp [initGameState, ite_self]
 
 /-! #### Counter / scalar preservation under `hybridProj`
 
@@ -895,7 +906,7 @@ private lemma hybridRel_query_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((oracleCorruptA gp (F ⊕ G) G G t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  obtain ⟨c, hsHeq⟩ := hrel
+  obtain ⟨hpinv, c, hsHeq⟩ := hrel
   have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
   have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
   have htA' : sH.tA = sR.tA := by subst hsHeq; simpa using htA
@@ -927,7 +938,7 @@ private lemma hybridRel_query_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     intro s; simp [oracleCorruptA]; split_ifs <;> rfl
   rw [heq sR, heq sH]
   refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
-  exact ⟨by rw [hvalue_eq], ⟨c, hsHeq⟩⟩
+  exact ⟨by rw [hvalue_eq], ⟨hpinv, c, hsHeq⟩⟩
 
 omit [Fintype F] [SampleableType F] [SampleableType G] in
 /-- `O-Corrupt-B`: symmetric to `hybridRel_query_corruptA`. -/
@@ -939,7 +950,7 @@ private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((oracleCorruptB gp (F ⊕ G) G G t).run sH)
       (fun pR pH =>
         pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  obtain ⟨c, hsHeq⟩ := hrel
+  obtain ⟨hpinv, c, hsHeq⟩ := hrel
   have htA := hybridProj_tA (F := F) (gen := gen) gp a b sR
   have htB := hybridProj_tB (F := F) (gen := gen) gp a b sR
   have htA' : sH.tA = sR.tA := by subst hsHeq; simpa using htA
@@ -971,7 +982,7 @@ private lemma hybridRel_query_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     intro s; simp [oracleCorruptB]; split_ifs <;> rfl
   rw [heq sR, heq sH]
   refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
-  exact ⟨by rw [hvalue_eq], ⟨c, hsHeq⟩⟩
+  exact ⟨by rw [hvalue_eq], ⟨hpinv, c, hsHeq⟩⟩
 
 /-- One-step simulation for the reduction/hybrid coupling.
 
@@ -1012,7 +1023,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     --       `sR'.lastAction = sendA, sR'.tA = tStar-1`, which `windowRewrite`
     --       rewrites `stA` from `.inl y` to `.inl a`, so
     --       `hybridProj sR' = sH'`. The `correct` field is unchanged by sendA.
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
     cases hvalid : validStep sR.lastAction CKAAction.sendA
@@ -1028,7 +1039,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := (none, sR)) (b := (none, sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branches B and C (valid step): pending.
       sorry
   · -- recvA. Both sides run `ddhCKA.recv`, so the challenge is purely
@@ -1044,7 +1055,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     --       `stA`-synchronization at the valid pre-recvA positions
     --       (lastAction ∈ {sendB, challB}), via either an inverse-rewrite
     --       audit or a "stA-matched at recvA" sub-invariant. Pending.
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
     cases hvalid : validStep sR.lastAction CKAAction.recvA
@@ -1060,12 +1071,12 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := ((), sR)) (b := ((), sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branches B, C, D (valid step): pending.
       sorry
   · -- sendB: symmetric to sendA (challenged = .A, tB_post = tStar-1 in
     -- branch C). Close branch (C) with `relTriple_pure_right_of_forall_support`.
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
     cases hvalid : validStep sR.lastAction CKAAction.sendB
@@ -1081,11 +1092,11 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := (none, sR)) (b := (none, sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branches B and C (valid step): pending.
       sorry
   · -- recvB: symmetric to recvA (pre-recvB positions = {sendA, challA}).
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
     cases hvalid : validStep sR.lastAction CKAAction.recvB
@@ -1101,7 +1112,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := ((), sR)) (b := ((), sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branches B, C, D (valid step): pending.
       sorry
   · -- challA (fires only if challenged = .A). Three sub-branches:
@@ -1114,13 +1125,38 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     --       `relTriple_pure_right_of_forall_support`: every `z` yields a
     --       post-state where `windowRewrite` rewrites `stA` from `.inl z`
     --       to `.inl b` under the `challA, tA = tStar` guard.
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
+    have hTa : sH.tA = sR.tA := by subst hsHeq; simp [hybridProj_tA]
     by_cases hguard : gp.challengedParty = .A ∧
         validStep sR.lastAction CKAAction.challA = true
-    · -- Branches B and C (valid step + challenge epoch): pending.
-      sorry
+    · -- Valid path: split further on `isChallengeEpoch`.
+      obtain ⟨hP, hstep⟩ := hguard
+      by_cases hchal : sR.tA + 1 = gp.tStar
+      · -- Branch C: embedding at challenge epoch. Absorb `z ← $F` via
+        -- `relTriple_pure_right_of_forall_support`.
+        sorry
+      · -- Branch B: valid step but not challenge epoch. Both sides return
+        -- `pure (none, _)` from the inner `else`-branch.
+        have hChallR : isChallengeEpoch gp
+            ({sR with tA := sR.tA + 1} : GameState (F ⊕ G) G G) = false := by
+          simp [isChallengeEpoch, GameState.tP, hP, hchal]
+        have hred :
+            (reductionChallA (F := F) gp (b • gen) ((a * b) • gen) t).run sR =
+              (pure (none, sR) : ProbComp _) := by
+          simp [reductionChallA, hP, hstep, hChallR]
+        have hhyb :
+            (hybridChallA (F := F) gp gen a b t).run sH =
+              (pure (none, sH) : ProbComp _) := by
+          have hChallH : isChallengeEpoch gp
+              ({sH with tA := sH.tA + 1} : GameState (F ⊕ G) G G) = false := by
+            simp [isChallengeEpoch, GameState.tP, hP, hTa, hchal]
+          simp [hybridChallA, hP, hLA.symm ▸ hstep, hChallH]
+        exact hred ▸ hhyb ▸
+          OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+            (a := (none, sR)) (b := (none, sH))
+            ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branch A: outer guard false. Both sides return `pure (none, _)`.
       have hred :
           (reductionChallA (F := F) gp (b • gen) ((a * b) • gen) t).run sR =
@@ -1133,16 +1169,40 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := (none, sR)) (b := (none, sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
   · -- challB: symmetric to challA (challenged = .B, tB_post = tStar).
     -- Close branch (C) with `relTriple_pure_right_of_forall_support`.
-    obtain ⟨c, hsHeq⟩ := hrel
+    obtain ⟨hpinv, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
       subst hsHeq; simp [hybridProj_lastAction]
+    have hTb : sH.tB = sR.tB := by subst hsHeq; simp [hybridProj_tB]
     by_cases hguard : gp.challengedParty = .B ∧
         validStep sR.lastAction CKAAction.challB = true
-    · -- Branches B and C (valid step + challenge epoch): pending.
-      sorry
+    · -- Valid path: split further on `isChallengeEpoch`.
+      obtain ⟨hP, hstep⟩ := hguard
+      by_cases hchal : sR.tB + 1 = gp.tStar
+      · -- Branch C: embedding at challenge epoch.
+        sorry
+      · -- Branch B: valid step but not challenge epoch. Both sides return
+        -- `pure (none, _)` from the inner `else`-branch.
+        have hChallR : isChallengeEpoch gp
+            ({sR with tB := sR.tB + 1} : GameState (F ⊕ G) G G) = false := by
+          simp [isChallengeEpoch, GameState.tP, hP, hchal]
+        have hred :
+            (reductionChallB (F := F) gp (b • gen) ((a * b) • gen) t).run sR =
+              (pure (none, sR) : ProbComp _) := by
+          simp [reductionChallB, hP, hstep, hChallR]
+        have hhyb :
+            (hybridChallB (F := F) gp gen a b t).run sH =
+              (pure (none, sH) : ProbComp _) := by
+          have hChallH : isChallengeEpoch gp
+              ({sH with tB := sH.tB + 1} : GameState (F ⊕ G) G G) = false := by
+            simp [isChallengeEpoch, GameState.tP, hP, hTb, hchal]
+          simp [hybridChallB, hP, hLA.symm ▸ hstep, hChallH]
+        exact hred ▸ hhyb ▸
+          OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+            (a := (none, sR)) (b := (none, sH))
+            ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
     · -- Branch A: outer guard false. Both sides return `pure (none, _)`.
       have hred :
           (reductionChallB (F := F) gp (b • gen) ((a * b) • gen) t).run sR =
@@ -1155,7 +1215,7 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact hred ▸ hhyb ▸
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := (none, sR)) (b := (none, sH))
-          ⟨rfl, ⟨c, hsHeq⟩⟩
+          ⟨rfl, ⟨hpinv, c, hsHeq⟩⟩
   · -- corruptA
     exact hybridRel_query_corruptA (F := F) (G := G) (gen := gen) gp hΔ a b t sR sH hrel
   · -- corruptB
