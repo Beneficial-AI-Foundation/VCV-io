@@ -1082,6 +1082,20 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           (a := ((), sR)) (b := ((), sH))
           ⟨rfl, ⟨hpinv, hinit, c, hsHeq⟩⟩
     · -- Branches B, C, D (valid step): pending.
+      -- Closure plan: split on `sR.lastRhoB` and `ddhCKA.recv sR.stA ρ`.
+      -- (B) lastRhoB = none: counter-only increment, both sides agree; use
+      --     relTriple_pure_pure on shared state change.
+      -- (C) recv returns none: both sides return pure (), counter-only change.
+      -- (D) recv returns some (keyA, stA'): key check on lastKeyB; if match,
+      --     correct stays true, stA gets overwritten to .inr ρ. The ρ here is
+      --     sR.lastRhoB which is the same on both sides (by hybridProj_lastRhoB).
+      --     The tricky part is the key check: sH.stA may be rewritten by
+      --     windowRewrite to `.inl a` in the window, giving a different `keyA`
+      --     than the reduction's `.inl y`. This only matters for the `correct`
+      --     field, which is discarded by the security game — but hybridRel
+      --     tolerates `correct` divergence via its `∃ c'` clause. After the
+      --     step, lastAction = recvA rewrites stA to `.inr ρ` (same on both
+      --     sides), so hybridRel is restored.
       sorry
   · -- sendB: symmetric to sendA (challenged = .A, tB_post = tStar-1 in
     -- branch C). Close branch (C) with `relTriple_pure_right_of_forall_support`.
