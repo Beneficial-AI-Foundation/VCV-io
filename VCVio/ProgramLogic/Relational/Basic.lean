@@ -563,6 +563,80 @@ lemma relTriple_pure_right {oa : OracleComp spec₁ α} {b : β}
     RelTriple oa (pure b : OracleComp spec₂ β) R :=
   relTriple_post_mono h (fun _ _ ⟨_, hr⟩ => hr)
 
+/-- Absorb a one-sided `OracleComp` against a `pure` on the other side.
+
+If `R x b` holds for every `x` in the support of `oa`, the product coupling
+witnesses `RelTriple oa (pure b) R`. This is the asymmetric analogue of
+`relTriple_pure_pure`, useful when one side samples randomness whose concrete
+value is irrelevant to a deterministic counterpart on the other side.
+
+This uses `HasEvalPMF (OracleComp spec₁)`, so no explicit `NeverFail`
+hypothesis is required. -/
+lemma relTriple_pure_right_of_forall_support
+    {oa : OracleComp spec₁ α} {b : β} {R : RelPost α β}
+    (h : ∀ x ∈ support oa, R x b) :
+    RelTriple oa (pure b : OracleComp spec₂ β) R := by
+  apply (relTriple_iff_relWP (oa := oa) (ob := (pure b : OracleComp spec₂ β)) (R := R)).2
+  have hp : (evalDist oa).toPMF none = 0 := by
+    change Pr[⊥ | oa] = 0; exact probFailure_eq_zero (mx := oa)
+  have hq : (evalDist (pure b : OracleComp spec₂ β)).toPMF none = 0 := by
+    change Pr[⊥ | (pure b : OracleComp spec₂ β)] = 0
+    exact probFailure_eq_zero (mx := (pure b : OracleComp spec₂ β))
+  refine ⟨_root_.SPMF.Coupling.prod hp hq, ?_⟩
+  intro z hz
+  rcases (mem_support_bind_iff (evalDist oa)
+    (fun a => evalDist (pure b : OracleComp spec₂ β) >>= fun y =>
+      (pure (a, y) : SPMF (α × β))) z).1 hz with ⟨a, ha, hz'⟩
+  have ha_supp : a ∈ support oa :=
+    (mem_support_iff (mx := oa) (x := a)).2
+      (by simpa [probOutput_def] using (mem_support_iff (mx := evalDist oa) (x := a)).1 ha)
+  rcases (mem_support_bind_iff (evalDist (pure b : OracleComp spec₂ β))
+    (fun y => (pure (a, y) : SPMF (α × β))) z).1 hz' with ⟨y, hy, hz''⟩
+  have hy_eq : y = b := by
+    have : y ∈ support (pure b : OracleComp spec₂ β) :=
+      (mem_support_iff (mx := (pure b : OracleComp spec₂ β)) (x := y)).2
+        (by simpa [probOutput_def] using
+          (mem_support_iff (mx := evalDist (pure b : OracleComp spec₂ β)) (x := y)).1 hy)
+    simpa [support_pure] using this
+  have hz_eq : z = (a, y) := by simpa [support_pure, Set.mem_singleton_iff] using hz''
+  subst hz_eq
+  subst hy_eq
+  exact h a ha_supp
+
+/-- Symmetric version of `relTriple_pure_right_of_forall_support`.
+
+If `R a y` holds for every `y` in the support of `ob`, the product coupling
+witnesses `RelTriple (pure a) ob R`. -/
+lemma relTriple_pure_left_of_forall_support
+    {a : α} {ob : OracleComp spec₂ β} {R : RelPost α β}
+    (h : ∀ y ∈ support ob, R a y) :
+    RelTriple (pure a : OracleComp spec₁ α) ob R := by
+  apply (relTriple_iff_relWP (oa := (pure a : OracleComp spec₁ α)) (ob := ob) (R := R)).2
+  have hp : (evalDist (pure a : OracleComp spec₁ α)).toPMF none = 0 := by
+    change Pr[⊥ | (pure a : OracleComp spec₁ α)] = 0
+    exact probFailure_eq_zero (mx := (pure a : OracleComp spec₁ α))
+  have hq : (evalDist ob).toPMF none = 0 := by
+    change Pr[⊥ | ob] = 0; exact probFailure_eq_zero (mx := ob)
+  refine ⟨_root_.SPMF.Coupling.prod hp hq, ?_⟩
+  intro z hz
+  rcases (mem_support_bind_iff (evalDist (pure a : OracleComp spec₁ α))
+    (fun x => evalDist ob >>= fun y => (pure (x, y) : SPMF (α × β))) z).1 hz with ⟨x, hx, hz'⟩
+  have hx_eq : x = a := by
+    have : x ∈ support (pure a : OracleComp spec₁ α) :=
+      (mem_support_iff (mx := (pure a : OracleComp spec₁ α)) (x := x)).2
+        (by simpa [probOutput_def] using
+          (mem_support_iff (mx := evalDist (pure a : OracleComp spec₁ α)) (x := x)).1 hx)
+    simpa [support_pure] using this
+  rcases (mem_support_bind_iff (evalDist ob)
+    (fun y => (pure (x, y) : SPMF (α × β))) z).1 hz' with ⟨y, hy, hz''⟩
+  have hy_supp : y ∈ support ob :=
+    (mem_support_iff (mx := ob) (x := y)).2
+      (by simpa [probOutput_def] using (mem_support_iff (mx := evalDist ob) (x := y)).1 hy)
+  have hz_eq : z = (x, y) := by simpa [support_pure, Set.mem_singleton_iff] using hz''
+  subst hz_eq
+  subst hx_eq
+  exact h y hy_supp
+
 section Sampling
 
 variable [SampleableType α]
