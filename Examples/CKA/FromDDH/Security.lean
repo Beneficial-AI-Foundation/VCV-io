@@ -1136,6 +1136,11 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       by_cases hchal : sR.tA + 1 = gp.tStar
       · -- Branch C: embedding at challenge epoch. Absorb `z ← $F` via
         -- `relTriple_pure_right_of_forall_support`.
+        -- Pending: write the explicit `$ᵗ F`-bind form on the reduction side
+        -- and pure form on the hybrid side, then invoke
+        -- `relTriple_pure_right_of_forall_support` with the `hybridRel` witness
+        -- obtained from `windowRewrite` rewriting `.inl z → .inl b` under the
+        -- `challA, tA = tStar` guard.
         sorry
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
