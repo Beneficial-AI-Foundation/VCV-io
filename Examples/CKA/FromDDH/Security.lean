@@ -1156,9 +1156,44 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           have hStA : sH.stA = sR.stA := by
             subst hsHeq
             exact hybridProj_stA_of_preSendA (F := F) (gen := gen) gp a b sR hLrec
-          -- Pending: full Branch B closure via relTriple_bind on shared
-          -- `ddhCKA.send gen sR.stA`.
-          sorry
+          -- Case split on sR.stA shape to handle ddhCKA.send's match.
+          rcases hSA : sR.stA with x | h
+          · -- sR.stA = .inl x: ddhCKA.send returns pure none; both sides pure none.
+            have hSA_H : sH.stA = Sum.inl x := by rw [hStA]; exact hSA
+            have hred : (reductionSendA (F := F) gp gen (a • gen) t).run sR =
+                (pure (none, sR) : ProbComp _) := by
+              simp [reductionSendA, hvalid, hP, hEmbed, hSA,
+                isOtherSendBeforeChall, GameState.tP, CKAParty.other,
+                ddhCKA.send]
+            have hhyb : (hybridSendA (F := F) gp gen a t).run sH =
+                (pure (none, sH) : ProbComp _) := by
+              simp [hybridSendA, hP, hLA ▸ hvalid, hTa ▸ hEmbed, hSA_H,
+                isOtherSendBeforeChall, GameState.tP, CKAParty.other,
+                ddhCKA.send]
+            exact hred ▸ hhyb ▸
+              OracleComp.ProgramLogic.Relational.relTriple_pure_pure
+                (a := (none, sR)) (b := (none, sH))
+                ⟨rfl, ⟨hpinv, hinit, c, hsHeq⟩⟩
+          · -- sR.stA = .inr h: ddhCKA.send samples x ← $F.
+            have hSA_H : sH.stA = Sum.inr h := by rw [hStA]; exact hSA
+            have hred : (reductionSendA (F := F) gp gen (a • gen) t).run sR = ($ᵗ F) >>= fun x => pure (some (x • gen, x • h), ({sR with tA := sR.tA + 1, stA := Sum.inl x, lastRhoA := some (x • gen), lastKeyA := some (x • h), lastAction := some CKAAction.sendA} : GameState (F ⊕ G) G G)) := by
+              simp [reductionSendA, hvalid, hP, hEmbed, hSA,
+                isOtherSendBeforeChall, GameState.tP, CKAParty.other,
+                ddhCKA.send]
+            have hhyb : (hybridSendA (F := F) gp gen a t).run sH = ($ᵗ F) >>= fun x => pure (some (x • gen, x • h), ({sH with tA := sH.tA + 1, stA := Sum.inl x, lastRhoA := some (x • gen), lastKeyA := some (x • h), lastAction := some CKAAction.sendA} : GameState (F ⊕ G) G G)) := by
+              simp [hybridSendA, hP, hLA ▸ hvalid, hTa ▸ hEmbed, hSA_H,
+                isOtherSendBeforeChall, GameState.tP, CKAParty.other,
+                ddhCKA.send]
+            refine hred ▸ hhyb ▸ ?_
+            refine OracleComp.ProgramLogic.Relational.relTriple_bind
+              OracleComp.ProgramLogic.Relational.relTriple_uniformSample_refl ?_
+            intro x1 x2 hx_eq
+            simp only [OracleComp.ProgramLogic.Relational.EqRel] at hx_eq
+            subst hx_eq
+            refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
+            refine ⟨rfl, ?_⟩
+            -- Pending: prove hybridRel post-state preservation.
+            sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
           rcases hL : sR.lastAction with _ | act
