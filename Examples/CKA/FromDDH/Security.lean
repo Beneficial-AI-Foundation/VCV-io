@@ -1136,11 +1136,26 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       by_cases hchal : sR.tA + 1 = gp.tStar
       · -- Branch C: embedding at challenge epoch. Absorb `z ← $F` via
         -- `relTriple_pure_right_of_forall_support`.
-        -- Pending: write the explicit `$ᵗ F`-bind form on the reduction side
-        -- and pure form on the hybrid side, then invoke
-        -- `relTriple_pure_right_of_forall_support` with the `hybridRel` witness
-        -- obtained from `windowRewrite` rewriting `.inl z → .inl b` under the
-        -- `challA, tA = tStar` guard.
+        have hChallR : isChallengeEpoch gp
+            ({sR with tA := sR.tA + 1} : GameState (F ⊕ G) G G) = true := by
+          simp [isChallengeEpoch, GameState.tP, hP, hchal]
+        have hChallH : isChallengeEpoch gp
+            ({sH with tA := sH.tA + 1} : GameState (F ⊕ G) G G) = true := by
+          simp [isChallengeEpoch, GameState.tP, hP, hTa, hchal]
+        have hred : (reductionChallA (F := F) gp (b • gen) ((a * b) • gen) t).run sR = ($ᵗ F) >>= fun z => pure (some (b • gen, (a * b) • gen), ({ sR with tA := sR.tA + 1, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA } : GameState (F ⊕ G) G G)) := by
+          simp [reductionChallA, hP, hstep, hChallR, StateT.run_bind,
+            StateT.run_get, StateT.run_liftM, StateT.run_set, bind_pure_comp,
+            Functor.map_map, Function.comp]
+        have hhyb : (hybridChallA (F := F) gp gen a b t).run sH = (pure (some (b • gen, (a * b) • gen), ({ sH with tA := sH.tA + 1, stA := Sum.inl b, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA } : GameState (F ⊕ G) G G)) : ProbComp _) := by
+          simp [hybridChallA, hP, hLA ▸ hstep, hChallH, StateT.run_bind,
+            StateT.run_get, StateT.run_set, bind_pure_comp,
+            Functor.map_map, Function.comp]
+        refine hred ▸ hhyb ▸ OracleComp.ProgramLogic.Relational.relTriple_pure_right_of_forall_support
+          (spec₁ := unifSpec) (spec₂ := unifSpec) ?_
+        intro x hx
+        obtain ⟨z, _, hx'⟩ := (mem_support_bind_iff _ _ _).mp hx
+        have hx_eq : x = (some (b • gen, (a * b) • gen), ({ sR with tA := sR.tA + 1, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA } : GameState (F ⊕ G) G G)) := (mem_support_pure_iff _ _).mp hx'
+        subst hx_eq
         sorry
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
