@@ -1205,15 +1205,17 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           intro h
           simp at h
         · -- State match: sH' = {hybridProj sR_z with correct := sH.correct}.
-          -- Pending: explicit `windowRewrite sR_z` computation matching
-          -- `(hybridProj sR).stB` via `inferSent` stability and case-split on
-          -- `sR.stB`.  Under the current context:
-          --   - hInWin : inChallWindow gp sR_z = true (since sR_z.tA = tStar)
-          --   - inferSent gp sR_z = true (sR_z.tB = tStar - 1)
-          --   - (windowRewrite sR_z).stA = .inl b (guard `challA ∧ tA = tStar`)
-          --   - (windowRewrite sR_z).stB matches (windowRewrite sR).stB:
-          --     if sR.stB = .inl _, both rewrite to `.inl a`; if .inr _, both
-          --     pass through.
+          have hInWin : inChallWindow gp ({sR with tA := sR.tA + 1, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA} : GameState (F ⊕ G) G G) = true := by
+            simp [inChallWindow, hchal]
+          have hInWinSR : inChallWindow gp sR = true := by
+            simp [inChallWindow, hLrec]; omega
+          subst hsHeq
+          -- Explicitly simp on the RHS `hybridProj sR_z` using `hInWin`, then
+          -- on the LHS's embedded `hybridProj sR` using `hInWinSR`. The
+          -- lastAction and `challA ∧ tA = tStar` guards fire the stA rewrites
+          -- symmetrically; stB matches via `inferSent`.
+          simp only [hybridProj, hInWin, hInWinSR, if_true, windowRewrite,
+            hP, hLrec, hchal]
           sorry
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
