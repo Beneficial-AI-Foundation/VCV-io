@@ -1205,18 +1205,22 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           intro h
           simp at h
         · -- State match: sH' = {hybridProj sR_z with correct := sH.correct}.
-          have hInWin : inChallWindow gp ({sR with tA := sR.tA + 1, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA} : GameState (F ⊕ G) G G) = true := by
-            simp [inChallWindow, hchal]
+          have hInWin : inChallWindow gp ({sR with tA := gp.tStar, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA} : GameState (F ⊕ G) G G) = true := by
+            simp [inChallWindow]
           have hInWinSR : inChallWindow gp sR = true := by
             simp [inChallWindow, hLrec]; omega
+          have hInfer : inferSent gp ({sR with tA := gp.tStar, stA := Sum.inl z, lastRhoA := some (b • gen), lastKeyA := some ((a * b) • gen), lastAction := some CKAAction.challA} : GameState (F ⊕ G) G G) = true := by
+            simp [inferSent, hP, hOdd, hTstar]; omega
+          -- sR.tB = sR.tA = tStar - 1 ≠ tStar, so the .B stB guard fails.
+          have htBne : (sR.tB == gp.tStar) = false := by
+            simp; omega
           subst hsHeq
-          -- Explicitly simp on the RHS `hybridProj sR_z` using `hInWin`, then
-          -- on the LHS's embedded `hybridProj sR` using `hInWinSR`. The
-          -- lastAction and `challA ∧ tA = tStar` guards fire the stA rewrites
-          -- symmetrically; stB matches via `inferSent`.
           simp only [hybridProj, hInWin, hInWinSR, if_true, windowRewrite,
-            hP, hLrec, hchal]
-          sorry
+            hP, hLrec, hchal, hInfer, decide_true, decide_false, htBne,
+            Bool.or_true, Bool.and_true, Bool.true_and, Bool.or_false,
+            Bool.and_self, Bool.true_or, Bool.false_or, Bool.or_self,
+            Bool.false_and, Bool.and_false,
+            beq_self_eq_true, reduceCtorEq, Option.some.injEq, if_false]
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
         have hChallR : isChallengeEpoch gp
