@@ -1182,8 +1182,66 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
         OracleComp.ProgramLogic.Relational.relTriple_pure_pure
           (a := (none, sR)) (b := (none, sH))
           ⟨rfl, ⟨hpinv, hinit, c, hsHeq⟩⟩
-    · -- Branches B and C (valid step): pending.
-      sorry
+    · -- Valid path: split on embedding (challenged = .A ∧ tB_post = tStar-1).
+      have hTa : sH.tA = sR.tA := by subst hsHeq; simp [hybridProj_tA]
+      have hTb : sH.tB = sR.tB := by subst hsHeq; simp [hybridProj_tB]
+      by_cases hP : gp.challengedParty = CKAParty.A
+      · by_cases hEmbed : sR.tB + 1 = gp.tStar - 1
+        · -- Branch C: embedding (symmetric to sendA Branch C).
+          have hLrec : sR.lastAction = some .recvB := by
+            rcases hL : sR.lastAction with _ | act
+            · simp [hL, validStep] at hvalid
+            · rcases act with _ | _ | _ | _ | _ | _ <;>
+                simp [hL, validStep] at hvalid
+              rfl
+          have hTeq : sR.tA = sR.tB := by
+            unfold ddhCKA.phaseCounterInv at hpinv
+            rw [hLrec] at hpinv
+            exact hpinv
+          unfold wellFormedGP at hwf
+          rw [hP] at hwf
+          obtain ⟨hOdd, hTstar⟩ := hwf
+          have hNoWinSR : inChallWindow gp sR = false := by
+            simp [inChallWindow]
+            refine ⟨⟨⟨?_, ?_⟩, ?_⟩, ?_⟩ <;> omega
+          have hProjSR : hybridProj (F := F) (gen := gen) gp a b sR = sR := by
+            unfold hybridProj; simp [hNoWinSR]
+          have hStA : sH.stA = sR.stA := by subst hsHeq; simp [hProjSR]
+          have hred : (reductionSendB (F := F) gp gen (a • gen) t).run sR = ($ᵗ F) >>= fun y => pure (some (a • gen, (match sR.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), ({ sR with tB := sR.tB + 1, stB := Sum.inl y, lastRhoB := some (a • gen), lastKeyB := some ((match sR.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), lastAction := some CKAAction.sendB } : GameState (F ⊕ G) G G)) := by
+            simp [reductionSendB, hP, hvalid, isOtherSendBeforeChall,
+              GameState.tP, CKAParty.other, hEmbed, StateT.run_bind,
+              StateT.run_get, StateT.run_liftM, StateT.run_set,
+              bind_pure_comp, Functor.map_map, Function.comp]
+          have hhyb : (hybridSendB (F := F) gp gen a t).run sH = (pure (some (a • gen, (match sH.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), ({ sH with tB := sH.tB + 1, stB := Sum.inl a, lastRhoB := some (a • gen), lastKeyB := some ((match sH.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), lastAction := some CKAAction.sendB } : GameState (F ⊕ G) G G)) : ProbComp _) := by
+            simp [hybridSendB, hP, hLA ▸ hvalid, isOtherSendBeforeChall,
+              GameState.tP, CKAParty.other, hTb ▸ hEmbed, StateT.run_bind,
+              StateT.run_get, StateT.run_set, bind_pure_comp,
+              Functor.map_map, Function.comp]
+          refine hred ▸ hhyb ▸ OracleComp.ProgramLogic.Relational.relTriple_pure_right_of_forall_support
+            (spec₁ := unifSpec) (spec₂ := unifSpec) ?_
+          intro x hx
+          obtain ⟨y, _, hx'⟩ := (mem_support_bind_iff _ _ _).mp hx
+          have hx_eq : x = (some (a • gen, (match sR.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), ({ sR with tB := sR.tB + 1, stB := Sum.inl y, lastRhoB := some (a • gen), lastKeyB := some ((match sR.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), lastAction := some CKAAction.sendB } : GameState (F ⊕ G) G G)) := (mem_support_pure_iff _ _).mp hx'
+          subst hx_eq
+          refine ⟨by rw [hStA], ?_⟩
+          refine ⟨?_, ?_, sH.correct, ?_⟩
+          · simp only [ddhCKA.phaseCounterInv]; omega
+          · intro h; simp at h
+          · have hInWin : inChallWindow gp ({sR with tB := gp.tStar - 1, stB := Sum.inl y, lastRhoB := some (a • gen), lastKeyB := some ((match sR.stA with | Sum.inl x => x | Sum.inr _ => 0) • (a • gen)), lastAction := some CKAAction.sendB} : GameState (F ⊕ G) G G) = true := by
+              simp [inChallWindow]
+            have htAneFull : (sR.tA == gp.tStar) = false := by simp; omega
+            subst hsHeq
+            simp only [hybridProj, hInWin, hNoWinSR, if_true, if_false,
+              windowRewrite, hP, hEmbed, decide_true, decide_false, htAneFull,
+              hStA, Bool.or_true, Bool.and_true, Bool.true_and, Bool.or_false,
+              Bool.and_self, Bool.true_or, Bool.false_or, Bool.or_self,
+              Bool.false_and, Bool.and_false,
+              beq_self_eq_true, reduceCtorEq, Option.some.injEq]
+            cases sR.stA <;> rfl
+        · -- Branch B sub-case: challenged = .A but not embedding.
+          sorry
+      · -- Branch B: challenged ≠ .A.
+        sorry
   · -- recvB: symmetric to recvA (pre-recvB positions = {sendA, challA}).
     obtain ⟨hpinv, hinit, c, hsHeq⟩ := hrel
     have hLA : sH.lastAction = sR.lastAction := by
