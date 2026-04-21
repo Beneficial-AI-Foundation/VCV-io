@@ -1191,8 +1191,24 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
           · rcases act with _ | _ | _ | _ | _ | _ <;>
               simp [hL, validStep] at hstep
             rfl
-        -- Pending: complete the `hybridRel` witness using hTeq and hLrec.
-        sorry
+        -- Under wellFormedGP .A, tStar is Odd and ≥ 3, so inferSent holds
+        -- (tB ≥ tStar - 1 with tB = tStar - 1).
+        unfold wellFormedGP at hwf
+        rw [hP] at hwf
+        obtain ⟨hOdd, hTstar⟩ := hwf
+        -- Construct the `hybridRel` witness.
+        refine ⟨?_, ?_, sH.correct, ?_⟩
+        · -- phaseCounterInv sR_z: sR_z.lastAction = .challA ⇒ tA = tB + 1
+          simp only [ddhCKA.phaseCounterInv]
+          omega
+        · -- lastAction = none → tA = 0 ∧ tB = 0 (vacuous: sR_z.lastAction = challA)
+          intro h
+          simp at h
+        · -- State match: sH' = {hybridProj sR_z with correct := sH.correct}.
+          -- Pending: requires `windowRewrite sR_z` analysis matching
+          -- `(hybridProj sR).stB` to `(windowRewrite sR_z).stB` using `inferSent`
+          -- stability and case-split on `sR.stB`.
+          sorry
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
         have hChallR : isChallengeEpoch gp
