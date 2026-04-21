@@ -1224,7 +1224,12 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
                 unfold hybridProj
                 simp [hNoWinSR, hNoWinPost]
               · -- sR.lastAction = some .recvA: tA = tB (hTeq).
-                -- Pending: case split on whether sR.tA or sR.tB is in the window.
+                -- Under recvA, `windowRewrite` rewrites `stA` never and `stB`
+                -- only when `tB = tStar`. Post-state has lastAction = sendA;
+                -- `stA` is never rewritten (sendA+tA=tStar-1 excluded by ¬hEmbed);
+                -- `stB` rewrite condition is the same (tB = tStar). So the
+                -- hybridProj's effect on the overlapping fields is identical.
+                -- Pending: precise simp/ext dispatch.
                 sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
