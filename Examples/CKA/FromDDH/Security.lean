@@ -1191,9 +1191,19 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
             simp only [OracleComp.ProgramLogic.Relational.EqRel] at hx_eq
             subst hx_eq
             refine OracleComp.ProgramLogic.Relational.relTriple_pure_pure ?_
-            refine ⟨rfl, ?_⟩
-            -- Pending: prove hybridRel post-state preservation.
-            sorry
+            refine ⟨rfl, ?_, ?_, sH.correct, ?_⟩
+            · -- phaseCounterInv post: lastAction = sendA needs tA = tB + 1.
+              simp only [ddhCKA.phaseCounterInv]; omega
+            · -- init clause: sendA ≠ none.
+              intro h; simp at h
+            · -- state match: sH_post_x = {hybridProj sR_post_x with correct := sH.correct}.
+              -- Pending: requires case split on inChallWindow status of sR_post_x
+              -- and sR, plus windowRewrite analysis. Under ¬hEmbed (sR.tA + 1 ≠
+              -- tStar - 1), the `.B` stA rewrite guard `sendA ∧ tA = tStar-1`
+              -- fails in the post-state. For stB, the guard depends on
+              -- `sR.tB == tStar`, with consistent behavior between pre and post
+              -- under the lastAction ∈ {none, recvA} + phaseCounterInv constraint.
+              sorry
       · -- Branch B: challenged ≠ .B, always non-embedding.
         have hLrec : sR.lastAction = none ∨ sR.lastAction = some .recvA := by
           rcases hL : sR.lastAction with _ | act
