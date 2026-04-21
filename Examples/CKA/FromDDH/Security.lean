@@ -1265,8 +1265,62 @@ private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     · -- Valid path: split further on `isChallengeEpoch`.
       obtain ⟨hP, hstep⟩ := hguard
       by_cases hchal : sR.tB + 1 = gp.tStar
-      · -- Branch C: embedding at challenge epoch.
-        sorry
+      · -- Branch C: embedding at challenge epoch. Mirror of challA with .B.
+        have hChallR : isChallengeEpoch gp
+            ({sR with tB := sR.tB + 1} : GameState (F ⊕ G) G G) = true := by
+          simp [isChallengeEpoch, GameState.tP, hP, hchal]
+        have hChallH : isChallengeEpoch gp
+            ({sH with tB := sH.tB + 1} : GameState (F ⊕ G) G G) = true := by
+          simp [isChallengeEpoch, GameState.tP, hP, hTb, hchal]
+        have hred : (reductionChallB (F := F) gp (b • gen) ((a * b) • gen) t).run sR = ($ᵗ F) >>= fun z => pure (some (b • gen, (a * b) • gen), ({ sR with tB := sR.tB + 1, stB := Sum.inl z, lastRhoB := some (b • gen), lastKeyB := some ((a * b) • gen), lastAction := some CKAAction.challB } : GameState (F ⊕ G) G G)) := by
+          simp [reductionChallB, hP, hstep, hChallR, StateT.run_bind,
+            StateT.run_get, StateT.run_liftM, StateT.run_set, bind_pure_comp,
+            Functor.map_map, Function.comp]
+        have hhyb : (hybridChallB (F := F) gp gen a b t).run sH = (pure (some (b • gen, (a * b) • gen), ({ sH with tB := sH.tB + 1, stB := Sum.inl b, lastRhoB := some (b • gen), lastKeyB := some ((a * b) • gen), lastAction := some CKAAction.challB } : GameState (F ⊕ G) G G)) : ProbComp _) := by
+          simp [hybridChallB, hP, hLA ▸ hstep, hChallH, StateT.run_bind,
+            StateT.run_get, StateT.run_set, bind_pure_comp,
+            Functor.map_map, Function.comp]
+        refine hred ▸ hhyb ▸ OracleComp.ProgramLogic.Relational.relTriple_pure_right_of_forall_support
+          (spec₁ := unifSpec) (spec₂ := unifSpec) ?_
+        intro x hx
+        obtain ⟨z, _, hx'⟩ := (mem_support_bind_iff _ _ _).mp hx
+        have hx_eq : x = (some (b • gen, (a * b) • gen), ({ sR with tB := sR.tB + 1, stB := Sum.inl z, lastRhoB := some (b • gen), lastKeyB := some ((a * b) • gen), lastAction := some CKAAction.challB } : GameState (F ⊕ G) G G)) := (mem_support_pure_iff _ _).mp hx'
+        subst hx_eq
+        refine ⟨rfl, ?_⟩
+        -- Derive sR.lastAction = recvB from validStep challB.
+        have hLrec : sR.lastAction = some .recvB := by
+          rcases hL : sR.lastAction with _ | act
+          · simp [hL, validStep] at hstep
+          · rcases act with _ | _ | _ | _ | _ | _ <;>
+              simp [hL, validStep] at hstep
+            rfl
+        -- From phaseCounterInv with lastAction = recvB: tA = tB.
+        have hTeq : sR.tA = sR.tB := by
+          unfold ddhCKA.phaseCounterInv at hpinv
+          rw [hLrec] at hpinv
+          exact hpinv
+        -- Under wellFormedGP .B: Even tStar ∧ tStar ≥ 2.
+        unfold wellFormedGP at hwf
+        rw [hP] at hwf
+        obtain ⟨hEven, hTstar⟩ := hwf
+        refine ⟨?_, ?_, sH.correct, ?_⟩
+        · simp only [ddhCKA.phaseCounterInv]; omega
+        · intro h; simp at h
+        · have hInWin : inChallWindow gp ({sR with tB := gp.tStar, stB := Sum.inl z, lastRhoB := some (b • gen), lastKeyB := some ((a * b) • gen), lastAction := some CKAAction.challB} : GameState (F ⊕ G) G G) = true := by
+            simp [inChallWindow]
+          have hInWinSR : inChallWindow gp sR = true := by
+            simp [inChallWindow, hLrec]; omega
+          have htAne : (sR.tA == gp.tStar) = false := by
+            simp; omega
+          have htBeq : (sR.tB == gp.tStar - 1) = true := by
+            simp; omega
+          subst hsHeq
+          simp only [hybridProj, hInWin, hInWinSR, if_true, windowRewrite,
+            hP, hLrec, hchal, decide_true, decide_false, htAne, htBeq,
+            Bool.or_true, Bool.and_true, Bool.true_and, Bool.or_false,
+            Bool.and_self, Bool.true_or, Bool.false_or, Bool.or_self,
+            Bool.false_and, Bool.and_false,
+            beq_self_eq_true, reduceCtorEq, Option.some.injEq, if_false]
       · -- Branch B: valid step but not challenge epoch. Both sides return
         -- `pure (none, _)` from the inner `else`-branch.
         have hChallR : isChallengeEpoch gp
