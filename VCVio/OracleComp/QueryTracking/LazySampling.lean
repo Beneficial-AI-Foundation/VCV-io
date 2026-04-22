@@ -97,16 +97,26 @@ theorem probOutput_simulateQ_greedyLazy_run'_some_eq
     (oa : OracleComp spec α) (a : τ) (s : σ) :
     evalDist ((simulateQ (implFam a) oa).run' s) =
       evalDist ((simulateQ (greedyLazy implFam) oa).run' (s, some a)) := by
-  -- Proof outline (to finish in follow-up):
-  -- apply `evalDist_eq_of_relTriple_eqRel` composed with `relTriple_simulateQ_run'`,
-  -- using `R_state := fun s₁ sc₂ => s₁ = sc₂.1 ∧ sc₂.2 = some a`.
-  -- The per-query premise reduces to showing that `(implFam a t).run s₁` and
-  -- `(greedyLazy implFam t).run (s₁, some a)` are related by output-equality
-  -- plus `R_state` on post-states, where the RHS is just `(fun p => (p.1, p.2, some a))
-  -- <$> (implFam a t).run s₁` (since the cache hit skips the `$ᵗ τ` sample). Construct
-  -- the coupling directly via the diagonal-map trick (LHS is `id <$> m`, RHS is
-  -- `(postproc) <$> m`, use `relTriple_map` + `relTriple_refl`).
-  sorry
+  revert s
+  induction oa using OracleComp.inductionOn with
+  | pure x => intro s; simp [simulateQ_pure]
+  | query_bind t k ih =>
+    intro s
+    apply evalDist_ext
+    intro y
+    simp only [simulateQ_bind, simulateQ_query, OracleQuery.cont_query, id_map,
+      OracleQuery.input_query, StateT.run'_eq, StateT.run_bind, map_bind]
+    -- Unfold `greedyLazy` at `some a` to a pure post-processing.
+    have hg : (greedyLazy implFam t).run (s, some a) =
+        (implFam a t).run s >>= fun p => (pure (p.1, p.2, some a) : ProbComp _) := by
+      simp [greedyLazy, StateT.run]
+    rw [hg, bind_assoc]
+    simp only [pure_bind]
+    -- Apply the inductive hypothesis pointwise.
+    refine probOutput_bind_congr' _ y fun p => ?_
+    have := ih p.1 p.2
+    simp only [StateT.run'_eq, map_bind] at this
+    exact congrFun (congrArg DFunLike.coe this) y
 
 /-- **External-sample commutation into `simulateQ` via greedy lazy sampling.**
 
@@ -125,6 +135,38 @@ theorem probOutput_simulateQ_greedyLazy_run'_eq
       let a ← ($ᵗ τ : ProbComp τ)
       (simulateQ (implFam a) oa).run' s) =
     evalDist ((simulateQ (greedyLazy implFam) oa).run' (s, none)) := by
-  sorry
+  revert s
+  induction oa using OracleComp.inductionOn with
+  | pure x =>
+    intro s
+    apply evalDist_ext
+    intro y
+    simp [simulateQ_pure, StateT.run'_eq, StateT.run_pure]
+  | query_bind t k ih =>
+    intro s
+    apply evalDist_ext
+    intro y
+    simp only [simulateQ_bind, simulateQ_query, OracleQuery.cont_query, id_map,
+      OracleQuery.input_query, StateT.run'_eq, StateT.run_bind, map_bind]
+    -- Unfold `greedyLazy` at `none`: samples `a`, runs `implFam a`, caches.
+    have hg : (greedyLazy implFam t).run (s, none) =
+        (do let a ← ($ᵗ τ : ProbComp τ)
+            let p ← (implFam a t).run s
+            pure (p.1, p.2, some a)) := by
+      simp [greedyLazy, StateT.run]
+    rw [hg]
+    -- Push bind associativity on both sides so the outer `$ᵗ τ` is shared.
+    simp only [bind_assoc, pure_bind]
+    -- Both sides now share the outer `$ᵗ τ >>= fun a => (implFam a t).run s >>= ...`;
+    -- reduce to pointwise equality and close via the cached-case lemma.
+    refine probOutput_bind_congr' _ y fun a => ?_
+    refine probOutput_bind_congr' _ y fun p => ?_
+    -- At this point, LHS continuation is `(simulateQ (implFam a) (k p.1)).run' p.2`
+    -- and RHS continuation is `(simulateQ (greedyLazy implFam) (k p.1)).run' (p.2, some a)`
+    -- (modulo the `Prod.fst <$> .run` / `.run'` conversion). Apply the cached lemma.
+    have h_cached := probOutput_simulateQ_greedyLazy_run'_some_eq
+      implFam (k p.1) a p.2
+    simp only [StateT.run'_eq] at h_cached
+    exact congrFun (congrArg DFunLike.coe h_cached) y
 
 end OracleComp.ProgramLogic.Relational
