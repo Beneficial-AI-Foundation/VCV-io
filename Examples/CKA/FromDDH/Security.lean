@@ -633,7 +633,17 @@ private lemma probOutput_securityExpFixedBit_true (gp : GameParams)
 `Pr[= false | G_R] = Pr[= false | G_CKA^{b=false}]`, bundling dead-store
 elimination (`probOutput_simulateQ_reductionOracleImpl_eq_primed`) with the
 eager-to-lazy+coupling step
-(`probOutput_reductionImpl'_real_eq_honest_false`). -/
+(`probOutput_reductionImpl'_real_eq_honest_false`).
+
+Closure recipe (follow-up proof engineering):
+1. Unfold both games; normalize the `let (b', _) ← m.run s; return b'` form
+   to `m.run' s` via `StateT.run'_eq` and `bind_pure_comp`.
+2. Apply `probOutput_simulateQ_reductionOracleImpl_eq_primed` pointwise in
+   `(a, b, x₀)` to replace `reductionOracleImpl` with `reductionOracleImpl'`.
+3. Commute `x₀ ← $F` outside the `(a, b)` binds via `probOutput_bind_bind_swap`.
+4. Apply `probOutput_reductionImpl'_real_eq_honest_false` pointwise in `x₀` to
+   collapse `do a, b ← $F; ... run' init` into `ckaSecurityImpl` at `b = false`.
+5. Note `{init with b := false} = init` when init was built with `b := false`. -/
 private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
@@ -645,7 +655,12 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
 `Pr[= false | G_Rand] = Pr[= false | G_CKA^{b=true}]`, bundling dead-store
 elimination with the eager-to-lazy+coupling step for the random branch
 (`probOutput_reductionImpl'_rand_eq_honest_true`, which uses `hg`
-bijectivity to couple `c • gen ↔ outKey ← $ᵗ G`). -/
+bijectivity to couple `c • gen ↔ outKey ← $ᵗ G`).
+
+Closure recipe: parallel to
+`probOutput_securityReductionRealGame_eq_honestFalse`, but with three
+external samples `(a, b, c)` on the reduction side and the honest init
+initialized with `b := true`. -/
 private lemma probOutput_securityReductionRandGame_eq_honestTrue
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
