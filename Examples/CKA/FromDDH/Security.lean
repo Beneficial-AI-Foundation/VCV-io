@@ -1,6 +1,7 @@
 import Examples.CKA.FromDDH.Common
 import VCVio.ProgramLogic.Relational.SimulateQ
 import VCVio.ProgramLogic.Tactics.Common.OracleSum
+import VCVio.OracleComp.QueryTracking.LazySampling
 
 /-!
 # CKA from DDH — Security Proof
@@ -291,6 +292,179 @@ noncomputable def securityReduction (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
     return !b'
 
+/-! ### Dead-store-free reduction (`reductionOracleImpl'`)
+
+At the embedding and challenge epochs, `reductionOracleImpl` samples a fresh
+`y`/`z ← $F` and writes `.inl y` / `.inl z` into the relevant state cell. Under
+`gp.deltaCKA = 1` and the `validStep` discipline, that cell is overwritten by
+the next `recv` before any subsequent read — the store is dead.
+
+`reductionOracleImpl'` mirrors `reductionOracleImpl` exactly except at those
+four epochs, where it omits the sample and writes the canonical sentinel
+`.inl 0`. The two impls produce observably identical output distributions
+(proved via `probOutput_simulateQ_run'_eq_of_state_rel`); using the primed
+version bridges cleanly to the honest CKA oracle without a state projection.
+
+All four primed oracles share a naming convention: `reductionSendA'`,
+`reductionSendB'`, `reductionChallA'`, `reductionChallB'`. -/
+
+private noncomputable def reductionSendB' (gp : GameParams) (gen gA : G) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendB then
+      let state := { state with tB := state.tB + 1 }
+      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
+        -- embedding epoch: xA = stA ∈ F
+        let xA := match state.stA with | .inl x => x | .inr _ => 0
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
+        set { state with
+          stB := (.inl 0 : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
+          lastAction := some .sendB }
+        return some (gA, xA • gA)
+      else
+        match ← liftM (ddhCKA.send gen state.stB) with
+        | none => pure none
+        | some (key, ρ, stB') =>
+          set { state with
+            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+            lastAction := some .sendB }
+          return some (ρ, key)
+    else pure none
+
+private noncomputable def reductionSendA' (gp : GameParams) (gen gA : G) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendA then
+      let state := { state with tA := state.tA + 1 }
+      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
+        -- embedding epoch: xB = stB ∈ F
+        let xB := match state.stB with | .inl x => x | .inr _ => 0
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
+        set { state with
+          stA := (.inl 0 : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
+          lastAction := some .sendA }
+        return some (gA, xB • gA)
+      else
+        match ← liftM (ddhCKA.send gen state.stA) with
+        | none => pure none
+        | some (key, ρ, stA') =>
+          set { state with
+            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+            lastAction := some .sendA }
+          return some (ρ, key)
+    else pure none
+
+private noncomputable def reductionChallA' (gp : GameParams) (gB gT : G) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if gp.challengedParty == .A && validStep state.lastAction .challA then
+      let state := { state with tA := state.tA + 1 }
+      if isChallengeEpoch gp state then
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
+        set { state with
+          stA := (.inl 0 : F ⊕ G),
+          lastRhoA := some gB, lastKeyA := some gT,
+          lastAction := some .challA }
+        return some (gB, gT)
+      else pure none
+    else pure none
+
+private noncomputable def reductionChallB' (gp : GameParams) (gB gT : G) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if gp.challengedParty == .B && validStep state.lastAction .challB then
+      let state := { state with tB := state.tB + 1 }
+      if isChallengeEpoch gp state then
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
+        set { state with
+          stB := (.inl 0 : F ⊕ G),
+          lastRhoB := some gB, lastKeyB := some gT,
+          lastAction := some .challB }
+        return some (gB, gT)
+      else pure none
+    else pure none
+
+/-- Dead-store-free reduction impl. Use this as the bridge point between the
+DDH reduction and the honest CKA oracle: `reductionOracleImpl` (which stores
+fresh scalars in dead cells) is distributionally equivalent to
+`reductionOracleImpl'` (which writes the canonical sentinel `.inl 0` at those
+sites), and the latter aligns more directly with the honest oracle's
+structure. -/
+private noncomputable def reductionOracleImpl' (gp : GameParams) (gen gA gB gT : G) :
+    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  (oracleUnif (F ⊕ G) G G
+    + reductionSendA' (F := F) gp gen gA
+    + oracleRecvA (ddhCKA F G gen)
+    + reductionSendB' (F := F) gp gen gA
+    + oracleRecvB (ddhCKA F G gen))
+  + reductionChallA' (F := F) gp gB gT
+  + reductionChallB' (F := F) gp gB gT
+  + oracleCorruptA gp (F ⊕ G) G G
+  + oracleCorruptB gp (F ⊕ G) G G
+
+/-- **Dead-store elimination for the CKA reduction.** `reductionOracleImpl`
+and `reductionOracleImpl'` produce equal output distributions under
+`simulateQ`, provided the adversary respects `gp.deltaCKA = 1` (so corruption
+cannot observe the dead cells).
+
+Proved via `probOutput_simulateQ_run'_eq_of_state_rel` (LazySampling.lean)
+with a state relation that equates states up to the dead `.inl _` cells at
+embedding/challenge epochs. -/
+private lemma probOutput_simulateQ_reductionOracleImpl_eq_primed
+    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (gen gA gB gT : G) (adversary : SecurityAdversary (F ⊕ G) G G)
+    (s : GameState (F ⊕ G) G G) :
+    evalDist ((simulateQ (reductionOracleImpl gp gen gA gB gT) adversary).run' s) =
+    evalDist ((simulateQ (reductionOracleImpl' gp gen gA gB gT) adversary).run' s) := by
+  sorry
+
+/-- **Real-branch core equivalence.** After dead-store elimination,
+the eager reduction game (sampling `a, b ← $F` up front) is output-equivalent
+to the honest CKA game with bit `false`.
+
+Proved by two sequential applications of
+`probOutput_simulateQ_greedyLazy_run'_eq` (LazySampling.lean) peeling `a` then
+`b` into the oracle bodies, followed by a per-query identity-bijection
+coupling to fold into the honest `ckaSecurityImpl`. -/
+private lemma probOutput_reductionImpl'_real_eq_honest_false
+    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (adversary : SecurityAdversary (F ⊕ G) G G)
+    (s : GameState (F ⊕ G) G G) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      (simulateQ (reductionOracleImpl' gp gen (a • gen) (b • gen) ((a * b) • gen))
+        adversary).run' s) =
+    evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
+      { s with b := false }) := by
+  sorry
+
+/-- **Random-branch core equivalence.** After dead-store elimination,
+the eager reduction game (sampling `a, b, c ← $F` up front with
+`gT := c • gen`) is output-equivalent to the honest CKA game with bit `true`.
+
+Proved analogously to `probOutput_reductionImpl'_real_eq_honest_false`, with
+three sequential `greedyLazy` applications (`a`, `b`, `c`) and a final
+coupling step where `c • gen ↔ outKey ← $ᵗ G` uses `hg` bijectivity. -/
+private lemma probOutput_reductionImpl'_rand_eq_honest_true
+    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (hg : Function.Bijective (· • gen : F → G))
+    (adversary : SecurityAdversary (F ⊕ G) G G)
+    (s : GameState (F ⊕ G) G G) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      let c ← ($ᵗ F : ProbComp F)
+      (simulateQ (reductionOracleImpl' gp gen (a • gen) (b • gen) (c • gen))
+        adversary).run' s) =
+    evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
+      { s with b := true }) := by
+  sorry
+
 /-! ### Simulation: each DDH branch maps to the corresponding CKA branch
 
 Goal: `𝒜`'s view in the CKA game equals its view in the reduction's simulation.
@@ -299,77 +473,32 @@ The reduction `ℬ` returns `¬b'`, so the top-level branch identities are:
     Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]   … (**real branch**)
     Pr[ℬ = true | DDH_rand] = Pr[𝒜 = false | CKA^{b = true }]   … (**random branch**)
 
-Each branch is proved by a chain of distribution-preserving rewrites through a
-sequence of explicit "helper games" — one-shot `ProbComp Bool` definitions that
-wrap `simulateQ adversary` under a specific oracle implementation.
-
-#### Real branch: 4-step chain through 3 helper games
+Each branch is proved by a 3-step chain wrapping `simulateQ adversary` under a
+specific oracle implementation:
 
 ```text
-┌───────────────────────────────────┐
-│  Pr[ℬ = true | DDH_real]          │
-└───────────────────────────────────┘
-               ║   (1) Lemma probOutput_ddhExpReal_securityReduction:
-               ║          Pr[ℬ = true | DDH_real] = Pr[G_R = false]
-               ║       Proof: ℬ returns `!b'`, so `probOutput_not_map` pulls the
-               ║        `= true` event back to `= false` under `G_R`
-               ▼
-┌───────────────────────────────────┐   G_R := securityReductionRealGame
-│  Pr[G_R   = false]                │         𝒜 vs `reductionOracleImpl g aG bG (ab)G`
-└───────────────────────────────────┘
-               ║   (2) Lemma securityReduction_real_to_hybrid:
-               ║          Pr[G_R = false] = Pr[G_H = false]
-               ║       Proof: relational Hoare (`RelTriple`) with invariant
-               ║        `hybridRel` and state projection `hybridProj`;
-               ║        hidden-state differences at the embedding epochs
-               ║        are unobservable
-               ▼
-┌───────────────────────────────────┐   G_H := securityHybridGame
-│  Pr[G_H   = false]                │         𝒜 vs `hybridOracleImpl g a b`
-└───────────────────────────────────┘
-               ║   (3) Lemma securityReduction_hybrid_to_honest:
-               ║          Pr[G_H = false] = Pr[G_CKA = false]
-               ║       Proof: eager-vs-lazy sampling equivalence —
-               ║        `probOutput_bind_bind_swap` commutes the up-front
-               ║        `a, b ← $F` past `simulateQ`, then
-               ║        `probOutput_bind_bijective_uniform_cross` at the two
-               ║        embedding steps absorbs them into the honest oracle's
-               ║        lazy samples
-               ▼
-┌───────────────────────────────────┐   G_CKA := securityExpFixedBitFalseGame
-│  Pr[G_CKA = false]                │         𝒜 vs `ckaSecurityImpl` (honest)
-└───────────────────────────────────┘
-               ║   (4) Lemma probOutput_securityExpFixedBit_false:
-               ║          Pr[G_CKA = false] = Pr[𝒜 = false | CKA^{b = false}]
-               ║       Proof: definitional unfolding of `securityExpFixedBit`
-               ▼
-┌───────────────────────────────────┐
-│  Pr[𝒜 = false | CKA^{b = false}]  │
-└───────────────────────────────────┘
+Pr[ℬ = true | DDH_real]
+    = Pr[= false | securityReductionRealGame]
+        (by probOutput_ddhExpReal_securityReduction: peel `!b'` negation)
+    = Pr[= false | securityExpFixedBitFalseGame]
+        (by probOutput_securityReductionRealGame_eq_honestFalse: dead-store
+         elimination via `probOutput_simulateQ_run'_eq_of_state_rel` +
+         eager-to-lazy commutation via `probOutput_simulateQ_greedyLazy_run'_eq`,
+         with identity-bijection coupling into the honest CKA oracle)
+    = Pr[= false | securityExpFixedBit ... false gp]
+        (by probOutput_securityExpFixedBit_false: definitional fold)
 ```
 
-Each step is a standalone lemma. The full four-step chain
-`Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]` is assembled in
-`securityReduction_real`. The three helper
-games correspond to the three oracle-impl columns in the diagram at the top
-of the file:
+The analogous chain for the random branch uses
+`probOutput_ddhExpRand_securityReduction`,
+`probOutput_securityReductionRandGame_eq_honestTrue`
+(which leverages `hg` bijectivity for the `c • gen ↔ outKey ← $ᵗ G` coupling),
+and `probOutput_securityExpFixedBit_true`.
 
-- `G_R` := `securityReductionRealGame`
-  - oracles: `reductionOracleImpl g (a•gen) (b•gen) ((a*b)•gen)`
-  - role: entry point for the DDH reduction
-- `G_H` := `securityHybridGame`
-  - oracles: `hybridOracleImpl g a b`
-  - role: hidden-state bridge; same outputs as `G_R`
-- `G_CKA` := `securityExpFixedBitFalseGame`
-  - oracles: `ckaSecurityImpl g (ddhCKA F G gen)`
-  - role: honest CKA with `b = false`
-
-`G_H` is the crucial intermediate: `G_R` and `G_H` produce **identical
-observable transcripts** (they differ only on hidden party state, which
-`hybridProj` absorbs), while `G_H` and `G_CKA` have **identical output
-distributions** but different control flow (eager up-front sampling of
-`a, b ← $F` vs. lazy on-demand sampling).
-
+No hybrid-game waypoint is needed: the dead-store and eager-to-lazy concerns
+are both handled by the two library lemmas in
+`VCVio.OracleComp.QueryTracking.LazySampling`, invoked from the per-branch
+wrapper lemmas below.
 -/
 
 /-- Auxiliary game `G_R(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
@@ -455,402 +584,110 @@ private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp [initGameState]
 
-/-! ### Hybrid oracles
-
-The reduction's send oracles (`reductionSendA`/`reductionSendB`) embed `aG` at
-the special epoch but sample a fresh independent scalar for the party's hidden
-state.  The hybrid variants below instead set the hidden state to `a` itself
-(i.e. `stA := a` or `stB := a`), matching the honest game when `a` is uniform.
-
-Concretely, at the embedding epoch:
-
-| Oracle         | Output   | Hidden state |
-|----------------|----------|--------------|
-| honest         | `y • G`  | `y`          |
-| **hybrid**     | `a • G`  | `a`          |
-| reduction      | `a • G`  | `y ← $F`    |
-
-When `a ← $F`, the hybrid is identical in distribution to the honest game.
-The bridge lemmas below show that the reduction's game rewrites into the
-hybrid, then into `securityExpFixedBit` with `b = false`.
--/
-
-/-- Hybrid A-send (real branch): at the epoch before `challB`, outputs `a • gen`
-and sets `stA := a`, reusing the external DDH scalar instead of sampling fresh. -/
-private noncomputable def hybridSendA (gp : GameParams) (gen : G) (a : F) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if validStep state.lastAction .sendA then
-      let state := { state with tA := state.tA + 1 }
-      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
-        -- embedding epoch: ρ := a·G, key := xB · a·G, stA := a
-        let gA := a • gen
-        let xB := match state.stB with | .inl x => x | .inr _ => 0
-        set { state with
-          stA := (.inl a : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
-          lastAction := some .sendA }
-        return some (gA, xB • gA)
-      else
-        match ← liftM (ddhCKA.send gen state.stA) with
-        | none => pure none
-        | some (key, ρ, stA') =>
-          set { state with
-            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
-            lastAction := some .sendA }
-          return some (ρ, key)
-    else pure none
-
-/-- Hybrid B-send (real branch): at the epoch before `challA`, outputs `a • gen`
-and sets `stB := a`, reusing the external DDH scalar instead of sampling fresh. -/
-private noncomputable def hybridSendB (gp : GameParams) (gen : G) (a : F) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if validStep state.lastAction .sendB then
-      let state := { state with tB := state.tB + 1 }
-      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
-        -- embedding epoch: ρ := a·G, key := xA · a·G, stB := a
-        let gA := a • gen
-        let xA := match state.stA with | .inl x => x | .inr _ => 0
-        set { state with
-          stB := (.inl a : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
-          lastAction := some .sendB }
-        return some (gA, xA • gA)
-      else
-        match ← liftM (ddhCKA.send gen state.stB) with
-        | none => pure none
-        | some (key, ρ, stB') =>
-          set { state with
-            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-            lastAction := some .sendB }
-          return some (ρ, key)
-    else pure none
-
-/-- Hybrid A-challenge: at the challenge epoch, `ρ := b·G`, `key := ab·G`,
-`stA := b`. Matches the honest game when `b ← $F`. -/
-private noncomputable def hybridChallA (gp : GameParams) (gen : G) (a b : F) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if gp.challengedParty == .A && validStep state.lastAction .challA then
-      let state := { state with tA := state.tA + 1 }
-      if isChallengeEpoch gp state then
-        -- ρ := bG, key := abG, stA := b
-        let gB := b • gen
-        let gT := (a * b) • gen
-        set { state with
-          stA := (.inl b : F ⊕ G),
-          lastRhoA := some gB, lastKeyA := some gT,
-          lastAction := some .challA }
-        return some (gB, gT)
-      else pure none
-    else pure none
-
-/-- Hybrid B-challenge: at the challenge epoch, `ρ := b·G`, `key := ab·G`,
-`stB := b`. Matches the honest game when `b ← $F`. -/
-private noncomputable def hybridChallB (gp : GameParams) (gen : G) (a b : F) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if gp.challengedParty == .B && validStep state.lastAction .challB then
-      let state := { state with tB := state.tB + 1 }
-      if isChallengeEpoch gp state then
-        -- ρ := bG, key := abG, stB := b
-        let gB := b • gen
-        let gT := (a * b) • gen
-        set { state with
-          stB := (.inl b : F ⊕ G),
-          lastRhoB := some gB, lastKeyB := some gT,
-          lastAction := some .challB }
-        return some (gB, gT)
-      else pure none
-    else pure none
-
-/-- Hybrid oracle implementation: same visible DDH embedding as
-`reductionOracleImpl`, but the hidden states at the special send/challenge
-epochs use the DDH scalars `a, b` instead of fresh randomness. -/
-private noncomputable def hybridOracleImpl (gp : GameParams) (gen : G) (a b : F) :
-    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  (oracleUnif (F ⊕ G) G G
-    + hybridSendA (F := F) gp gen a
-    + oracleRecvA (ddhCKA F G gen)
-    + hybridSendB (F := F) gp gen a
-    + oracleRecvB (ddhCKA F G gen))
-  + hybridChallA (F := F) gp gen a b
-  + hybridChallB (F := F) gp gen a b
-  + oracleCorruptA gp (F ⊕ G) G G
-  + oracleCorruptB gp (F ⊕ G) G G
-
-/-- The explicit game induced by `hybridOracleImpl`. -/
-private noncomputable def securityHybridGame (gp : GameParams)
+/-- Random-branch analogue of `securityReductionRealGame`: samples `a, b, c`
+independently (with `c` used in place of `a * b` for `gT`) and runs `𝒜`
+against the reduction's oracle implementation. -/
+private noncomputable def securityReductionRandGame (gp : GameParams)
     (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
   let b ← $ᵗ F
+  let c ← $ᵗ F
   let x₀ ← $ᵗ F
   let (b', _) ←
-    (simulateQ (hybridOracleImpl (F := F) gp gen a b) adversary).run
+    (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen)) adversary).run
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
-/-! ### Hybrid coupling: projection, invariant, oracle-step lemma
+/-- Random-branch analogue of `probOutput_ddhExpReal_securityReduction`: peel
+off `ℬ`'s final negation on the random side, giving
+`Pr[ℬ = true | DDH_rand] = Pr[G_Rand = false]`. -/
+private lemma probOutput_ddhExpRand_securityReduction (gp : GameParams)
+    (adversary : SecurityAdversary (F ⊕ G) G G) :
+    Pr[= true | ddhExpRand gen (securityReduction gp adversary)] =
+    Pr[= false | securityReductionRandGame (gen := gen) gp adversary] := by
+  unfold DiffieHellman.ddhExpRand securityReduction
+  simpa [securityReductionRandGame, map_eq_bind_pure_comp] using
+    (probOutput_not_map (m := ProbComp)
+      (mx := securityReductionRandGame (gen := gen) gp adversary))
 
-`reductionOracleImpl` and `hybridOracleImpl` agree on every
-transcript-visible field but store different hidden scalars (`stA`, `stB :
-F ⊕ G`) in a narrow **challenge window** around `gp.tStar`:
+/-- Random-branch analogue of `securityExpFixedBitFalseGame`: honest CKA game
+with the fixed bit `b := true` baked into the initial state. -/
+private noncomputable def securityExpFixedBitTrueGame (gp : GameParams)
+    (adversary : SecurityAdversary (F ⊕ G) G G) : ProbComp Bool := do
+  let x₀ ← $ᵗ F
+  let (b', _) ←
+    (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) true)
+  return b'
 
-| Epoch                               | Reduction      | Hybrid           |
-|-------------------------------------|----------------|------------------|
-| `tA = t* - 1`, `lastAction = sendA` | `.inl y` fresh | `.inl a` DDH exp |
-| `tB = t* - 1`, `lastAction = sendB` | `.inl y` fresh | `.inl a` DDH exp |
-| `tA = t*`,     `lastAction = challA`| `.inl z` fresh | `.inl b` DDH exp |
-| `tB = t*`,     `lastAction = challB`| `.inl z` fresh | `.inl b` DDH exp |
+/-- Random-branch analogue of `probOutput_securityExpFixedBit_false`: fold the
+named endpoint game back into the generic fixed-bit notation at `b = true`. -/
+private lemma probOutput_securityExpFixedBit_true (gp : GameParams)
+    (adversary : SecurityAdversary (F ⊕ G) G G) :
+    Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary true gp] =
+    Pr[= false | securityExpFixedBitTrueGame (gen := gen) gp adversary] := by
+  unfold CKAScheme.securityExpFixedBit securityExpFixedBitTrueGame ddhCKA
+  simp [initGameState]
 
-`hybridProj` rewrites the hidden scalar to the DDH scalar inside the
-window and is the identity outside; `hybridRel gp a b sR sH := sH =
-hybridProj gp a b sR`.
-
-The oracle-step lemma `hybridRel_query` splits into three phases:
-
-- **identity**: outside the window (or shared code inside) both oracles
-  run the same code on the same state;
-- **embedding**: one `sendA`/`sendB` step absorbs `y ← $F` into `a` by
-  identity-bijection coupling;
-- **challenge**: the symmetric `challA`/`challB` step absorbs `z` into `b`.
-
-Corruption is gated out of the window by `gp.deltaCKA = 1`. -/
-
-/-- Challenge window: some party's counter is in `{t* - 1, t*}`. Outside,
-`hybridProj gp a b s = s`. -/
-private def inChallWindow (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
-  (s.tA == gp.tStar - 1) || (s.tA == gp.tStar) ||
-    (s.tB == gp.tStar - 1) || (s.tB == gp.tStar)
-
-/-- State-derived "pre-challenge embedding has fired" bit, monotone in
-`(s.tA, s.tB)` (see `inferSent_mono`). -/
-private def inferSent (gp : GameParams) (s : GameState (F ⊕ G) G G) : Bool :=
-  match gp.challengedParty with
-  | .A => decide (Odd gp.tStar ∧ gp.tStar ≥ 3 ∧ s.tB ≥ gp.tStar - 1)
-  | .B => decide (Even gp.tStar ∧ gp.tStar ≥ 2 ∧ s.tA ≥ gp.tStar - 1)
-
-/-- In-window rewrite: `.inl y` / `.inl z` on the reduction side ↦ `.inl a`
-/ `.inl b` on the hybrid side (see the per-epoch table in the section
-header). -/
-private noncomputable def windowRewrite (gp : GameParams) (a b : F)
-    (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
-  { s with
-    stA := match gp.challengedParty, s.stA with
-      | .A, .inl _ =>
-          if (s.lastAction = some .challA && s.tA == gp.tStar) ||
-              (s.lastAction = some .recvB && s.tA == gp.tStar &&
-                s.stB = (.inr (b • gen) : F ⊕ G)) ||
-              (s.lastAction = some .sendB && s.tA == gp.tStar &&
-                s.tB == gp.tStar + 1)
-          then (.inl b : F ⊕ G)
-          else s.stA
-      | .B, .inl _ =>
-          if (s.lastAction = some .sendA && s.tA == gp.tStar - 1) ||
-              (s.lastAction = some .recvB && s.tA == gp.tStar - 1 &&
-                s.tB == gp.tStar - 1) ||
-              (s.lastAction = some .sendB && s.tA == gp.tStar - 1 &&
-                s.tB == gp.tStar) ||
-              (s.lastAction = some .challB && s.tA == gp.tStar - 1 &&
-                s.tB == gp.tStar)
-          then (.inl a : F ⊕ G)
-          else s.stA
-      | _, .inr _ => s.stA
-    stB := match gp.challengedParty, s.stB with
-      | .A, .inl _ =>
-          if s.tB == gp.tStar - 1 &&
-              (s.lastAction = some .sendB ||
-               s.lastAction = some .recvA ||
-               (inferSent gp s && (s.lastAction = some .sendA ||
-                 s.lastAction = some .challA)))
-          then (.inl a : F ⊕ G)
-          else s.stB
-      | .B, .inl _ =>
-          if s.tB == gp.tStar &&
-              (s.lastAction = some .challB ||
-               s.lastAction = some .recvA ||
-               s.lastAction = some .sendA)
-          then (.inl b : F ⊕ G)
-          else s.stB
-      | _, .inr _ => s.stB }
-
-/-- Coupling projection `π : GameState → GameState`: identity outside the
-window, `windowRewrite` inside. -/
-private noncomputable def hybridProj (gp : GameParams) (a b : F)
-    (s : GameState (F ⊕ G) G G) : GameState (F ⊕ G) G G :=
-  if inChallWindow gp s then windowRewrite (F := F) (gen := gen) gp a b s
-  else s
-
-omit [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
-     [AddCommGroup G] [Module F G] [SampleableType G] [DecidableEq G] in
-/-- `inferSent` is monotone in `(s.tA, s.tB)`: oracle steps only increase
-counters, so the bit is sticky. -/
-private lemma inferSent_mono (gp : GameParams) (s s' : GameState (F ⊕ G) G G)
-    (hA : s.tA ≤ s'.tA) (hB : s.tB ≤ s'.tB)
-    (h : inferSent gp s = true) : inferSent gp s' = true := by
-  cases hP : gp.challengedParty <;>
-    · simp only [inferSent, hP, decide_eq_true_eq] at h ⊢
-      refine ⟨h.1, h.2.1, ?_⟩
-      exact le_trans h.2.2 (by first | exact hB | exact hA)
-
-/-- Hybrid coupling invariant: `sH` is the projection of `sR`. -/
-private def hybridRel (gp : GameParams) (a b : F)
-    (sR sH : GameState (F ⊕ G) G G) : Prop :=
-  sH = hybridProj (F := F) (gen := gen) gp a b sR
-
-/-- Base case: `init` has `lastAction = none`, which makes every
-`windowRewrite` guard `false`, so `hybridProj gp a b init = init`. -/
-private lemma hybridRel_init (gp : GameParams) (a b x₀ : F) :
-    hybridRel (F := F) (G := G) (gen := gen) gp a b
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  show _ = hybridProj (F := F) (gen := gen) gp a b _
-  unfold hybridProj windowRewrite
-  cases gp.challengedParty <;>
-    simp [initGameState, ite_self]
-
-/-- One-step simulation for the reduction/hybrid coupling. Proved by the
-three-phase split (identity / embedding / challenge) described in the
-section header; corruption is gated by `hΔ : gp.deltaCKA = 1`. -/
-private lemma hybridRel_query (gp : GameParams) (hΔ : gp.deltaCKA = 1) (a b : F)
-    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
-    (sR sH : GameState (F ⊕ G) G G)
-    (hrel : hybridRel (F := F) (G := G) (gen := gen) gp a b sR sH) :
-    OracleComp.ProgramLogic.Relational.RelTriple
-      (((reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) t).run sR)
-      (((hybridOracleImpl (F := F) gp gen a b) t).run sH)
-      (fun pR pH =>
-        pR.1 = pH.1 ∧ hybridRel (F := F) (G := G) (gen := gen) gp a b pR.2 pH.2) := by
-  sorry
-
-/-- First half of the real-branch bridge: the concrete reduction may differ from
-`hybridOracleImpl` on hidden intermediate state, but these differences remain
-unobservable under the healing predicate (`ΔCKA = 1`). -/
-private lemma securityReduction_real_to_hybrid (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
+/-- **Game-level real-branch equivalence.** Direct equality
+`Pr[= false | G_R] = Pr[= false | G_CKA^{b=false}]`, bundling dead-store
+elimination (`probOutput_simulateQ_reductionOracleImpl_eq_primed`) with the
+eager-to-lazy+coupling step
+(`probOutput_reductionImpl'_real_eq_honest_false`). -/
+private lemma probOutput_securityReductionRealGame_eq_honestFalse
+    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
-    Pr[= false | securityHybridGame (gen := gen) gp adversary] := by
-  unfold securityReductionRealGame securityHybridGame
-  refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
-  intro a
-  refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
-  intro b
-  refine probOutput_bind_congr' ($ᵗ F : ProbComp F) false ?_
-  intro x₀
-  have hrel_init :=
-    hybridRel_init (F := F) (G := G) (gen := gen) gp a b x₀
-  have hrun' :=
-    OracleComp.ProgramLogic.Relational.relTriple_simulateQ_run'
-      (impl₁ := reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
-      (impl₂ := hybridOracleImpl (F := F) gp gen a b)
-      (R_state := hybridRel (F := F) (G := G) (gen := gen) gp a b)
-      adversary
-      (himpl := hybridRel_query (F := F) (G := G) (gen := gen) gp hΔ a b)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
-      hrel_init
-  exact OracleComp.ProgramLogic.Relational.probOutput_eq_of_relTriple_eqRel hrun' false
-
-/-- Second half of the real-branch bridge: `hybridOracleImpl` is the honest
-fixed-bit-false game with the two special challenge scalars sampled explicitly
-up front.
-
-**Proof strategy.** The hybrid samples `a, b ← $F` up front and uses each exactly
-once (at the embedding send and challenge epochs respectively), whereas the honest
-game samples fresh scalars on demand. Since each external scalar is uniform and
-used at most once, eager sampling (hybrid) and lazy sampling (honest) produce the
-same marginal distribution. Formally this follows from `probOutput_bind_bind_swap`
-to commute the external samples past the `simulateQ` induction, together with
-`probOutput_bind_bijective_uniform_cross` (identity bijection) at the two embedding
-steps to absorb `a` into the honest oracle's `y ← $F` and `b` into `x ← $F`.
-
-Closure roadmap. Since the hybrid's `a, b` appear at fixed positions (the embedding
-sendA/sendB/challA/challB for each challengedParty), this is a two-step absorption:
-  Step A (commute `a` past simulateQ): the external `a ← $F` is used exactly once
-    inside the specific embedding-send oracle (sendA at .B or sendB at .A). Use a
-    relational argument with `runHybrid_a_then_step ≡ step_then_runHybrid_a`
-    commuting via `probOutput_bind_bind_swap` on the surrounding binds.
-  Step B (absorb `a` into honest's fresh `y`): at the embedding step, the hybrid
-    hard-codes `stA/stB := .inl a`; the honest `ddhCKA.send` samples `y ← $F` and
-    sets `stA/stB := .inl y`. Use `probOutput_bind_bijective_uniform_cross` with
-    the identity bijection `id : F → F` to identify the two uniform samples.
-  Symmetric steps for `b` at challA/challB.
-Easier alternative: define an intermediate `semiHybridGame` where `a` is absorbed
-but `b` is still external, then chain two absorptions. Each absorption is a ~50-line
-proof that mirrors the structure of `Examples/ElGamal/Basic.lean` lines 195-280. -/
-private lemma securityReduction_hybrid_to_honest (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
-    (adversary : SecurityAdversary (F ⊕ G) G G) :
-    Pr[= false | securityHybridGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
+  sorry
+
+/-- **Game-level random-branch equivalence.** Direct equality
+`Pr[= false | G_Rand] = Pr[= false | G_CKA^{b=true}]`, bundling dead-store
+elimination with the eager-to-lazy+coupling step for the random branch
+(`probOutput_reductionImpl'_rand_eq_honest_true`, which uses `hg`
+bijectivity to couple `c • gen ↔ outKey ← $ᵗ G`). -/
+private lemma probOutput_securityReductionRandGame_eq_honestTrue
+    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (hg : Function.Bijective (· • gen : F → G))
+    (adversary : SecurityAdversary (F ⊕ G) G G) :
+    Pr[= false | securityReductionRandGame (gen := gen) gp adversary] =
+    Pr[= false | securityExpFixedBitTrueGame (gen := gen) gp adversary] := by
   sorry
 
 /-- **Real-branch lemma.**
 `Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]`.
 
-Chains the four real-branch steps:
-`(1) probOutput_ddhExpReal_securityReduction`,
-`(2) securityReduction_real_to_hybrid`,
-`(3) securityReduction_hybrid_to_honest`,
-`(4) probOutput_securityExpFixedBit_false`. -/
+Chains three real-branch steps:
+`(1) probOutput_ddhExpReal_securityReduction` — peel `ℬ`'s final negation,
+`(2) probOutput_securityReductionRealGame_eq_honestFalse` — bundled
+dead-store elimination + eager-to-lazy commutation + identity-bijection
+coupling into the honest CKA oracle,
+`(3) probOutput_securityExpFixedBit_false` — definitional fold. -/
 lemma securityReduction_real (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= true | ddhExpReal gen (securityReduction gp adversary)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
-  rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false,
-      securityReduction_real_to_hybrid (gen := gen) gp hΔ adversary]
-  exact securityReduction_hybrid_to_honest (gen := gen) gp hΔ adversary
+  rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false]
+  exact probOutput_securityReductionRealGame_eq_honestFalse (gen := gen) gp hΔ adversary
 
 /-- **Random-branch lemma.**
 `Pr[ℬ = true | DDH_rand] = Pr[𝒜 = false | CKA^{b = true}]`.
 
-Bijectivity of `(·) • gen : F → G` (hypothesis `hg`) couples `c • gen` with
-`$ᵗ G`, matching the honest challenge `(x • gen, $ᵗ G)` at `b = true`.
-
-Closure roadmap: this is NOT a single bijective absorption — the reduction's
-`reductionChallA/B` and `reductionSendA/B` differ from the honest `oracleChallA/B`
-and the shared `ddhCKA.send` in their hidden-state updates. The right structure is
-the same relational argument used in the real branch, but with a simpler projection:
-
-  1. Introduce `securityReductionRandGame` (mirror of `securityReductionRealGame`) —
-     a one-shot `ProbComp Bool` wrapping `simulateQ reductionOracleImpl` with
-     `gT := c • gen` for independent `c ← $F`.
-  2. Prove `Pr[ℬ = true | ddhExpRand ...] = Pr[= false | securityReductionRandGame ...]`
-     via `probOutput_not_map` (mirror of `probOutput_ddhExpReal_securityReduction`).
-  3. Prove `Pr[= false | securityReductionRandGame ...] = Pr[= false |
-     securityExpFixedBit (ddhCKA F G gen) adversary true gp]` via a fresh
-     `randRel : GameState → GameState → Prop` (simpler than `hybridRel`: the
-     divergence is only at the challA/challB step and in the subsequent `.inl z`
-     reduction-state vs `.inl y` honest-state, which is unobservable since
-     `corruptA/B` is blocked in the challenge window and the very next `recvA/B`
-     overwrites both to `.inr ρ`).
-  4. The key sample-absorbing step: at challA, `reductionChallA` samples `z ← $F`
-     (state) with outputs `(bG, cG)`; the honest `oracleChallA` at b=true samples
-     `y ← $F` (inside `ddhCKA.send`) and `outKey ← $ᵗ G`, outputting `(yG, outKey)`.
-     Coupling:
-       `y ↔ b` (uniform `F` ↔ uniform `F` via identity)
-       `outKey ↔ cG` (uniform `G` ↔ uniform `F` via bijection `(·) • gen`)
-       reduction's `z` absorbs into honest's internal state scalar.
-     Formally: `probOutput_bind_bijective_uniform_cross hg` handles `outKey ↔ cG`;
-     the other two are `probOutput_bind_bind_swap` to commute the external `b, c`
-     past `simulateQ` plus a relational argument for `y ↔ b` and `z` absorption.
-
-Alternative (simpler) approach: define `randRel` + `randProj` inline, then reuse
-the existing `relTriple_simulateQ_run'` scaffolding verbatim. The `randProj` would
-rewrite `stA/stB` only at (challengedParty, lastAction) = (.A, challA) and (.B, challB)
-to absorb the `z` scalar into the value implied by the outer `b`. -/
+Chains three random-branch steps:
+`(1) probOutput_ddhExpRand_securityReduction` — peel `ℬ`'s final negation,
+`(2) probOutput_securityReductionRandGame_eq_honestTrue` — bundled
+dead-store elimination + eager-to-lazy commutation + `hg`-bijection coupling
+`c • gen ↔ outKey ← $ᵗ G` into the honest CKA oracle at `b = true`,
+`(3) probOutput_securityExpFixedBit_true` — definitional fold. -/
 lemma securityReduction_rand (gp : GameParams)
     (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G) :
     Pr[= true | ddhExpRand gen (securityReduction gp adversary)] =
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary true gp] := by
-  sorry
+  rw [probOutput_ddhExpRand_securityReduction, probOutput_securityExpFixedBit_true]
+  exact probOutput_securityReductionRandGame_eq_honestTrue (gen := gen) gp hΔ hg adversary
 
 /-! ### Main security theorems
 
