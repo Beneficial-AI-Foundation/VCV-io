@@ -80,37 +80,49 @@ Given a DDH triple `(gen, gA, gB, gT)` with
 
 ```text
  DDH Challenger                 DDH Adversary ℬ = securityReduction gp 𝒜
-┌──────────────┐               ┌──────────────────────────────────────────────────────────┐
-│              │ (gen,gA,gB,gT)│ sample x₀ ←$ F                                           │
-│  gA = a•gen  │──────────────▶│ init A with g₀ := x₀ • gen, init B with x₀               │
-│  gB = b•gen  │               │                                                          │
-│  gT = c•gen  │               │ simulate CKA oracles for 𝒜 (honest except below):        │
-│              │               │                                                          │
-│  c = a·b     │               │          Honest CKA    │ Hybrid        │ Reduction       │
-│  or random   │               │ ─────────────────────────────────────────────────────────│
-│              │               │ O-Send-B, tB = t* - 1, stA = xA ∈ F, stB = xA•gen ∈ G    │
-│              │               │   y ←$ F               │               │                 │
-│              │               │   ρ   = y • gen        │ ρ   = gA      │ ρ   = gA        │
-│              │               │   key = y • xA • gen   │ key = xA • gA │ key = xA • gA   │
-│              │               │   stB := y             │ stB := a      │ stB := y        │
-│              │               │ ─────────────────────────────────────────────────────────│
-│              │               │ recvA delivers ρ from above:                             │
-│              │               │   stA := y • gen       │ stA := gA     │ stA := gA       │
-│              │               │ ─────────────────────────────────────────────────────────│
-│              │               │ O-Chall-A, tA = t*, (stA, stB) as updated above:         │
-│              │               │   x ←$ F               │               │                 │
-│              │               │   ρ   = x • gen        │ ρ   = gB      │ ρ   = gB        │
-│              │               │   key = x • stA        │ key = gT      │ key = gT        │
-│              │               │   stA := x             │ stA := b      │ stA := z        │
-│              │               │ · · · · · · · · · · · · · · · · · · · · · · · · · · · · ·│
-│              │               │   real: gT = b • gA                random: gT ←$ G       │
-│              │               │ ─────────────────────────────────────────────────────────│
-│              │               │ all later queries: honest in all three                   │
-│              │               │                                                          │
-│              │     !b'       │ output !b', where b' is 𝒜's challenge guess              │
-│              │◀──────────────│                                                          │
-└──────────────┘               └──────────────────────────────────────────────────────────┘
+┌──────────────┐               ┌──────────────────────────────────────────────────┐
+│              │ (gen,gA,gB,gT)│ sample x₀ ←$ F                                   │
+│  gA = a•gen  │──────────────▶│ init A with g₀ := x₀ • gen, init B with x₀       │
+│  gB = b•gen  │               │                                                  │
+│  gT = c•gen  │               │ simulate CKA oracles for 𝒜 (honest except below):│
+│              │               │                                                  │
+│  c = a·b     │               │          Honest CKA        │ Reduction           │
+│  or random   │               │ ─────────────────────────────────────────────────│
+│              │               │ O-Send-B, tB = t* - 1, stA = xA ∈ F, stB = xA•gen│
+│              │               │   y ←$ F                   │                     │
+│              │               │   ρ   = y • gen            │ ρ   = gA            │
+│              │               │   key = y • xA • gen       │ key = xA • gA       │
+│              │               │   stB := y (live)          │ stB := 0 (dead)     │
+│              │               │ ─────────────────────────────────────────────────│
+│              │               │ recvA delivers ρ from above:                     │
+│              │               │   stA := y • gen           │ stA := gA           │
+│              │               │ ─────────────────────────────────────────────────│
+│              │               │ O-Chall-A, tA = t*, (stA, stB) as updated above: │
+│              │               │   x ←$ F                   │                     │
+│              │               │   ρ   = x • gen            │ ρ   = gB            │
+│              │               │   key = x • stA            │ key = gT            │
+│              │               │   stA := x (live)          │ stA := 0 (dead)     │
+│              │               │ · · · · · · · · · · · · · · · · · · · · · · · · ·│
+│              │               │  real: gT = b • gA            random: gT ←$ G    │
+│              │               │ ─────────────────────────────────────────────────│
+│              │               │ all later queries: honest in both columns        │
+│              │               │                                                  │
+│              │     !b'       │ output !b', where b' is 𝒜's challenge guess      │
+│              │◀──────────────│                                                  │
+└──────────────┘               └──────────────────────────────────────────────────┘
 ```
+
+The reduction's `stA`/`stB := 0` writes at the embedding and challenge epochs
+are *dead*: under `validStep` + `ΔCKA = 1`, the next `recv` overwrites the cell
+before the adversary can observe it (via corruption, which is blocked in the
+challenge window, or via a dependent send, which validStep blocks until the
+next recv fires). The reduction could equivalently sample a fresh `y`/`z ← $F`
+there (as the honest game does) without changing its output distribution as a
+DDH adversary; writing the canonical sentinel is chosen so that after
+eager→lazy commutation of the external DDH scalars via
+`probOutput_simulateQ_greedyLazy_run'_eq`, the per-query coupling to the
+honest CKA oracle is a clean identity-bijection with no extra per-query source
+of randomness to marginalize away relationally.
 
 **Bit convention.** DDH uses `true` for the real branch, whereas the CKA game
 uses `true` for the random branch. Thus real DDH corresponds to `b = false`
@@ -132,18 +144,20 @@ variable [DecidableEq G]
 
 /-! ### DDH reduction
 
-The reduction receives a DDH tuple `(G, aG, bG, gT)` where `a, b ← $F` and
-either `gT = abG` (real) or `gT = cG` for `c ← $F` (random). -/
+The reduction receives a DDH tuple `(gen, aG, bG, gT)` where `a, b ← $F` and
+either `gT = abG` (real) or `gT = cG` for `c ← $F` (random).
 
-/-- **O-Send-B** (modified for DDH reduction). `() → Option (ρ : G, key : G)`.
+At the embedding and challenge epochs, the reduction writes the canonical
+sentinel `.inl 0` into the relevant hidden state cell rather than sampling a
+fresh scalar. Under `gp.deltaCKA = 1` and the `validStep` discipline, the cell
+is overwritten by the next `recv` before any subsequent read can observe it
+(directly via corruption or indirectly via a dependent send), so the stored
+value is *dead* — sampling vs. writing a sentinel does not change the
+reduction's output distribution as a DDH adversary. The sentinel form is used
+because it makes the coupling to the honest CKA game per-query a clean
+identity-bijection on the external DDH scalars, with no extra per-query source
+of randomness to marginalize away relationally. -/
 
-At `tB = t* - 1` (embedding epoch), with state `(stA, stB) = (xA ∈ F, h ∈ G)`:
-- Reduction: `(ρ, key) = (aG, xA · aG)` — embeds DDH element `aG`
-- Honest CKA: `(ρ, key) = (y · G, y · xA · G)` for `y ← $F`
-- Same distribution since `a` is uniform like `y`
-- Update: `(stA, stB, tB) ← (xA, y ∈ F, tB + 1)` for fresh `y ← $F`
-
-All other epochs: delegates to `oracleSendB`. -/
 private noncomputable def reductionSendB (gp : GameParams) (gen gA : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
@@ -153,11 +167,9 @@ private noncomputable def reductionSendB (gp : GameParams) (gen gA : G) :
       if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
         -- embedding epoch: xA = stA ∈ F
         let xA := match state.stA with | .inl x => x | .inr _ => 0
-        -- y ← $F (independent of a; hidden state diverges from hybrid)
-        let y ← liftM ($ᵗ F : ProbComp F)
-        -- ρ := aG, key := xA · aG, stB := y
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
         set { state with
-          stB := (.inl y : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
+          stB := (.inl 0 : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
           lastAction := some .sendB }
         return some (gA, xA • gA)
       else
@@ -170,16 +182,6 @@ private noncomputable def reductionSendB (gp : GameParams) (gen gA : G) :
           return some (ρ, key)
     else pure none
 
-/-- **O-Send-A** (modified for DDH reduction, symmetric to `reductionSendB`).
-`() → Option (ρ : G, key : G)`.
-
-At `tA = t*` (embedding epoch), with state `(stA, stB) = (h ∈ G, xB ∈ F)`:
-- Reduction: `(ρ, key) = (aG, xB · aG)` — embeds DDH element `aG`
-- Honest CKA: `(ρ, key) = (x · G, x · xB · G)` for `x ← $F`
-- Same distribution since `a` is uniform like `x`
-- Update: `(stA, stB, tA) ← (y ∈ F, xB, tA + 1)` for fresh `y ← $F`
-
-All other epochs: delegates to `oracleSendA`. -/
 private noncomputable def reductionSendA (gp : GameParams) (gen gA : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
@@ -189,11 +191,9 @@ private noncomputable def reductionSendA (gp : GameParams) (gen gA : G) :
       if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
         -- embedding epoch: xB = stB ∈ F
         let xB := match state.stB with | .inl x => x | .inr _ => 0
-        -- y ← $F (independent of a; hidden state diverges from hybrid)
-        let y ← liftM ($ᵗ F : ProbComp F)
-        -- ρ := aG, key := xB · aG, stA := y
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
         set { state with
-          stA := (.inl y : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
+          stA := (.inl 0 : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
           lastAction := some .sendA }
         return some (gA, xB • gA)
       else
@@ -206,16 +206,6 @@ private noncomputable def reductionSendA (gp : GameParams) (gen gA : G) :
           return some (ρ, key)
     else pure none
 
-/-- **O-Chall-A** (modified for DDH reduction). `() → Option (ρ : G, key : G)`.
-
-At `tA = t*`:
-With state `(stA, stB) = (aG ∈ G, xB ∈ F)`:
-- Reduction: `(ρ, key) = (gB, gT)` directly from DDH tuple
-- Honest CKA: `(ρ, key) = (x · G, x · aG)` for `x ← $F`
-- Real DDH: `(gB, gT) = (bG, b · aG)` by `smul_comm`; same distribution
-- Random DDH: `gT = cG` for uniform `c`, matching `$ᵗ G`
-- Update: `(stA, tA) ← (z ∈ F, tA + 1)` for fresh `z ← $F` (not `b`);
-  `ΔCKA = 1` prevents corruption before `z` is overwritten -/
 private noncomputable def reductionChallA (gp : GameParams) (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
@@ -223,22 +213,15 @@ private noncomputable def reductionChallA (gp : GameParams) (gB gT : G) :
     if gp.challengedParty == .A && validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
       if isChallengeEpoch gp state then
-        let z ← liftM ($ᵗ F : ProbComp F)
-        -- z ← $F independent of b; ρ := gB, key := gT, stA := z
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
         set { state with
-          stA := (.inl z : F ⊕ G),
+          stA := (.inl 0 : F ⊕ G),
           lastRhoA := some gB, lastKeyA := some gT,
           lastAction := some .challA }
         return some (gB, gT)
       else pure none
     else pure none
 
-/-- **O-Chall-B** (modified for DDH reduction, symmetric to `reductionChallA`).
-`() → Option (ρ : G, key : G)`.
-
-With state `(stA, stB) = (xA ∈ F, bG ∈ G)`:
-- Output: `(ρ, key) = (gB, gT)` from DDH tuple
-- Update: `(stB, tB) ← (z ∈ F, tB + 1)` for fresh `z ← $F` -/
 private noncomputable def reductionChallB (gp : GameParams) (gB gT : G) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
@@ -246,24 +229,21 @@ private noncomputable def reductionChallB (gp : GameParams) (gB gT : G) :
     if gp.challengedParty == .B && validStep state.lastAction .challB then
       let state := { state with tB := state.tB + 1 }
       if isChallengeEpoch gp state then
-        let z ← liftM ($ᵗ F : ProbComp F)
-        -- z ← $F independent of b; ρ := gB, key := gT, stB := z
+        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
         set { state with
-          stB := (.inl z : F ⊕ G),
+          stB := (.inl 0 : F ⊕ G),
           lastRhoB := some gB, lastKeyB := some gT,
           lastAction := some .challB }
         return some (gB, gT)
       else pure none
     else pure none
 
-/-- Oracle implementation `R(g, aG, bG, gT)` for the DDH reduction.
-
-Embeds the DDH tuple into the oracles for `challengedParty` (read from state):
-- The other party's send embeds `aG` at `isOtherSendBeforeChall`
-- The challenge oracle embeds `(gB, gT)` at `isChallengeEpoch`
-
-All modified oracles are always present; each guards on `challengedParty`
-internally, so only the relevant ones fire. -/
+/-- Dead-store-free reduction impl. Use this as the bridge point between the
+DDH reduction and the honest CKA oracle: `reductionOracleImpl` (which stores
+fresh scalars in dead cells) is distributionally equivalent to
+`reductionOracleImpl` (which writes the canonical sentinel `.inl 0` at those
+sites), and the latter aligns more directly with the honest oracle's
+structure. -/
 private noncomputable def reductionOracleImpl (gp : GameParams) (gen gA gB gT : G) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   (oracleUnif (F ⊕ G) G G
@@ -292,152 +272,25 @@ noncomputable def securityReduction (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
     return !b'
 
-/-! ### Dead-store-free reduction (`reductionOracleImpl'`)
-
-At the embedding and challenge epochs, `reductionOracleImpl` samples a fresh
-`y`/`z ← $F` and writes `.inl y` / `.inl z` into the relevant state cell. Under
-`gp.deltaCKA = 1` and the `validStep` discipline, that cell is overwritten by
-the next `recv` before any subsequent read — the store is dead.
-
-`reductionOracleImpl'` mirrors `reductionOracleImpl` exactly except at those
-four epochs, where it omits the sample and writes the canonical sentinel
-`.inl 0`. The two impls produce observably identical output distributions
-(proved via `probOutput_simulateQ_run'_eq_of_state_rel`); using the primed
-version bridges cleanly to the honest CKA oracle without a state projection.
-
-All four primed oracles share a naming convention: `reductionSendA'`,
-`reductionSendB'`, `reductionChallA'`, `reductionChallB'`. -/
-
-private noncomputable def reductionSendB' (gp : GameParams) (gen gA : G) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if validStep state.lastAction .sendB then
-      let state := { state with tB := state.tB + 1 }
-      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
-        -- embedding epoch: xA = stA ∈ F
-        let xA := match state.stA with | .inl x => x | .inr _ => 0
-        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
-        set { state with
-          stB := (.inl 0 : F ⊕ G), lastRhoB := some gA, lastKeyB := some (xA • gA),
-          lastAction := some .sendB }
-        return some (gA, xA • gA)
-      else
-        match ← liftM (ddhCKA.send gen state.stB) with
-        | none => pure none
-        | some (key, ρ, stB') =>
-          set { state with
-            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
-            lastAction := some .sendB }
-          return some (ρ, key)
-    else pure none
-
-private noncomputable def reductionSendA' (gp : GameParams) (gen gA : G) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if validStep state.lastAction .sendA then
-      let state := { state with tA := state.tA + 1 }
-      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
-        -- embedding epoch: xB = stB ∈ F
-        let xB := match state.stB with | .inl x => x | .inr _ => 0
-        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
-        set { state with
-          stA := (.inl 0 : F ⊕ G), lastRhoA := some gA, lastKeyA := some (xB • gA),
-          lastAction := some .sendA }
-        return some (gA, xB • gA)
-      else
-        match ← liftM (ddhCKA.send gen state.stA) with
-        | none => pure none
-        | some (key, ρ, stA') =>
-          set { state with
-            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
-            lastAction := some .sendA }
-          return some (ρ, key)
-    else pure none
-
-private noncomputable def reductionChallA' (gp : GameParams) (gB gT : G) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if gp.challengedParty == .A && validStep state.lastAction .challA then
-      let state := { state with tA := state.tA + 1 }
-      if isChallengeEpoch gp state then
-        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
-        set { state with
-          stA := (.inl 0 : F ⊕ G),
-          lastRhoA := some gB, lastKeyA := some gT,
-          lastAction := some .challA }
-        return some (gB, gT)
-      else pure none
-    else pure none
-
-private noncomputable def reductionChallB' (gp : GameParams) (gB gT : G) :
-    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  fun () => do
-    let state ← get
-    if gp.challengedParty == .B && validStep state.lastAction .challB then
-      let state := { state with tB := state.tB + 1 }
-      if isChallengeEpoch gp state then
-        -- NO sample: dead store eliminated, canonical sentinel `.inl 0`
-        set { state with
-          stB := (.inl 0 : F ⊕ G),
-          lastRhoB := some gB, lastKeyB := some gT,
-          lastAction := some .challB }
-        return some (gB, gT)
-      else pure none
-    else pure none
-
-/-- Dead-store-free reduction impl. Use this as the bridge point between the
-DDH reduction and the honest CKA oracle: `reductionOracleImpl` (which stores
-fresh scalars in dead cells) is distributionally equivalent to
-`reductionOracleImpl'` (which writes the canonical sentinel `.inl 0` at those
-sites), and the latter aligns more directly with the honest oracle's
-structure. -/
-private noncomputable def reductionOracleImpl' (gp : GameParams) (gen gA gB gT : G) :
-    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
-  (oracleUnif (F ⊕ G) G G
-    + reductionSendA' (F := F) gp gen gA
-    + oracleRecvA (ddhCKA F G gen)
-    + reductionSendB' (F := F) gp gen gA
-    + oracleRecvB (ddhCKA F G gen))
-  + reductionChallA' (F := F) gp gB gT
-  + reductionChallB' (F := F) gp gB gT
-  + oracleCorruptA gp (F ⊕ G) G G
-  + oracleCorruptB gp (F ⊕ G) G G
-
-/-- **Dead-store elimination for the CKA reduction.** `reductionOracleImpl`
-and `reductionOracleImpl'` produce equal output distributions under
-`simulateQ`, provided the adversary respects `gp.deltaCKA = 1` (so corruption
-cannot observe the dead cells).
-
-Proved via `probOutput_simulateQ_run'_eq_of_state_rel` (LazySampling.lean)
-with a state relation that equates states up to the dead `.inl _` cells at
-embedding/challenge epochs. -/
-private lemma probOutput_simulateQ_reductionOracleImpl_eq_primed
-    (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (gen gA gB gT : G) (adversary : SecurityAdversary (F ⊕ G) G G)
-    (s : GameState (F ⊕ G) G G) :
-    evalDist ((simulateQ (reductionOracleImpl gp gen gA gB gT) adversary).run' s) =
-    evalDist ((simulateQ (reductionOracleImpl' gp gen gA gB gT) adversary).run' s) := by
-  sorry
-
-/-- **Real-branch core equivalence.** After dead-store elimination,
-the eager reduction game (sampling `a, b ← $F` up front) is output-equivalent
-to the honest CKA game with bit `false`.
+/-- **Real-branch core equivalence.** The eager reduction game (sampling
+`a, b ← $F` up front and running `𝒜` against `reductionOracleImpl`) is
+output-equivalent to the honest CKA game with bit `false`.
 
 Proved by two sequential applications of
 `probOutput_simulateQ_greedyLazy_run'_eq` (LazySampling.lean) peeling `a` then
 `b` into the oracle bodies, followed by a per-query identity-bijection
-coupling to fold into the honest `ckaSecurityImpl`. -/
-private lemma probOutput_reductionImpl'_real_eq_honest_false
+coupling to fold into the honest `ckaSecurityImpl`. The state divergence at
+the four dead-write sites (reduction writes `.inl 0`, honest writes
+`.inl y'` for the sample just taken) is absorbed relationally by a state
+relation that treats dead `.inl _` cells as tolerantly equal. -/
+private lemma probOutput_reductionImpl_real_eq_honest_false
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G)
     (s : GameState (F ⊕ G) G G) :
     evalDist (do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
-      (simulateQ (reductionOracleImpl' gp gen (a • gen) (b • gen) ((a * b) • gen))
+      (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
         adversary).run' s) =
     evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
       { s with b := false }) := by
@@ -447,10 +300,10 @@ private lemma probOutput_reductionImpl'_real_eq_honest_false
 the eager reduction game (sampling `a, b, c ← $F` up front with
 `gT := c • gen`) is output-equivalent to the honest CKA game with bit `true`.
 
-Proved analogously to `probOutput_reductionImpl'_real_eq_honest_false`, with
+Proved analogously to `probOutput_reductionImpl_real_eq_honest_false`, with
 three sequential `greedyLazy` applications (`a`, `b`, `c`) and a final
 coupling step where `c • gen ↔ outKey ← $ᵗ G` uses `hg` bijectivity. -/
-private lemma probOutput_reductionImpl'_rand_eq_honest_true
+private lemma probOutput_reductionImpl_rand_eq_honest_true
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : SecurityAdversary (F ⊕ G) G G)
@@ -459,7 +312,7 @@ private lemma probOutput_reductionImpl'_rand_eq_honest_true
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
       let c ← ($ᵗ F : ProbComp F)
-      (simulateQ (reductionOracleImpl' gp gen (a • gen) (b • gen) (c • gen))
+      (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen))
         adversary).run' s) =
     evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
       { s with b := true }) := by
@@ -630,20 +483,17 @@ private lemma probOutput_securityExpFixedBit_true (gp : GameParams)
   simp [initGameState]
 
 /-- **Game-level real-branch equivalence.** Direct equality
-`Pr[= false | G_R] = Pr[= false | G_CKA^{b=false}]`, bundling dead-store
-elimination (`probOutput_simulateQ_reductionOracleImpl_eq_primed`) with the
-eager-to-lazy+coupling step
-(`probOutput_reductionImpl'_real_eq_honest_false`).
+`Pr[= false | G_R] = Pr[= false | G_CKA^{b=false}]`, wrapping the per-state
+real-branch bridge `probOutput_reductionImpl_real_eq_honest_false` into the
+full game with the extra `x₀ ← $F` initialization sample peeled off.
 
 Closure recipe (follow-up proof engineering):
 1. Unfold both games; normalize the `let (b', _) ← m.run s; return b'` form
    to `m.run' s` via `StateT.run'_eq` and `bind_pure_comp`.
-2. Apply `probOutput_simulateQ_reductionOracleImpl_eq_primed` pointwise in
-   `(a, b, x₀)` to replace `reductionOracleImpl` with `reductionOracleImpl'`.
-3. Commute `x₀ ← $F` outside the `(a, b)` binds via `probOutput_bind_bind_swap`.
-4. Apply `probOutput_reductionImpl'_real_eq_honest_false` pointwise in `x₀` to
+2. Commute `x₀ ← $F` outside the `(a, b)` binds via `probOutput_bind_bind_swap`.
+3. Apply `probOutput_reductionImpl_real_eq_honest_false` pointwise in `x₀` to
    collapse `do a, b ← $F; ... run' init` into `ckaSecurityImpl` at `b = false`.
-5. Note `{init with b := false} = init` when init was built with `b := false`. -/
+4. Note `{init with b := false} = init` when init was built with `b := false`. -/
 private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : SecurityAdversary (F ⊕ G) G G) :
@@ -654,7 +504,7 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
 /-- **Game-level random-branch equivalence.** Direct equality
 `Pr[= false | G_Rand] = Pr[= false | G_CKA^{b=true}]`, bundling dead-store
 elimination with the eager-to-lazy+coupling step for the random branch
-(`probOutput_reductionImpl'_rand_eq_honest_true`, which uses `hg`
+(`probOutput_reductionImpl_rand_eq_honest_true`, which uses `hg`
 bijectivity to couple `c • gen ↔ outKey ← $ᵗ G`).
 
 Closure recipe: parallel to
