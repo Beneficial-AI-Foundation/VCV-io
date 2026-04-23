@@ -271,106 +271,117 @@ noncomputable def securityReduction (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
     return !b'
 
-/-- **Real-branch core equivalence (per-state).** For any initial game state
-`s`, sampling `a, b ← $F` and running `𝒜` against
-`reductionOracleImpl gp gen (a•gen) (b•gen) ((a*b)•gen)` produces the same
-output distribution as running `𝒜` against `ckaSecurityImpl` with the bit
-forced to `false`.
+/-- **Real-branch core equivalence (init-state).** For any CKA init seed
+`x₀ : F`, sampling `a, b ← $F` and running `𝒜` against
+`reductionOracleImpl gp gen (a•gen) (b•gen) ((a*b)•gen)` on the init state
+`initGameState (.inr (x₀•gen)) (.inl x₀) false` produces the same output
+distribution as running `𝒜` against `ckaSecurityImpl` on the same init state.
 
-This is the per-state inner bridge (no `x₀ ← $F` initialization sampling —
-see `probOutput_securityReductionRealGame_eq_honestFalse` for the game-level
-wrapper).
+The init-state quantifier is tight: the statement is *false* for arbitrary
+`s : GameState` — e.g., for `s.stA = .inr _` at an embedding epoch,
+`reductionSendB`'s `xA := match … | .inl x => x | .inr _ => 0` fallback
+produces output `(gA, 0)` while honest sendB produces a fresh
+`(y • gen, y • h)`.
+
+Inner bridge of the real-branch chain; the game-level wrapper
+`probOutput_securityReductionRealGame_eq_honestFalse` adds the top-level
+`x₀ ← $F` sample.
 
 Proof: two sequential applications of `probOutput_simulateQ_greedyLazy_run'_eq`
 (LazySampling.lean), peeling `a` then `b` into the oracle bodies, followed by
 a per-query identity-bijection coupling to fold into `ckaSecurityImpl`. The
 state divergence at the four dead-write sites (reduction writes `.inl 0`,
 honest writes `.inl y` for the sample just taken) is absorbed relationally by
-a state relation that treats dead `.inl _` cells as tolerantly equal. -/
+a state relation that treats dead `.inl _` cells as tolerantly equal. The
+reachability/shape invariant that rules out the counterexample above (stA is
+either `.inl x₀` at init or `.inr ρ` after a recvA) is part of that state
+relation. -/
 private lemma probOutput_reductionImpl_real_eq_honest_false
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : CKAAdversary (F ⊕ G) G G)
-    (s : GameState (F ⊕ G) G G) :
+    (x₀ : F) :
     evalDist (do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
       (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
-        adversary).run' s) =
+        adversary).run' (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) =
     evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
-      { s with b := false }) := by
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) := by
   sorry
 
-/-- **Random-branch core equivalence (per-state).** For any initial game state
-`s`, sampling `a, b, c ← $F` and running `𝒜` against
-`reductionOracleImpl gp gen (a•gen) (b•gen) (c•gen)` (with `c` independent
-of `a, b`) produces the same output distribution as running `𝒜` against
-`ckaSecurityImpl` with the bit forced to `true`.
+/-- **Random-branch core equivalence (init-state).** For any CKA init seed
+`x₀ : F`, sampling `a, b, c ← $F` independently and running `𝒜` against
+`reductionOracleImpl gp gen (a•gen) (b•gen) (c•gen)` on the init state with
+bit `false` produces the same output distribution as running `𝒜` against
+`ckaSecurityImpl` on the init state with bit `true`.
 
-Per-state inner bridge — see
-`probOutput_securityReductionRandGame_eq_honestTrue` for the game-level
-wrapper that adds `x₀ ← $F` initialization.
+Init-state quantifier is tight for the same reachability reason as in
+`probOutput_reductionImpl_real_eq_honest_false`.
 
-Proof: analogous to `probOutput_reductionImpl_real_eq_honest_false`, with
-three sequential `greedyLazy` applications (`a`, `b`, `c`) and a final
-coupling step where `c • gen ↔ outKey ← $ᵗ G` uses `hg` bijectivity. -/
+Proof: analogous to the real-branch case, with three sequential `greedyLazy`
+applications (`a`, `b`, `c`) and a final coupling step where
+`c • gen ↔ outKey ← $ᵗ G` uses `hg` bijectivity. -/
 private lemma probOutput_reductionImpl_rand_eq_honest_true
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : CKAAdversary (F ⊕ G) G G)
-    (s : GameState (F ⊕ G) G G) :
+    (x₀ : F) :
     evalDist (do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
       let c ← ($ᵗ F : ProbComp F)
       (simulateQ (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen))
-        adversary).run' s) =
+        adversary).run' (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) =
     evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
-      { s with b := true }) := by
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) true)) := by
   sorry
 
 /-! ### Simulation: each DDH branch maps to the corresponding CKA branch
 
-Goal: `𝒜`'s view in the CKA game equals its view in the reduction's simulation.
-The reduction `ℬ` returns `¬b'`, so the top-level branch identities are:
+Goal: the reduction `ℬ = securityReduction gp 𝒜` (which returns `¬b'`)
+satisfies the top-level branch identities
 
-    Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]   … (**real branch**)
-    Pr[ℬ = true | DDH_rand] = Pr[𝒜 = false | CKA^{b = true }]   … (**random branch**)
+    Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]   (**real branch**)
+    Pr[ℬ = true | DDH_rand] = Pr[𝒜 = false | CKA^{b = true }]   (**random branch**)
 
-Each branch is proved by a 3-step chain wrapping `simulateQ adversary` under a
-specific oracle implementation:
+Each branch is proved by a 3-step chain:
 
 ```text
 Pr[ℬ = true | DDH_real]
-    = Pr[= false | securityReductionRealGame]
-        (by probOutput_ddhExpReal_securityReduction: peel `!b'` negation)
-    = Pr[= false | securityExpFixedBitFalseGame]
-        (by probOutput_securityReductionRealGame_eq_honestFalse: dead-store
-         elimination via `probOutput_simulateQ_run'_eq_of_state_rel` +
-         eager-to-lazy commutation via `probOutput_simulateQ_greedyLazy_run'_eq`,
-         with identity-bijection coupling into the honest CKA oracle)
-    = Pr[= false | securityExpFixedBit ... false gp]
-        (by probOutput_securityExpFixedBit_false: definitional fold)
+    = Pr[= false | securityReductionRealGame]              -- (1) peel `¬b'`
+    = Pr[= false | securityExpFixedBitFalseGame]           -- (2) game-level bridge
+    = Pr[= false | securityExpFixedBit ... false gp]        -- (3) def. fold
 ```
 
-The analogous chain for the random branch uses
-`probOutput_ddhExpRand_securityReduction`,
-`probOutput_securityReductionRandGame_eq_honestTrue`
-(which leverages `hg` bijectivity for the `c • gen ↔ outKey ← $ᵗ G` coupling),
-and `probOutput_securityExpFixedBit_true`.
+where the bridges are
+`(1) probOutput_ddhExpReal_securityReduction`,
+`(2) probOutput_securityReductionRealGame_eq_honestFalse`,
+`(3) probOutput_securityExpFixedBit_false`.
 
-No hybrid-game waypoint is needed: the dead-store and eager-to-lazy concerns
-are both handled by the two library lemmas in
-`VCVio.OracleComp.QueryTracking.LazySampling`, invoked from the per-branch
-wrapper lemmas below.
+Step (2) is the content of `probOutput_reductionImpl_real_eq_honest_false`,
+which composes two library lemmas from `LazySampling.lean`:
+
+  `a ←$ F; simulateQ (impl a) 𝒜  ≡  simulateQ (greedyLazy impl) 𝒜`      (push-in)
+  `simulateQ impl₁ 𝒜 s₁        ≡  simulateQ impl₂ 𝒜 s₂`   if `R s₁ s₂`
+                                                           per-query          (R-lift)
+
+Applied: (push-in) twice to peel `a` then `b`; (R-lift) to couple reduction's
+`stX := .inl 0` with honest's `stX := .inl y` under `R` tolerating dead
+`.inl _` divergence.
+
+Random branch analogous: three externals `a, b, c ←$ F` (so `gT := c • gen`)
+plus an `hg`-bijection coupling `c • gen ↔ outKey ←$ᵗ G`. Lemmas:
+`probOutput_ddhExpRand_securityReduction`,
+`probOutput_securityReductionRandGame_eq_honestTrue`,
+`probOutput_securityExpFixedBit_true`.
 -/
 
-/-- Auxiliary game `G_R(𝒜)`: samples `a, b, x₀ ← $F`, runs `𝒜` against
-`R := reductionOracleImpl(g, a•gen, b•gen, (a*b)•gen)`, and returns `b'`
-(i.e. without the final `¬·` applied by the reduction
-`ℬ := securityReduction`).
+/-- **Game `G_R`** — real-branch reduction-side endpoint. Samples
+`a, b, x₀ ←$ F`, runs `𝒜` against `reductionOracleImpl` with DDH inputs
+`(gen, a•gen, b•gen, (a*b)•gen)`, returns `𝒜`'s guess `b'` (pre-negation).
 
-Entry point to the real-branch chain: step (2)
-`securityReduction_real_to_hybrid` rewrites `G_R` into `G_H`. -/
+Target of `probOutput_ddhExpReal_securityReduction` (peel ¬); source of
+`probOutput_securityReductionRealGame_eq_honestFalse` (bridge to honest CKA). -/
 private noncomputable def securityReductionRealGame (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
@@ -399,30 +410,13 @@ private lemma probOutput_ddhExpReal_securityReduction (gp : GameParams)
     (probOutput_not_map (m := ProbComp)
       (mx := securityReductionRealGame (gen := gen) gp adversary))
 
-/-- Auxiliary game `G_CKA(𝒜)`: samples only `x₀ ← $F` up front and runs `𝒜`
-against the honest CKA implementation `ckaSecurityImpl gp (ddhCKA F G gen)`,
-with the fixed challenge bit `b = false` baked into the initial state.
+/-- **Game `G_CKA^false`** — real-branch honest-side endpoint. Samples
+`x₀ ←$ F`, runs `𝒜` against `ckaSecurityImpl gp (ddhCKA F G gen)` with the
+challenge bit forced to `false`. Unlike `G_R`, the scalars `a, b` are sampled
+lazily inside honest `sendX`/`challX`.
 
-Unlike `G_R` / `G_H`, the external scalars `a, b` are **not** sampled up
-front here: the honest game samples fresh scalars lazily on each oracle
-call (at the `sendA`/`sendB`/`challA`/`challB` embedding epochs).
-
-Named endpoint game for the real-branch chain.
-
-Write
-
-- `G_R := securityReductionRealGame gp adversary`,
-- `G_H := securityHybridGame gp adversary`,
-- `G_CKA := securityExpFixedBitFalseGame gp adversary`.
-
-The bridge lemmas are organized as
-
-  `G_R  ->  G_H  ->  G_CKA`
-
-before the final definitional fold back to the generic notation
-`securityExpFixedBit (ddhCKA F G gen) adversary false gp`. Thus this helper
-appears here, near the real-branch bridge, rather than later in the final
-theorem section. -/
+Target of `probOutput_securityReductionRealGame_eq_honestFalse`; source of
+`probOutput_securityExpFixedBit_false` (fold to `securityExpFixedBit … false gp`). -/
 private noncomputable def securityExpFixedBitFalseGame (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let x₀ ← $ᵗ F
@@ -431,15 +425,13 @@ private noncomputable def securityExpFixedBitFalseGame (gp : GameParams)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   return b'
 
-/-- **Step (4) of the real branch.** Fold the named endpoint game `G_CKA`
-back into the generic fixed-bit notation at `b = false`:
-ok
-  `Pr[𝒜 = false ∣ CKA^{b = false}]  =  Pr[G_CKA = false]`
+/-- **Step (3) of the real branch.** Fold the named endpoint `G_CKA^false`
+back into the generic fixed-bit notation:
 
-where `G_CKA := securityExpFixedBitFalseGame gp 𝒜`. This is a pure
-definitional unfolding of `securityExpFixedBit` at `ddhCKA F G gen` —
-no probabilistic content, just an `unfold`/`simp` on the generic game
-shape exposing the initial key sample `x₀ ← $F`. -/
+  `Pr[𝒜 = false ∣ securityExpFixedBit … false gp] = Pr[= false | G_CKA^false]`
+
+Pure definitional unfolding of `securityExpFixedBit` at `ddhCKA F G gen`
+(no probabilistic content). -/
 private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityExpFixedBit (ddhCKA F G gen) adversary false gp] =
@@ -447,9 +439,14 @@ private lemma probOutput_securityExpFixedBit_false (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitFalseGame ddhCKA
   simp [initGameState]
 
-/-- Random-branch analogue of `securityReductionRealGame`: samples `a, b, c`
-independently (with `c` used in place of `a * b` for `gT`) and runs `𝒜`
-against the reduction's oracle implementation. -/
+/-- **Game `G_Rand`** — random-branch reduction-side endpoint. Samples
+`a, b, c, x₀ ←$ F` independently, runs `𝒜` against `reductionOracleImpl`
+with DDH inputs `(gen, a•gen, b•gen, c•gen)` (i.e., `c` replaces `a*b`),
+returns `𝒜`'s guess `b'`.
+
+Target of `probOutput_ddhExpRand_securityReduction`; source of
+`probOutput_securityReductionRandGame_eq_honestTrue` (uses `hg` bijectivity
+to couple `c•gen ↔ outKey ←$ᵗ G`). -/
 private noncomputable def securityReductionRandGame (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let a ← $ᵗ F
@@ -473,8 +470,12 @@ private lemma probOutput_ddhExpRand_securityReduction (gp : GameParams)
     (probOutput_not_map (m := ProbComp)
       (mx := securityReductionRandGame (gen := gen) gp adversary))
 
-/-- Random-branch analogue of `securityExpFixedBitFalseGame`: honest CKA game
-with the fixed bit `b := true` baked into the initial state. -/
+/-- **Game `G_CKA^true`** — random-branch honest-side endpoint. Samples
+`x₀ ←$ F`, runs `𝒜` against `ckaSecurityImpl gp (ddhCKA F G gen)` with the
+challenge bit forced to `true`.
+
+Target of `probOutput_securityReductionRandGame_eq_honestTrue`; source of
+`probOutput_securityExpFixedBit_true` (fold to `securityExpFixedBit … true gp`). -/
 private noncomputable def securityExpFixedBitTrueGame (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) : ProbComp Bool := do
   let x₀ ← $ᵗ F
@@ -719,24 +720,5 @@ theorem security (gp : GameParams)
       (congrArg ENNReal.toReal hFail).symm
     rw [this]; simp
   linarith [hBound, hGap]
-
-/-- **DDH-CKA security (quantitative form)** [ACD19, Theorem 3].
-
-If the DDH assumption holds in `G` with guess-advantage at most `ε` for every
-adversary, then for any CKA adversary `𝒜`:
-
-  `securityAdvantage(ddhCKA, 𝒜, gp) ≤ ε` -/
-theorem ddhCKA_security (gp : GameParams)
-    (hΔ : gp.deltaCKA = 1)
-    (hg : Function.Bijective (· • gen : F → G))
-    (adversary : CKAAdversary (F ⊕ G) G G)
-    (ε : ℝ)
-    (hddh : ∀ adv : DDHAdversary F G,
-      ddhGuessAdvantage gen adv ≤ ε) :
-    securityAdvantage (ddhCKA F G gen) adversary gp ≤ ε :=
-  calc securityAdvantage (ddhCKA F G gen) adversary gp
-      ≤ ddhGuessAdvantage gen (securityReduction gp adversary) :=
-        security gp hΔ hg adversary
-    _ ≤ ε := hddh _
 
 end ddhCKA
