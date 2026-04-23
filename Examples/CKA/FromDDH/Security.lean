@@ -664,37 +664,17 @@ lemma security_le_ddh_plus_failGap (gp : GameParams)
   exact habs
 
 /-- Auxiliary: the failure probability of `securityExpFixedBit` does not depend on
-the challenge bit. Under bijectivity of `· • gen`, the challenge oracle output
-`outKey` is distributionally independent of `state.b`, so the two fixed-bit games
-induce identical failure events.
+the challenge bit.
 
-Closure roadmap. The two fixed-bit games differ ONLY inside `oracleChallA/B`, where
-the `b = true` branch samples `outKey ← $ᵗ I` and the `b = false` branch returns
-`outKey := key := y · h` deterministically. The `⊥` (failure) event is
-`probFailure mx = 1 - (Pr[= true | mx] + Pr[= false | mx])`. Since `⊥` is determined
-by the underlying `ProbComp`'s failure paths (`empty <$F>` or aborts), and neither
-branch of the challA/challB output is a failure path, the key insight is: both
-`outKey ← $ᵗ G` (at `b = true`) and `pure key` (at `b = false`) are *non-failing*
-operations. Hence the failure probability is independent of `b`.
-
-Formally:
-  1. Introduce `securityExpFixedBit_noChallOutput` — a variant that strips the
-     `outKey` step from both challenge oracles (just returns `some (ρ, 0)`).
-  2. Show by oracle-level rewrite (commute with `probFailure`) that
-     `Pr[⊥ | securityExpFixedBit ... b gp] = Pr[⊥ | securityExpFixedBit_noChallOutput ...]`
-     for every `b ∈ {true, false}`. Uses `probFailure_bind_eq_tsum` and the fact
-     that for any non-failing `mx : ProbComp α`, `Pr[⊥ | mx >>= f] = Pr[⊥ | f]`
-     integrated over `mx`'s support.
-  3. Conclude equality of both sides.
-
-Alternative: a direct relational argument `probFailure_eq_of_noFailureDistOracle`
-if such a lemma exists — search `ToMathlib/ProbabilityTheory/Coupling.lean` and
-`VCVio/OracleComp/QueryTracking/`. -/
+This equality is unconditional because `securityExpFixedBit` lands in
+`ProbComp Bool = OracleComp unifSpec Bool`, which is a free monad without a
+`failure` constructor. The `HasEvalPMF (OracleComp spec)` instance therefore
+forces `NeverFail` on every such computation, so both sides evaluate to `0`. -/
 private lemma probFailure_securityExpFixedBit_eq
     (gp : GameParams) (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary true gp] =
     Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
-  sorry
+  simp
 
 /-- **DDH-CKA security (per-adversary form)** [ACD19, Theorem 3].
 
