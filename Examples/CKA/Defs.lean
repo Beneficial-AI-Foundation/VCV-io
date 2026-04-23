@@ -121,7 +121,7 @@ structure GameParams where
 
 /-- Internal state of the CKA game.
 - `stA`, `stB`: per-party protocol state.
-- `lastRhoA/B`, `lastKeyA/B`: pending undelivered message and sender key.
+- `rhoA/B`, `keyA/B`: pending undelivered message and sender key.
 - `b`: hidden challenge bit (security game only).
 - `correct`: conjunction of all key-agreement checks so far.
 - `lastAction`: enforces alternating communication.
@@ -129,10 +129,10 @@ structure GameParams where
 structure GameState (St I Rho : Type) where
   stA : St
   stB : St
-  lastRhoA : Option Rho  -- latest undelivered A -> B message
-  lastRhoB : Option Rho  -- latest undelivered B -> A message
-  lastKeyA : Option I    -- sender key paired with `lastRhoA`
-  lastKeyB : Option I    -- sender key paired with `lastRhoB`
+  rhoA : Option Rho  -- latest undelivered A -> B message
+  rhoB : Option Rho  -- latest undelivered B -> A message
+  keyA : Option I    -- sender key paired with `rhoA`
+  keyB : Option I    -- sender key paired with `rhoB`
   b : Bool
   correct : Bool
   lastAction : Option CKAAction
@@ -210,7 +210,7 @@ def oracleSendA (cka : CKAScheme ProbComp IK St I Rho) :
       | none => pure none
       | some (key, ρ, stA') =>
         set { state with
-          stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+          stA := stA', rhoA := some ρ, keyA := some key,
           lastAction := some .sendA }
         return some (ρ, key)
     else pure none
@@ -227,14 +227,14 @@ def oracleSendB (cka : CKAScheme ProbComp IK St I Rho) :
       | none => pure none
       | some (key, ρ, stB') =>
         set { state with
-          stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+          stB := stB', rhoB := some ρ, keyB := some key,
           lastAction := some .sendB }
         return some (ρ, key)
     else pure none
 
 /-! ### Receive oracles -/
 
-/-- **O-Recv-A.** `tA++; (keyA, stA') ← recvA(stA, ρ)`; assert `keyA = lastKeyB`. -/
+/-- **O-Recv-A.** `tA++; (keyA, stA') ← recvA(stA, ρ)`; assert `keyA = keyB`. -/
 def oracleRecvA [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
@@ -242,21 +242,21 @@ def oracleRecvA [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     if validStep state.lastAction .recvA then
       -- tA++
       let state := { state with tA := state.tA + 1 }
-      match state.lastRhoB with
+      match state.rhoB with
       | none => pure ()
       | some ρ =>
         match cka.recvA state.stA ρ with
         | none => pure ()
         | some (keyA, stA') =>
-          let ok := match state.lastKeyB with
+          let ok := match state.keyB with
             | some keyB => decide (some keyA = some keyB)
             | none => false
           set { state with
-            stA := stA', lastRhoB := none, lastKeyB := none,
+            stA := stA', rhoB := none, keyB := none,
             correct := state.correct && ok, lastAction := some .recvA }
     else pure ()
 
-/-- **O-Recv-B.** `tB++; (keyB, stB') ← recvB(stB, ρ)`; assert `keyB = lastKeyA`. -/
+/-- **O-Recv-B.** `tB++; (keyB, stB') ← recvB(stB, ρ)`; assert `keyB = keyA`. -/
 def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     QueryImpl (Unit →ₒ Unit) (StateT (GameState St I Rho) ProbComp) :=
   fun () => do
@@ -264,17 +264,17 @@ def oracleRecvB [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho) :
     if validStep state.lastAction .recvB then
       -- tB++
       let state := { state with tB := state.tB + 1 }
-      match state.lastRhoA with
+      match state.rhoA with
       | none => pure ()
       | some ρ =>
         match cka.recvB state.stB ρ with
         | none => pure ()
         | some (keyB, stB') =>
-          let ok := match state.lastKeyA with
+          let ok := match state.keyA with
             | some keyA => decide (some keyB = some keyA)
             | none => false
           set { state with
-            stB := stB', lastRhoA := none, lastKeyA := none,
+            stB := stB', rhoA := none, keyA := none,
             correct := state.correct && ok, lastAction := some .recvB }
     else pure ()
 
@@ -296,7 +296,7 @@ def oracleChallA (gp : GameParams) [SampleableType I]
         | some (key, ρ, stA') =>
           let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
           set { state with
-            stA := stA', lastRhoA := some ρ, lastKeyA := some key,
+            stA := stA', rhoA := some ρ, keyA := some key,
             lastAction := some .challA }
           return some (ρ, outKey)
       else pure none
@@ -318,7 +318,7 @@ def oracleChallB (gp : GameParams) [SampleableType I]
         | some (key, ρ, stB') =>
           let outKey ← if state.b then liftM ($ᵗ I : ProbComp I) else pure key
           set { state with
-            stB := stB', lastRhoB := some ρ, lastKeyB := some key,
+            stB := stB', rhoB := some ρ, keyB := some key,
             lastAction := some .challB }
           return some (ρ, outKey)
       else pure none
@@ -367,22 +367,22 @@ def ckaSecurityImpl (gp : GameParams) [SampleableType I] [DecidableEq I]
     + oracleCorruptA gp St I Rho + oracleCorruptB gp St I Rho
 
 /-- Correctness adversary: send + recv oracles only. -/
-abbrev CorrectnessAdversary (Rho I : Type) := OracleComp (ckaCorrectnessSpec Rho I) Bool
+abbrev CKACorrectnessAdversary (Rho I : Type) := OracleComp (ckaCorrectnessSpec Rho I) Bool
 
 /-- Security adversary: send + recv + challenge + corruption oracles. -/
-abbrev SecurityAdversary (St Rho I : Type) := OracleComp (ckaSecuritySpec St Rho I) Bool
+abbrev CKAAdversary (St Rho I : Type) := OracleComp (ckaSecuritySpec St Rho I) Bool
 
 /-! ### Correctness game -/
 
 /-- Initial game state. -/
 def initGameState (stA stB : St) (b : Bool) : GameState St I Rho :=
-  { stA, stB, lastRhoA := none, lastRhoB := none,
-    lastKeyA := none, lastKeyB := none,
+  { stA, stB, rhoA := none, rhoB := none,
+    keyA := none, keyB := none,
     b, correct := true, lastAction := none,
     tA := 0, tB := 0 }
 
 def correctnessExp [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : CorrectnessAdversary Rho I) : ProbComp Bool := do
+    (adversary : CKACorrectnessAdversary Rho I) : ProbComp Bool := do
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
   let stB ← cka.initB ik
@@ -394,7 +394,7 @@ def correctnessExp [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
 
 /-- Security game parameterized by `GameParams` [ACD19, Def. 13, Fig. 3]. -/
 def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : SecurityAdversary St Rho I)
+    (adversary : CKAAdversary St Rho I)
     (gp : GameParams) : ProbComp Bool := do
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
@@ -408,7 +408,7 @@ def securityExp [SampleableType I] [DecidableEq I] (cka : CKAScheme ProbComp IK 
 Returns the adversary's raw guess `b'` (not `b == b'`). -/
 def securityExpFixedBit [SampleableType I] [DecidableEq I]
     (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : SecurityAdversary St Rho I)
+    (adversary : CKAAdversary St Rho I)
     (b : Bool) (gp : GameParams) : ProbComp Bool := do
   let ik ← cka.initKeyGen
   let stA ← cka.initA ik
@@ -423,7 +423,7 @@ initialization steps using `probEvent_bind_bind_swap` (cf. `ddhExp_probOutput_eq
 for the analogous DDH result). -/
 private lemma securityExp_probOutput_eq_branch [SampleableType I] [DecidableEq I]
     (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : SecurityAdversary St Rho I) (gp : GameParams) :
+    (adversary : CKAAdversary St Rho I) (gp : GameParams) :
     Pr[= true | securityExp cka adversary gp] =
     Pr[= true | do
       let b ← ($ᵗ Bool : ProbComp Bool)
@@ -446,7 +446,7 @@ private lemma securityExp_probOutput_eq_branch [SampleableType I] [DecidableEq I
 branch probabilities: `Pr[win] - 1/2 = (Pr[real=1] - Pr[rand=1]) / 2`. -/
 lemma securityExp_toReal_sub_half [SampleableType I] [DecidableEq I]
     (cka : CKAScheme ProbComp IK St I Rho)
-    (adversary : SecurityAdversary St Rho I) (gp : GameParams) :
+    (adversary : CKAAdversary St Rho I) (gp : GameParams) :
     (Pr[= true | securityExp cka adversary gp]).toReal - 1 / 2 =
     ((Pr[= true | securityExpFixedBit cka adversary true gp]).toReal -
      (Pr[= true | securityExpFixedBit cka adversary false gp]).toReal) / 2 := by
@@ -463,7 +463,7 @@ lemma securityExp_toReal_sub_half [SampleableType I] [DecidableEq I]
 
 /-- CKA security advantage: `|Pr[Win] - 1/2|`. -/
 noncomputable def securityAdvantage [SampleableType I] [DecidableEq I]
-    (cka : CKAScheme ProbComp IK St I Rho) (adversary : SecurityAdversary St Rho I)
+    (cka : CKAScheme ProbComp IK St I Rho) (adversary : CKAAdversary St Rho I)
     (gp : GameParams) : ℝ :=
   |(Pr[= true | securityExp cka adversary gp]).toReal - 1 / 2|
 

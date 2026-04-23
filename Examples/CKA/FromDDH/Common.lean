@@ -27,18 +27,18 @@ def phaseShapeInv (gen : G) (s : GameState (F ⊕ G) G G) : Prop :=
   match s.lastAction with
   | none | some .recvA =>
     ∃ x : F, s.stA = .inr (x • gen) ∧ s.stB = .inl x ∧
-      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
+      s.rhoA = none ∧ s.rhoB = none ∧ s.keyA = none ∧ s.keyB = none
   | some .sendA | some .challA =>
     ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
-      s.lastRhoA = some (y • gen) ∧ s.lastRhoB = none ∧
-      s.lastKeyA = some (y • (x • gen)) ∧ s.lastKeyB = none
+      s.rhoA = some (y • gen) ∧ s.rhoB = none ∧
+      s.keyA = some (y • (x • gen)) ∧ s.keyB = none
   | some .recvB =>
     ∃ y : F, s.stA = .inl y ∧ s.stB = .inr (y • gen) ∧
-      s.lastRhoA = none ∧ s.lastRhoB = none ∧ s.lastKeyA = none ∧ s.lastKeyB = none
+      s.rhoA = none ∧ s.rhoB = none ∧ s.keyA = none ∧ s.keyB = none
   | some .sendB | some .challB =>
     ∃ x y : F, s.stA = .inl y ∧ s.stB = .inl x ∧
-      s.lastRhoA = none ∧ s.lastRhoB = some (x • gen) ∧
-      s.lastKeyA = none ∧ s.lastKeyB = some (x • (y • gen))
+      s.rhoA = none ∧ s.rhoB = some (x • gen) ∧
+      s.keyA = none ∧ s.keyB = some (x • (y • gen))
 
 /-- Structural (correctness-independent) invariant: phase counter plus phase shape.
 Suitable for relations that normalize `correct` (e.g. `hybridProj`). -/

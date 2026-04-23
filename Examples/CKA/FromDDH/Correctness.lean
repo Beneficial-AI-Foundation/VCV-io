@@ -26,7 +26,7 @@ omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G] in
 private lemma reachableInv_init (x₀ : F) :
     reachableInv gen
       { stA := .inr (x₀ • gen), stB := .inl x₀,
-        lastRhoA := none, lastRhoB := none, lastKeyA := none, lastKeyB := none,
+        rhoA := none, rhoB := none, keyA := none, keyB := none,
         b := false, correct := true, lastAction := none,
         tA := 0, tB := 0 } :=
   ⟨rfl, rfl, x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
@@ -163,11 +163,11 @@ private lemma correctnessImpl_preserves [DecidableEq G] :
 
 /-! ### Correctness theorem -/
 
-private lemma nofail [DecidableEq G] (adv : CorrectnessAdversary G G) :
+private lemma nofail [DecidableEq G] (adv : CKACorrectnessAdversary G G) :
     Pr[⊥ | correctnessExp (ddhCKA F G gen) adv] = 0 := by
   exact probFailure_eq_zero
 
-private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
+private lemma always_correct [DecidableEq G] (adv : CKACorrectnessAdversary G G)
     (b : Bool) (hb : b ∈ support (correctnessExp (ddhCKA F G gen) adv)) :
     b = true := by
   unfold CKAScheme.correctnessExp at hb
@@ -198,8 +198,8 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
       (correctnessImpl_preserves (F := F) (G := G) (gen := gen))
       adv
       { stA := .inr (x₀ • gen), stB := .inl x₀,
-        lastRhoA := none, lastRhoB := none,
-        lastKeyA := none, lastKeyB := none,
+        rhoA := none, rhoB := none,
+        keyA := none, keyB := none,
         b := false, correct := true, lastAction := none,
         tA := 0, tB := 0 }
       (reachableInv_init (gen := gen) x₀)
@@ -210,7 +210,7 @@ private lemma always_correct [DecidableEq G] (adv : CorrectnessAdversary G G)
   exact hb'.trans hInv.2.1
 
 /-- DDH-CKA correctness: `Pr[= true | correctnessExp] = 1`. -/
-theorem correctness [DecidableEq G] (adv : CorrectnessAdversary G G) :
+theorem correctness [DecidableEq G] (adv : CKACorrectnessAdversary G G) :
     Pr[= true | correctnessExp (ddhCKA F G gen) adv] = 1 := by
   rw [← probEvent_eq_eq_probOutput, probEvent_eq_one_iff]
   exact ⟨nofail adv, always_correct adv⟩
