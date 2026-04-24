@@ -581,7 +581,38 @@ private lemma hindepB_real (gp : GameParams)
     (OracleComp.ProgramLogic.Relational.consumeLazy (hit := hitA gp)
         (implFam := fun a =>
           reductionOracleImpl gp gen (a • gen) (b₂ • gen) ((a * b₂) • gen)) t).run s := by
-  sorry
+  -- The consumeLazy wrapper is b-independent at every t where the inner
+  -- `reductionOracleImpl … (a•gen) (b•gen) ((a*b)•gen) t` is b-independent.
+  -- Only challA/challB with matching party use gB/gT; hitB restricts exactly
+  -- those cases, so at hitB=false the inner impl is b-independent.
+  match t with
+  | .inr _ => rfl  -- corruptB: no gB/gT use
+  | .inl (.inr _) => rfl  -- corruptA: no gB/gT use
+  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+    cases h_cp : gp.challengedParty with
+    | A =>
+      unfold OracleComp.ProgramLogic.Relational.consumeLazy
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionChallB, hitA, h_cp]
+      rfl
+    | B =>
+      exfalso
+      simp [hitB, h_cp] at h
+  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
+    cases h_cp : gp.challengedParty with
+    | A =>
+      exfalso
+      simp [hitB, h_cp] at h
+    | B =>
+      unfold OracleComp.ProgramLogic.Relational.consumeLazy
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionChallA, hitA, h_cp]
+      rfl
+  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
+  | .inl (.inl (.inl (.inl (.inl (.inr _))))) => rfl  -- sendB (uses gA only, not b)
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => rfl  -- sendA (uses gA only)
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
 /-- Per-cell coupling tolerating dead-write divergence on a single party's
 cell. Either the cells match, or reduction's cell is the placeholder `.inl 0`
