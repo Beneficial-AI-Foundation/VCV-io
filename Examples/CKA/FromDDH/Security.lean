@@ -551,41 +551,90 @@ private def R_standard (gen : G) (gp : GameParams) :
     | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
     | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
 
+/-! #### Obligations remaining for Step (2) real
+
+Proving `probOutput_securityReductionRealGame_eq_honestFalse` decomposes into:
+
+* `hindepA_real` / `hindepB_real` — `h_indep` for the two `consumeLazy` layers:
+  at non-hit queries `reductionOracleImpl gp gen (a•gen) (b•gen) ((a·b)•gen) t`
+  is `a`-independent / `b`-independent. Mechanical 9-way Sum case-split.
+
+* `relTriple_real_step` — per-query `RelTriple` obligation for
+  `probOutput_simulateQ_run'_eq_of_state_rel` under `R_standard`. Case-split
+  on the 9 oracle tags and on `hitA gp t × hitB gp t`:
+  - Non-hit oracles (`recvA/B`, `corruptA/B`, `oracleUnif`, non-embedding
+    `sendA/B`, wrong-party `challX`): both impls run identical code,
+    `RelTriple` via `relTriple_of_evalDist_eq` + `R_standard` unpacking.
+  - Embedding send: `relTriple_uniformSample_bij` with identity bijection
+    coupling `y ↔ a`; `R_standard`'s `cellOk` clause commits `optA := some a`
+    and tolerates the `stX := .inl 0 ↔ .inl a` divergence.
+  - Challenge of challenged party: identity bijection `x ↔ b`; commits
+    `optB := some b`; tolerates dead stX divergence.
+  - Corruption: guarded by `allowCorr ∨ finishedP`; reachability in
+    `R_standard` + `ΔCKA = 1` force `stX = .inr ρ` at the point the gate fires,
+    so dead cells are never observed.
+
+* `R_standard_init` — at the shared init state `(.inr (x₀•gen), .inl x₀, …)`,
+  `R_standard gen gp ((s₀, none), none) s₀` holds (observable fields equal,
+  `reachableInv` at init, `cellOk` with `optA = optB = none` reduces to
+  `stX = stX`).
+-/
+
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
 
-`by_cases` on `gp.tStar = 1 ∧ gp.challengedParty = .A` and discharge each
-branch by the recipe in the module docstring ("Simulation" section). The
-state relation `R` (used via `probOutput_simulateQ_run'_eq_of_state_rel`)
-carries `reachableInv` to rule out the `.inr _` fallback in
-`reductionSend{A,B}`'s scalar extraction; pushes use
-`probOutput_simulateQ_consumeLazy_run'_eq`. -/
+Skeleton: `by_cases` on `gp.tStar = 1 ∧ gp.challengedParty = .A`. Each
+branch reduces — after peeling the shared outer `x₀ ←$ F`, peeling the DDH
+scalars `a, b` via `probOutput_simulateQ_consumeLazy_run'_eq`, and applying
+`probOutput_simulateQ_run'_eq_of_state_rel` with `R_standard` / `R_edge` —
+to the per-query `RelTriple` obligations listed above. -/
 private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
-  sorry
+  by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
+  · -- Edge case: `reductionInitState` returns `.inr (a•gen), .inl 0` without
+    -- sampling `x₀`. Rename reduction's outer `a ←$ F` to honest's `x₀ ←$ F`
+    -- via `probOutput_bind_congr'` (identity bijection on `F`); peel only
+    -- `b` into `challA` via `probOutput_simulateQ_consumeLazy_run'_eq`;
+    -- bridge via `probOutput_simulateQ_run'_eq_of_state_rel` with an
+    -- `R_edge` (analog of `R_standard` but with a single `Option F` cache
+    -- for `b` and init-side `stB := .inl 0 ↔ .inl x₀` tolerance).
+    sorry
+  · -- Standard case: both sides sample `x₀ ←$ F` through
+    -- `reductionInitState`. Swap `x₀` outer on LHS via
+    -- `probOutput_bind_bind_swap`; per fixed `x₀`, peel `a, b` into hit
+    -- queries via `probOutput_simulateQ_consumeLazy_run'_eq` (twice, with
+    -- `hindepA_real` / `hindepB_real`); apply
+    -- `probOutput_simulateQ_run'_eq_of_state_rel` with `R_standard gen gp`
+    -- and discharge the per-query `RelTriple` obligations enumerated above.
+    sorry
 
 /-- **Step (2) of the random branch.** Game-level bridge:
 `Pr[= false | securityReductionRandGame] = Pr[= false | CKA^{b = true}]`.
 Parallel to `probOutput_securityReductionRealGame_eq_honestFalse`, case-split
-on `gp`:
-
-* **Standard case**: peel `a, b, c ←$ F` via three `consumeLazy` applications
-  (`a` at embedding, `b` at challenge, `c` replacing the real-branch key).
-* **Edge case** `gp = ⟨1, _, .A⟩`: rename `a` to `x₀`, peel `b, c` via two
-  `consumeLazy` applications at `challA`.
-
-In both branches, close the challenge-output coupling against honest's
-`b = true` random-key path using the `hg`-bijection on `c•gen ↔ outKey ←$ᵗ G`. -/
+on `gp`. Three external scalars `a, b, c ←$ F` (so `gT := c•gen`); the
+`challX` output coupling uses the `hg`-bijection `c•gen ↔ outKey ←$ᵗ G`
+against honest's `b = true` random-key path. -/
 private lemma probOutput_securityReductionRandGame_eq_honestTrue
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRandGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitTrueGame (gen := gen) gp adversary] := by
-  sorry
+  by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
+  · -- Edge case: rename `a ←$ F` to `x₀ ←$ F`; peel `b, c` into `challA` via
+    -- two `consumeLazy` applications (state cache: `(Option F)² = (optB, optC)`).
+    -- Bridge via `R_edge_rand` (includes `optC` cache); at the challenge,
+    -- couple honest's `outKey ←$ᵗ G` with reduction's `c•gen` via `hg`.
+    sorry
+  · -- Standard case: both sides sample `x₀ ←$ F`; swap outer; peel `a, b, c`
+    -- via three `consumeLazy` applications; bridge via `R_standard_rand`
+    -- (extends `R_standard` with `optC` tracking the `c` sample). At the
+    -- challenge, honest's `b = true` branch samples `outKey ←$ᵗ G`; couple
+    -- with reduction's `gT = c•gen` via `hg`-bijection `c ↔ outKey`.
+    sorry
 
 /-- **Real-branch lemma.**
 `Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]`.
