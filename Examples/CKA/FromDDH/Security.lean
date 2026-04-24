@@ -551,64 +551,80 @@ private def R_standard (gen : G) (gp : GameParams) :
     | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
     | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
 
-/-! #### Obligations remaining for Step (2) real
+/-! #### Per-`x₀` inner bridges
 
-Proving `probOutput_securityReductionRealGame_eq_honestFalse` decomposes into:
+Step (2) real decomposes through two named inner bridges — one per branch of
+`by_cases` on `(gp.tStar = 1 ∧ gp.challengedParty = .A)`:
 
-* `hindepA_real` / `hindepB_real` — `h_indep` for the two `consumeLazy` layers:
-  at non-hit queries `reductionOracleImpl gp gen (a•gen) (b•gen) ((a·b)•gen) t`
-  is `a`-independent / `b`-independent. Mechanical 9-way Sum case-split.
+* `probOutput_standard_pointwise`: for `¬ (t* = 1 ∧ P = A)` and fixed `x₀`,
+  running the reduction (with outer `a, b ←$ F`) on `init .inr (x₀•gen) .inl x₀`
+  equals running honest CKA on the same state.
+* `probOutput_edge_pointwise`: in the edge case, renaming reduction's outer
+  `a ←$ F` to honest's `x₀ ←$ F` — since reduction's init uses `.inr (a•gen)`
+  and honest's uses `.inr (x₀•gen)`, the rename is an identity bijection.
 
-* `relTriple_real_step` — per-query `RelTriple` obligation for
-  `probOutput_simulateQ_run'_eq_of_state_rel` under `R_standard`. Case-split
-  on the 9 oracle tags and on `hitA gp t × hitB gp t`:
-  - Non-hit oracles (`recvA/B`, `corruptA/B`, `oracleUnif`, non-embedding
-    `sendA/B`, wrong-party `challX`): both impls run identical code,
-    `RelTriple` via `relTriple_of_evalDist_eq` + `R_standard` unpacking.
-  - Embedding send: `relTriple_uniformSample_bij` with identity bijection
-    coupling `y ↔ a`; `R_standard`'s `cellOk` clause commits `optA := some a`
-    and tolerates the `stX := .inl 0 ↔ .inl a` divergence.
-  - Challenge of challenged party: identity bijection `x ↔ b`; commits
-    `optB := some b`; tolerates dead stX divergence.
-  - Corruption: guarded by `allowCorr ∨ finishedP`; reachability in
-    `R_standard` + `ΔCKA = 1` force `stX = .inr ρ` at the point the gate fires,
-    so dead cells are never observed.
-
-* `R_standard_init` — at the shared init state `(.inr (x₀•gen), .inl x₀, …)`,
-  `R_standard gen gp ((s₀, none), none) s₀` holds (observable fields equal,
-  `reachableInv` at init, `cellOk` with `optA = optB = none` reduces to
-  `stX = stX`).
+Each bridge is proved by peeling its external scalars into hit queries via
+`probOutput_simulateQ_consumeLazy_run'_eq` and bridging via
+`probOutput_simulateQ_run'_eq_of_state_rel` under a state relation
+(`R_standard` / `R_edge`). Per-query `RelTriple` obligations follow the
+taxonomy: non-hit → `relTriple_of_evalDist_eq`; embedding → identity bijection
+coupling `y ↔ a`; challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP`
++ reachability heal.
 -/
+
+/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) per-fixed-`x₀` bridge. -/
+private lemma probOutput_standard_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run'
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) =
+    evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) := by
+  sorry
+
+/-- Edge-case (`gp = ⟨1, _, .A⟩`) bridge: reduction init `(.inr (a•gen), .inl 0)`
+with outer `a ←$ F` equals honest init `(.inr (x₀•gen), .inl x₀)` with
+outer `x₀ ←$ F` (renaming `a ↔ x₀`), averaged over the remaining `b ←$ F`. -/
+private lemma probOutput_edge_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+    (adversary : CKAAdversary (F ⊕ G) G G) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run'
+        (initGameState (.inr (a • gen)) ((.inl 0) : F ⊕ G) false)) =
+    evalDist (do
+      let x₀ ← ($ᵗ F : ProbComp F)
+      (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) := by
+  sorry
 
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
 
-Skeleton: `by_cases` on `gp.tStar = 1 ∧ gp.challengedParty = .A`. Each
-branch reduces — after peeling the shared outer `x₀ ←$ F`, peeling the DDH
-scalars `a, b` via `probOutput_simulateQ_consumeLazy_run'_eq`, and applying
-`probOutput_simulateQ_run'_eq_of_state_rel` with `R_standard` / `R_edge` —
-to the per-query `RelTriple` obligations listed above. -/
+Unfolds both games, case-splits on `reductionInitState`'s `if`, and reduces
+each branch to one of the named inner bridges above. -/
 private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
   by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
-  · -- Edge case: `reductionInitState` returns `.inr (a•gen), .inl 0` without
-    -- sampling `x₀`. Rename reduction's outer `a ←$ F` to honest's `x₀ ←$ F`
-    -- via `probOutput_bind_congr'` (identity bijection on `F`); peel only
-    -- `b` into `challA` via `probOutput_simulateQ_consumeLazy_run'_eq`;
-    -- bridge via `probOutput_simulateQ_run'_eq_of_state_rel` with an
-    -- `R_edge` (analog of `R_standard` but with a single `Option F` cache
-    -- for `b` and init-side `stB := .inl 0 ↔ .inl x₀` tolerance).
+  · -- Edge: `reductionInitState` = `pure (init .inr gA .inl 0)`. Unfold both
+    -- games, route LHS through `probOutput_edge_pointwise h_edge`, bind
+    -- normalization on both sides (RHS's `let (b', _) ← m.run; return b'`
+    -- collapses to `Prod.fst <$> m.run = m.run'`).
     sorry
-  · -- Standard case: both sides sample `x₀ ←$ F` through
-    -- `reductionInitState`. Swap `x₀` outer on LHS via
-    -- `probOutput_bind_bind_swap`; per fixed `x₀`, peel `a, b` into hit
-    -- queries via `probOutput_simulateQ_consumeLazy_run'_eq` (twice, with
-    -- `hindepA_real` / `hindepB_real`); apply
-    -- `probOutput_simulateQ_run'_eq_of_state_rel` with `R_standard gen gp`
-    -- and discharge the per-query `RelTriple` obligations enumerated above.
+  · -- Standard: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
+    -- Unfold both games; `probOutput_bind_bind_swap` twice to float `x₀`
+    -- outer on LHS (past `a` and `b`); `probOutput_bind_congr'` on the
+    -- shared outer `x₀`; close each fiber with
+    -- `probOutput_standard_pointwise h_edge`.
     sorry
 
 /-- **Step (2) of the random branch.** Game-level bridge:
