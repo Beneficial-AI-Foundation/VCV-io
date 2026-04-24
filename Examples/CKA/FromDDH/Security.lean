@@ -551,6 +551,26 @@ private def R_standard (gen : G) (gp : GameParams) :
     | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
     | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
 
+omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
+  [DecidableEq G] [Inhabited F] in
+/-- `R_standard` holds at the shared init state with empty caches:
+observable fields match trivially, `reachableInv` at init picks the
+`lastAction = none` disjunct of `phaseShapeInv` with witness `x = x₀`, and
+`cellOk _ _ none` reduces to cell equality. -/
+private lemma R_standard_init (gp : GameParams) (x₀ : F) :
+    R_standard gen gp
+      ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none)
+      (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
+  · -- reachableInv gen (init ...)
+    refine ⟨?_, rfl, ?_⟩
+    · -- phaseCounterInv: lastAction = none ⇒ tA = tB; both 0 at init.
+      simp [phaseCounterInv, initGameState]
+    · -- phaseShapeInv at lastAction = none: take x = x₀.
+      exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · -- cellOk match: optA = optB = none ⇒ first disjunct (equality) holds.
+    cases gp.challengedParty <;> exact ⟨Or.inl rfl, Or.inl rfl⟩
+
 /-! #### Per-`x₀` inner bridges
 
 Step (2) real decomposes through two named inner bridges — one per branch of
