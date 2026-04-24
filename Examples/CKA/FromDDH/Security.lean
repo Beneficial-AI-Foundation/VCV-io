@@ -510,6 +510,47 @@ private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
     consumeLazy (hit := hitA gp) (implFam := fun a =>
       reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
 
+/-- Per-cell coupling tolerating dead-write divergence on a single party's
+cell. Either the cells match, or reduction's cell is the placeholder `.inl 0`
+while honest's cell is `.inl v` for the value `v` committed in the relevant
+cache.
+
+Parameter `cache` supplies the expected honest value at the dead-write event:
+* stA-dead at embedding (P = B): cache = `optA` (embedding samples `a`).
+* stA-dead at challenge (P = A): cache = `optB` (challenge samples `b`).
+* stB-dead at embedding (P = A): cache = `optA`.
+* stB-dead at challenge (P = B): cache = `optB`. -/
+private def cellOk (stRed stHon : F ⊕ G) (cache : Option F) : Prop :=
+  stRed = stHon ∨
+    (stRed = (.inl 0 : F ⊕ G) ∧ ∃ v, cache = some v ∧ stHon = .inl v)
+
+/-- State relation for the standard-case bridge
+`simulateQ (reductionImpl_lazy_real gp gen) ≈ simulateQ (ckaSecurityImpl …)`.
+
+* Observable fields (`tA`, `tB`, `b`, `lastAction`, `rhoA/B`, `keyA/B`) match.
+* `reachableInv` holds on the honest side (forces `phaseShapeInv` for the
+  scalar extractions in `reductionSend{A,B}`'s embedding branch).
+* `stA` / `stB` are `cellOk` with caches routed by `gp.challengedParty`:
+  - `P = A`: stA-dead pairs with `optB` (challenge samples `b`); stB-dead
+    pairs with `optA` (embedding samples `a`).
+  - `P = B`: stA-dead pairs with `optA`; stB-dead pairs with `optB`.
+
+The `correct` field is *not* required to match — reduction's dead-cell
+`recv*` comparisons can flip it, and `correct` is unobserved by the
+security game. -/
+private def R_standard (gen : G) (gp : GameParams) :
+    ((GameState (F ⊕ G) G G × Option F) × Option F) → GameState (F ⊕ G) G G → Prop :=
+  fun ((s_red, optA), optB) s_hon =>
+    s_red.tA = s_hon.tA ∧ s_red.tB = s_hon.tB ∧
+    s_red.b = s_hon.b ∧
+    s_red.lastAction = s_hon.lastAction ∧
+    s_red.rhoA = s_hon.rhoA ∧ s_red.rhoB = s_hon.rhoB ∧
+    s_red.keyA = s_hon.keyA ∧ s_red.keyB = s_hon.keyB ∧
+    reachableInv gen s_hon ∧
+    match gp.challengedParty with
+    | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
+    | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
+
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
 
