@@ -510,6 +510,36 @@ private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
     consumeLazy (hit := hitA gp) (implFam := fun a =>
       reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
 
+/-- `h_indep` for the `a`-layer of `reductionImpl_lazy_real`: at `hitA = false`
+queries, `reductionOracleImpl` is independent of `a`. Non-hit queries dispatch
+to oracles that don't touch `gA` (non-embedding `send{A,B}`, `recv{A,B}`,
+`unif`, `corrupt{A,B}`, wrong-party `chall{A,B}` — the last four branches
+return `pure none` before reaching `gT`). -/
+private lemma hindepA_real (gp : GameParams) (b : F)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G) (a₁ a₂ : F)
+    (h : hitA gp t = false) :
+    (reductionOracleImpl gp gen (a₁ • gen) (b • gen) ((a₁ * b) • gen) t).run s =
+    (reductionOracleImpl gp gen (a₂ • gen) (b • gen) ((a₂ * b) • gen) t).run s := by
+  sorry
+
+/-- `h_indep` for the `b`-layer (inner `consumeLazy` over `a`): at
+`hitB = false` queries, `consumeLazy (fun a => reductionOracleImpl … gA (b•gen)
+((a·b)•gen))` is independent of `b`. Non-hit queries (everything except the
+challenge of the challenged party) either don't touch `gB, gT` at all or
+return `pure none` on the wrong-party guard. -/
+private lemma hindepB_real (gp : GameParams)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G × Option F) (b₁ b₂ : F)
+    (h : hitB gp t = false) :
+    (OracleComp.ProgramLogic.Relational.consumeLazy (hit := hitA gp)
+        (implFam := fun a =>
+          reductionOracleImpl gp gen (a • gen) (b₁ • gen) ((a * b₁) • gen)) t).run s =
+    (OracleComp.ProgramLogic.Relational.consumeLazy (hit := hitA gp)
+        (implFam := fun a =>
+          reductionOracleImpl gp gen (a • gen) (b₂ • gen) ((a * b₂) • gen)) t).run s := by
+  sorry
+
 /-- Per-cell coupling tolerating dead-write divergence on a single party's
 cell. Either the cells match, or reduction's cell is the placeholder `.inl 0`
 while honest's cell is `.inl v` for the value `v` committed in the relevant
