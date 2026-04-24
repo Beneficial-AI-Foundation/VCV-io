@@ -521,7 +521,21 @@ private lemma hindepA_real (gp : GameParams) (b : F)
     (h : hitA gp t = false) :
     (reductionOracleImpl gp gen (a₁ • gen) (b • gen) ((a₁ * b) • gen) t).run s =
     (reductionOracleImpl gp gen (a₂ • gen) (b • gen) ((a₂ * b) • gen) t).run s := by
-  sorry
+  -- Match on the 9-way nested Sum domain.
+  match t with
+  | .inr _ => rfl  -- corruptB: no gA/gB/gT use
+  | .inl (.inr _) => rfl  -- corruptA: no gA/gB/gT use
+  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+    sorry
+  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
+    sorry
+  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB: no gA use
+  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB: gated by P = .A
+    sorry
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA: no gA use
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: gated by P = .B
+    sorry
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif: no gA use
 
 /-- `h_indep` for the `b`-layer (inner `consumeLazy` over `a`): at
 `hitB = false` queries, `consumeLazy (fun a => reductionOracleImpl … gA (b•gen)
