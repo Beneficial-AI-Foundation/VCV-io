@@ -592,23 +592,29 @@ coupling `y ↔ a`; challenge → `x ↔ b`; corruption → `allowCorr ∨ finis
 + reachability heal.
 -/
 
-/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) per-fixed-`x₀` bridge.
+/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) game-level bridge.
 
-Stated in the same `let (b', _) ← m.run s; return b'` shape as the games
-unfold, so that Step (2)'s dispatch can apply the helper directly after
-`simp only [reductionInitState, if_neg h_edge]` without needing to convert
-between `.run'` and `Prod.fst <$> .run`. -/
+Stated with `x₀ ← $ᵗ F` sampled *inside* on both sides (rather than passed
+as a parameter) — this matches the shape Step (2)'s dispatch produces after
+`simp only [reductionInitState, if_neg h_edge]`, avoiding a 3-way bind swap
+to move `x₀` to the outermost position.
+
+Proof outline: `probOutput_bind_congr'` on the shared outer `x₀`; per fixed
+`x₀`, peel `a, b` via `probOutput_simulateQ_consumeLazy_run'_eq` × 2 and
+bridge via `probOutput_simulateQ_run'_eq_of_state_rel` with `R_standard`. -/
 private lemma probOutput_standard_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
-    (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
+    (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
+      let x₀ ← ($ᵗ F : ProbComp F)
       let (b', _) ← (simulateQ
           (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
         (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       return b'] =
     Pr[= false | do
+      let x₀ ← ($ᵗ F : ProbComp F)
       let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
         (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       return b'] := by
@@ -651,45 +657,69 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
     exact probOutput_edge_pointwise (gen := gen) gp hΔ h_edge adversary
   · -- Standard: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
     simp only [reductionInitState, if_neg h_edge, bind_assoc, pure_bind]
-    -- LHS: `do a ← $F; b ← $F; x₀ ← $F; (b',_) ← run (init x₀); return b'`.
-    -- Swap `x₀` past `b` and `a` on LHS so both sides share outer `x₀ ← $F`.
-    rw [probOutput_bind_bind_swap
-          (mx := ($ᵗ F : ProbComp F))
-          (my := ($ᵗ F : ProbComp F))
-          (f := fun a b => do
-            let x₀ ← ($ᵗ F : ProbComp F)
-            let (b', _) ← (simulateQ
-                (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
-                adversary).run (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
-            return b')]
-    -- Now the LHS has `do b ← $F; do a ← $F; do x₀ ← $F; ...`.
-    -- Swap x₀ past a too.
-    sorry
+    exact probOutput_standard_pointwise (gen := gen) gp hΔ h_edge adversary
+
+/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) rand-branch game-level bridge.
+Analogue of `probOutput_standard_pointwise` with the extra `c ← $ᵗ F`
+sampled internally; challenge couples `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
+private lemma probOutput_standard_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (hg : Function.Bijective (· • gen : F → G))
+    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (adversary : CKAAdversary (F ⊕ G) G G) :
+    Pr[= false | do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      let c ← ($ᵗ F : ProbComp F)
+      let x₀ ← ($ᵗ F : ProbComp F)
+      let (b', _) ← (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      return b'] =
+    Pr[= false | do
+      let x₀ ← ($ᵗ F : ProbComp F)
+      let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) true)
+      return b'] := by
+  sorry
+
+/-- Edge-case (`gp = ⟨1, _, .A⟩`) rand-branch bridge. Analogue of
+`probOutput_edge_pointwise`; reduction's init is `(.inr (a•gen), .inl 0)`
+with `c` replacing `a*b` in `gT`; rename `a ↔ x₀`, couple
+`c•gen ↔ outKey ← $ᵗ G` via `hg` at the challenge. -/
+private lemma probOutput_edge_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (hg : Function.Bijective (· • gen : F → G))
+    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+    (adversary : CKAAdversary (F ⊕ G) G G) :
+    Pr[= false | do
+      let a ← ($ᵗ F : ProbComp F)
+      let b ← ($ᵗ F : ProbComp F)
+      let c ← ($ᵗ F : ProbComp F)
+      let (b', _) ← (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen)) adversary).run
+        (initGameState (.inr (a • gen)) ((.inl 0) : F ⊕ G) false)
+      return b'] =
+    Pr[= false | do
+      let x₀ ← ($ᵗ F : ProbComp F)
+      let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) true)
+      return b'] := by
+  sorry
 
 /-- **Step (2) of the random branch.** Game-level bridge:
 `Pr[= false | securityReductionRandGame] = Pr[= false | CKA^{b = true}]`.
-Parallel to `probOutput_securityReductionRealGame_eq_honestFalse`, case-split
-on `gp`. Three external scalars `a, b, c ←$ F` (so `gT := c•gen`); the
-`challX` output coupling uses the `hg`-bijection `c•gen ↔ outKey ←$ᵗ G`
-against honest's `b = true` random-key path. -/
+Parallel to `probOutput_securityReductionRealGame_eq_honestFalse`. -/
 private lemma probOutput_securityReductionRandGame_eq_honestTrue
     (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRandGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitTrueGame (gen := gen) gp adversary] := by
+  unfold securityReductionRandGame securityExpFixedBitTrueGame
   by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
-  · -- Edge case: rename `a ←$ F` to `x₀ ←$ F`; peel `b, c` into `challA` via
-    -- two `consumeLazy` applications (state cache: `(Option F)² = (optB, optC)`).
-    -- Bridge via `R_edge_rand` (includes `optC` cache); at the challenge,
-    -- couple honest's `outKey ←$ᵗ G` with reduction's `c•gen` via `hg`.
-    sorry
-  · -- Standard case: both sides sample `x₀ ←$ F`; swap outer; peel `a, b, c`
-    -- via three `consumeLazy` applications; bridge via `R_standard_rand`
-    -- (extends `R_standard` with `optC` tracking the `c` sample). At the
-    -- challenge, honest's `b = true` branch samples `outKey ←$ᵗ G`; couple
-    -- with reduction's `gT = c•gen` via `hg`-bijection `c ↔ outKey`.
-    sorry
+  · simp only [reductionInitState, if_pos h_edge, pure_bind]
+    exact probOutput_edge_pointwise_rand (gen := gen) gp hΔ hg h_edge adversary
+  · simp only [reductionInitState, if_neg h_edge, bind_assoc, pure_bind]
+    exact probOutput_standard_pointwise_rand (gen := gen) gp hΔ hg h_edge adversary
 
 /-- **Real-branch lemma.**
 `Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]`.
