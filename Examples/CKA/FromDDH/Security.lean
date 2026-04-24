@@ -634,17 +634,19 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
+  -- Work at the evalDist level then descend to probOutput via its definition.
+  suffices h : evalDist (securityReductionRealGame (gen := gen) gp adversary) =
+      evalDist (securityExpFixedBitFalseGame (gen := gen) gp adversary) by
+    simp [probOutput, h]
+  unfold securityReductionRealGame securityExpFixedBitFalseGame
   by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
-  · -- Edge: `reductionInitState` = `pure (init .inr gA .inl 0)`. Unfold both
-    -- games, route LHS through `probOutput_edge_pointwise h_edge`, bind
-    -- normalization on both sides (RHS's `let (b', _) ← m.run; return b'`
-    -- collapses to `Prod.fst <$> m.run = m.run'`).
-    sorry
+  · -- Edge: `reductionInitState` = `pure (init .inr gA .inl 0)` (no x₀ sample).
+    simp only [reductionInitState, if_pos h_edge, pure_bind]
+    exact probOutput_edge_pointwise gp hΔ h_edge adversary
   · -- Standard: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
-    -- Unfold both games; `probOutput_bind_bind_swap` twice to float `x₀`
-    -- outer on LHS (past `a` and `b`); `probOutput_bind_congr'` on the
-    -- shared outer `x₀`; close each fiber with
-    -- `probOutput_standard_pointwise h_edge`.
+    simp only [reductionInitState, if_neg h_edge]
+    -- After bind-flattening LHS is `do a ← $F; b ← $F; x₀ ← $F; ...`.
+    -- Swap `x₀` past `b` and then past `a`, so both sides share outer `x₀`.
     sorry
 
 /-- **Step (2) of the random branch.** Game-level bridge:
