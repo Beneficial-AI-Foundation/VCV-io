@@ -456,6 +456,60 @@ private lemma probOutput_securityExpFixedBit_true (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitTrueGame ddhCKA
   simp [initGameState]
 
+/-! ### Helpers for Step (2): hit predicates and lazy reduction
+
+Pattern-matched on the 9-way nested-`Sum` domain of `ckaSecuritySpec`, with
+outside-in ordering: `.inr ↦ corruptB`, `.inl .inr ↦ corruptA`,
+`.inl .inl .inr ↦ challB`, `.inl (…).inr ↦ challA`, …, innermost
+`.inl …(ℕ)` for `unifSpec`.
+-/
+
+section Step2
+variable [Inhabited F]
+
+open OracleComp.ProgramLogic.Relational in
+/-- Hit predicate for the external DDH scalar `a`. Fires at queries where
+`reductionOracleImpl` can inject `gA = a•gen`:
+* `P = A`: `sendB` (embedding epoch) and `challA` (challenge epoch).
+* `P = B`: `sendA` (embedding epoch) and `challB` (challenge epoch).
+
+At non-hit queries the reduction's impl is `a`-independent
+(see `hindepA_real`). -/
+private def hitA (gp : GameParams) :
+    (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
+  | .inl (.inl (.inl (.inr _))) =>  -- challA
+      gp.challengedParty = .A
+  | .inl (.inl (.inr _)) =>          -- challB
+      gp.challengedParty = .B
+  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB
+      gp.challengedParty = .A
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA
+      gp.challengedParty = .B
+  | _ => false
+
+/-- Hit predicate for the external DDH scalar `b`. Fires at the challenge
+query of the challenged party (the only site where `gT = (a·b)•gen` is
+injected by `reductionChall{A,B}`). -/
+private def hitB (gp : GameParams) :
+    (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
+  | .inl (.inl (.inl (.inr _))) =>  -- challA
+      gp.challengedParty = .A
+  | .inl (.inl (.inr _)) =>          -- challB
+      gp.challengedParty = .B
+  | _ => false
+
+open OracleComp.ProgramLogic.Relational in
+/-- Lazy-sampled reduction impl (real branch): two `consumeLazy` layers peel
+`a` and `b` into their hit queries. State cells:
+`((gameState, optA : Option F), optB : Option F)` — inner cache for `a`,
+outer cache for `b`. -/
+private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
+    QueryImpl (ckaSecuritySpec (F ⊕ G) G G)
+      (StateT ((GameState (F ⊕ G) G G × Option F) × Option F) ProbComp) :=
+  consumeLazy (hit := hitB gp) (implFam := fun b =>
+    consumeLazy (hit := hitA gp) (implFam := fun a =>
+      reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
+
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
 
@@ -625,6 +679,7 @@ lemma security_le_ddh_plus_failGap (gp : GameParams)
   unfold securityAdvantage ddhGuessAdvantage
   exact habs
 
+omit [Inhabited F] in
 /-- Auxiliary: the failure probability of `securityExpFixedBit` does not depend on
 the challenge bit.
 
@@ -662,5 +717,7 @@ theorem security (gp : GameParams)
       (congrArg ENNReal.toReal hFail).symm
     rw [this]; simp
   linarith [hBound, hGap]
+
+end Step2
 
 end ddhCKA
