@@ -592,18 +592,26 @@ coupling `y ↔ a`; challenge → `x ↔ b`; corruption → `allowCorr ∨ finis
 + reachability heal.
 -/
 
-/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) per-fixed-`x₀` bridge. -/
+/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) per-fixed-`x₀` bridge.
+
+Stated in the same `let (b', _) ← m.run s; return b'` shape as the games
+unfold, so that Step (2)'s dispatch can apply the helper directly after
+`simp only [reductionInitState, if_neg h_edge]` without needing to convert
+between `.run'` and `Prod.fst <$> .run`. -/
 private lemma probOutput_standard_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
-    evalDist (do
+    Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
-      (simulateQ
-          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run'
-        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) =
-    evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) := by
+      let (b', _) ← (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      return b'] =
+    Pr[= false | do
+      let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      return b'] := by
   sorry
 
 /-- Edge-case (`gp = ⟨1, _, .A⟩`) bridge: reduction init `(.inr (a•gen), .inl 0)`
@@ -612,16 +620,18 @@ outer `x₀ ←$ F` (renaming `a ↔ x₀`), averaged over the remaining `b ←$
 private lemma probOutput_edge_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
     (adversary : CKAAdversary (F ⊕ G) G G) :
-    evalDist (do
+    Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
       let b ← ($ᵗ F : ProbComp F)
-      (simulateQ
-          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run'
-        (initGameState (.inr (a • gen)) ((.inl 0) : F ⊕ G) false)) =
-    evalDist (do
+      let (b', _) ← (simulateQ
+          (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)) adversary).run
+        (initGameState (.inr (a • gen)) ((.inl 0) : F ⊕ G) false)
+      return b'] =
+    Pr[= false | do
       let x₀ ← ($ᵗ F : ProbComp F)
-      (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run'
-        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)) := by
+      let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      return b'] := by
   sorry
 
 /-- **Step (2) of the real branch.** Game-level bridge:
@@ -634,19 +644,26 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
-  -- Work at the evalDist level then descend to probOutput via its definition.
-  suffices h : evalDist (securityReductionRealGame (gen := gen) gp adversary) =
-      evalDist (securityExpFixedBitFalseGame (gen := gen) gp adversary) by
-    simp [probOutput, h]
   unfold securityReductionRealGame securityExpFixedBitFalseGame
   by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
   · -- Edge: `reductionInitState` = `pure (init .inr gA .inl 0)` (no x₀ sample).
     simp only [reductionInitState, if_pos h_edge, pure_bind]
-    exact probOutput_edge_pointwise gp hΔ h_edge adversary
+    exact probOutput_edge_pointwise (gen := gen) gp hΔ h_edge adversary
   · -- Standard: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
-    simp only [reductionInitState, if_neg h_edge]
-    -- After bind-flattening LHS is `do a ← $F; b ← $F; x₀ ← $F; ...`.
-    -- Swap `x₀` past `b` and then past `a`, so both sides share outer `x₀`.
+    simp only [reductionInitState, if_neg h_edge, bind_assoc, pure_bind]
+    -- LHS: `do a ← $F; b ← $F; x₀ ← $F; (b',_) ← run (init x₀); return b'`.
+    -- Swap `x₀` past `b` and `a` on LHS so both sides share outer `x₀ ← $F`.
+    rw [probOutput_bind_bind_swap
+          (mx := ($ᵗ F : ProbComp F))
+          (my := ($ᵗ F : ProbComp F))
+          (f := fun a b => do
+            let x₀ ← ($ᵗ F : ProbComp F)
+            let (b', _) ← (simulateQ
+                (reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen))
+                adversary).run (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+            return b')]
+    -- Now the LHS has `do b ← $F; do a ← $F; do x₀ ← $F; ...`.
+    -- Swap x₀ past a too.
     sorry
 
 /-- **Step (2) of the random branch.** Game-level bridge:
