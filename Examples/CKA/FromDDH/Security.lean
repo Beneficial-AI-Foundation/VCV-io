@@ -510,6 +510,7 @@ private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
     consumeLazy (hit := hitA gp) (implFam := fun a =>
       reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
 
+omit [Inhabited F] in
 /-- `h_indep` for the `a`-layer of `reductionImpl_lazy_real`: at `hitA = false`
 queries, `reductionOracleImpl` is independent of `a`. Non-hit queries dispatch
 to oracles that don't touch `gA` (non-embedding `send{A,B}`, `recv{A,B}`,
@@ -526,15 +527,43 @@ private lemma hindepA_real (gp : GameParams) (b : F)
   | .inr _ => rfl  -- corruptB: no gA/gB/gT use
   | .inl (.inr _) => rfl  -- corruptA: no gA/gB/gT use
   | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
-    sorry
+    cases h_cp : gp.challengedParty with
+    | A =>
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionChallB, h_cp]
+      rfl
+    | B =>
+      exfalso
+      simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
-    sorry
+    cases h_cp : gp.challengedParty with
+    | A =>
+      exfalso
+      simp [hitA, h_cp] at h
+    | B =>
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionChallA, h_cp]
+      rfl
   | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB: no gA use
   | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB: gated by P = .A
-    sorry
+    cases h_cp : gp.challengedParty with
+    | A =>
+      exfalso
+      simp [hitA, h_cp] at h
+    | B =>
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionSendB, h_cp]
+      rfl
   | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA: no gA use
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: gated by P = .B
-    sorry
+    cases h_cp : gp.challengedParty with
+    | A =>
+      simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+        reductionSendA, h_cp]
+      rfl
+    | B =>
+      exfalso
+      simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif: no gA use
 
 /-- `h_indep` for the `b`-layer (inner `consumeLazy` over `a`): at
