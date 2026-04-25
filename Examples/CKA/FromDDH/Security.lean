@@ -756,12 +756,44 @@ Step (2) real decomposes through two named inner bridges — one per branch of
 
 Each bridge is proved by peeling its external scalars into hit queries via
 `probOutput_simulateQ_consumeLazy_run'_eq` and bridging via
-`probOutput_simulateQ_run'_eq_of_state_rel` under a state relation
-(`R_standard` / `R_edge`). Per-query `RelTriple` obligations follow the
-taxonomy: non-hit → `relTriple_of_evalDist_eq`; embedding → identity bijection
-coupling `y ↔ a`; challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP`
-+ reachability heal.
+`relTriple_simulateQ_run'` + `evalDist_eq_of_relTriple_eqRel` under a state
+relation (`R_standard` / `R_edge`). Per-query `RelTriple` obligations
+(`relTriple_real_step` / `relTriple_edge_step`) follow the taxonomy: non-hit
+→ `relTriple_of_evalDist_eq`; embedding → identity bijection coupling `y ↔ a`;
+challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP` + reachability heal.
 -/
+
+/-- Per-query `RelTriple` obligation for the standard-case state relation.
+
+For each oracle index `i : (ckaSecuritySpec _).Domain`, if `R_standard` holds
+on the pre-states, then running the lazy reduction's oracle and honest CKA's
+oracle produces equal observable outputs and a post-state pair still in
+`R_standard`.
+
+Discharged by case analysis on `i` (9-way nested Sum):
+* **Non-hit** (`recvA/B`, `corruptA/B`, `oracleUnif`, non-embedding `sendA/B`,
+  wrong-party `chall`): both impls run the same code; close via
+  `relTriple_of_evalDist_eq`.
+* **Embedding-`send`** (`sendB` if `P = A`, `sendA` if `P = B`, at the
+  `tQ = t* - 1` epoch): identity bijection coupling `y ↔ a`; commits
+  `optA := some a` and tolerates the `stX := .inl 0 ↔ .inl a` divergence
+  through `R_standard`'s `cellOk` clause.
+* **Challenge** (`chall P` at `tP = t*`): identity bijection `x ↔ b`;
+  commits `optB := some b`.
+* **Corruption** (`corruptA/B`): `allowCorr` is closed in the dead-cell window
+  and `finishedP` only fires after a `recv` heals the dead cell; in either
+  case `stX` matches across sides. -/
+private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (i : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G)
+    (hR : R_standard gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen i).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen) i).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_standard gen gp p₁.2 p₂.2) := by
+  sorry
 
 /-- Standard-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
