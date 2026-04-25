@@ -697,25 +697,21 @@ private lemma R_general_init (gp : GameParams) (x₀ : F) :
   · -- cellOk match: optA = optB = none ⇒ first disjunct (equality) holds.
     cases gp.challengedParty <;> exact ⟨Or.inl rfl, Or.inl rfl⟩
 
-/-! #### Per-`x₀` inner bridges
+/-! #### Inner bridges (pointwise wrappers)
 
 Step (2) real decomposes through two named inner bridges — one per branch of
 `by_cases` on `(gp.tStar = 1 ∧ gp.challengedParty = .A)`:
 
-* `probOutput_general_pointwise`: for `¬ (t* = 1 ∧ P = A)` and fixed `x₀`,
-  running the reduction (with outer `a, b ←$ F`) on `init .inr (x₀•gen) .inl x₀`
-  equals running honest CKA on the same state.
-* `probOutput_special_pointwise`: in the special case, renaming reduction's outer
-  `a ←$ F` to honest's `x₀ ←$ F` — since reduction's init uses `.inr (a•gen)`
-  and honest's uses `.inr (x₀•gen)`, the rename is an identity bijection.
+**General case** (`probOutput_general_pointwise`, for `¬ (t* = 1 ∧ P = A)`):
+the reduction game with `a, b, x₀ ←$ F` and the honest CKA game with
+`x₀ ←$ F`, both starting from the shared init `(.inr (x₀•gen), .inl x₀)`,
+have equal output distributions.
 
-Each bridge is proved by peeling its external scalars into hit queries via
-`probOutput_simulateQ_consumeLazy_run'_eq` and bridging via
-`relTriple_simulateQ_run'` + `evalDist_eq_of_relTriple_eqRel` under a state
-relation (`R_general` / `R_special`). Per-query `RelTriple` obligations
-(`relTriple_real_step` / `relTriple_special_step`) follow the taxonomy: non-hit
-→ `relTriple_of_evalDist_eq`; embedding → identity bijection coupling `y ↔ a`;
-challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP` + reachability heal.
+**Special case** (`probOutput_special_pointwise`, for `gp = ⟨1, _, .A⟩`):
+reduction's `a ←$ F` plays the role of honest's `x₀ ←$ F`; reduction's init
+`(.inr (a•gen), .inl 0)` matches honest's `(.inr (x₀•gen), .inl x₀)` under
+the rename `a ↔ x₀` (identity bijection on `F`), modulo the placeholder
+`stB := .inl 0` (healed by the first `recvB`).
 -/
 
 /-- Per-query `RelTriple` for the general-case bridge: at each oracle index
