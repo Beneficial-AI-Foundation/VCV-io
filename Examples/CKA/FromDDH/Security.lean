@@ -718,26 +718,21 @@ relation (`R_general` / `R_special`). Per-query `RelTriple` obligations
 challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP` + reachability heal.
 -/
 
-/-- Per-query `RelTriple` obligation for the general-case state relation.
+/-- Per-query `RelTriple` for the general-case bridge: at each oracle index
+`i`, lazy reduction and honest CKA produce equal observable outputs and
+post-states still related by `R_general`.
 
-For each oracle index `i : (ckaSecuritySpec _).Domain`, if `R_general` holds
-on the pre-states, then running the lazy reduction's oracle and honest CKA's
-oracle produces equal observable outputs and a post-state pair still in
-`R_general`.
+Closure recipe by case (9-way `Sum`, outside-in):
 
-Discharged by case analysis on `i` (9-way nested Sum):
-* **Non-hit** (`recvA/B`, `corruptA/B`, `oracleUnif`, non-embedding `sendA/B`,
-  wrong-party `chall`): both impls run the same code; close via
-  `relTriple_of_evalDist_eq`.
-* **Embedding-`send`** (`sendB` if `P = A`, `sendA` if `P = B`, at the
-  `tQ = t* - 1` epoch): identity bijection coupling `y ↔ a`; commits
-  `optA := some a` and tolerates the `stX := .inl 0 ↔ .inl a` divergence
-  through `R_general`'s `cellOk` clause.
-* **Challenge** (`chall P` at `tP = t*`): identity bijection `x ↔ b`;
-  commits `optB := some b`.
-* **Corruption** (`corruptA/B`): `allowCorr` is closed in the dead-cell window
-  and `finishedP` only fires after a `recv` heals the dead cell; in either
-  case `stX` matches across sides. -/
+  unifSpec / recv{A,B}        same code on both sides; R preserved trivially.
+  corrupt{A,B}                allowCorr/finishedP gating; dead cells healed
+                              by a prior recv before either gate opens.
+  send{A,B} (non-embedding)   honest else-branch on both sides.
+  send{A,B} (embedding)       identity coupling `y ↔ a`; commits `optA`,
+                              tolerates `stX: 0 ↔ a` via cellOk.
+  chall{A,B} (wrong party)    `pure none` on both sides (party-guard fails).
+  chall{A,B} (challenge)      identity coupling `x ↔ b`; commits `optB`,
+                              tolerates `stX: 0 ↔ b` via cellOk. -/
 private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (i : (ckaSecuritySpec (F ⊕ G) G G).Domain)
@@ -748,7 +743,16 @@ private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((reductionImpl_lazy_real gp gen i).run s_red)
       ((ckaSecurityImpl gp (ddhCKA F G gen) i).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
-  sorry
+  match i with
+  | .inr _ => sorry  -- corruptB
+  | .inl (.inr _) => sorry  -- corruptA
+  | .inl (.inl (.inr _)) => sorry  -- challB
+  | .inl (.inl (.inl (.inr _))) => sorry  -- challA
+  | .inl (.inl (.inl (.inl (.inr _)))) => sorry  -- recvB
+  | .inl (.inl (.inl (.inl (.inl (.inr _))))) => sorry  -- sendB
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => sorry  -- recvA
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => sorry  -- sendA
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => sorry  -- unifSpec
 
 /-- General-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
