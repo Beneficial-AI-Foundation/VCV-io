@@ -501,7 +501,7 @@ we have:
 2. **State simulation.**
 We define a relation `R_general` between
 
-- the reduction state `(stateR, a, b)`, and
+- the lazy reduction's state `(stateR, a, b)`, and
 - the honest CKA state `stateH`
 
 as the conjunction of:
@@ -510,31 +510,15 @@ as the conjunction of:
      `tA, tB, b, lastAction, rho{A,B}, key{A,B}`.
 
    - **placeholder coupling** — for each of `stA, stB`: either both sides
-     agree, or reduction holds the placeholder `0` while honest holds the
-     scalar `v` stored in the matching `consumeLazy` cache. Pairing:
-     `stA ↔ b`-cache, `stB ↔ a`-cache if `P = A`; swapped if `P = B`.
+     agree, or the reduction holds the placeholder `0` and honest holds a
+     scalar `v ∈ F`, with `v` equal to the value carried in reduction's
+     matching `consumeLazy` cache.
 
-   - **reachability** — `reachableInv stateH` (rules out fallback scalar
-     extraction in send embeddings).
+   - **reachability** — `reachableInv` (reachable state invariant) holds on `stateH`.
 
 Lemma `probOutput_simulateQ_run'_eq_of_state_rel` reduces the
 game-level equivalence to per-query `RelTriple`s: each oracle preserves
 `R_general` on its post-state and produces equal observable outputs.
-
-The proof is layered through three helpers (innermost to outermost):
-
-  `_per_x₀`              — per-fixed-`x₀` core: applies lazy sampling and
-                           `R_general` / `R_special` lifting.
-  `_pointwise`           — wraps `_per_x₀`: bind-swap `x₀ ←$ F` outermost
-                           on the reduction side, then `bind_congr'` per
-                           `x₀`.
-  `_eq_honest{False,True}` — Step (2)'s entry point: `by_cases` on
-                           `gp = ⟨1, _, .A⟩`, dispatching to the matching
-                           `_pointwise` (general or special).
-
-Nested `Sum` outside-in:
-  `corruptB`, `corruptA`, `challB`, `challA`,
-  `recvB`, `sendB`, `recvA`, `sendA`, `unifSpec (n : ℕ)`.
 -/
 
 section Step2
@@ -564,10 +548,7 @@ private def hitB (gp : GameParams) :
   | _ => false
 
 open OracleComp.ProgramLogic.Relational in
-/-- Lazy-sampled reduction impl (real branch): two `consumeLazy` layers peel
-`a` and `b` into their hit queries. State cells:
-`((gameState, optA : Option F), optB : Option F)` — inner cache for `a`,
-outer cache for `b`. -/
+/-- Lazy-sampled reduction impl (real branch) -/
 private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
     QueryImpl (ckaSecuritySpec (F ⊕ G) G G)
       (StateT ((GameState (F ⊕ G) G G × Option F) × Option F) ProbComp) :=
@@ -576,11 +557,7 @@ private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
       reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
 
 omit [Inhabited F] in
-/-- `h_indep` for the `a`-layer of `reductionImpl_lazy_real`: at `hitA = false`
-queries, `reductionOracleImpl` is independent of `a`. Non-hit queries dispatch
-to oracles that don't touch `gA` (non-embedding `send{A,B}`, `recv{A,B}`,
-`unif`, `corrupt{A,B}`, wrong-party `chall{A,B}` — the last four branches
-return `pure none` before reaching `gT`). -/
+/-- Lemma: At non-hit queries, the reduction's output doesn't depend on `a` -/
 private lemma hindepA_real (gp : GameParams) (b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s : GameState (F ⊕ G) G G) (a₁ a₂ : F)
@@ -631,11 +608,7 @@ private lemma hindepA_real (gp : GameParams) (b : F)
       simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif: no gA use
 
-/-- `h_indep` for the `b`-layer (inner `consumeLazy` over `a`): at
-`hitB = false` queries, `consumeLazy (fun a => reductionOracleImpl … gA (b•gen)
-((a·b)•gen))` is independent of `b`. Non-hit queries (everything except the
-challenge of the challenged party) either don't touch `gB, gT` at all or
-return `pure none` on the wrong-party guard. -/
+/-- Lemma: At non-hit queries, the reduction's output doesn't depend on `b` -/
 private lemma hindepB_real (gp : GameParams)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s : GameState (F ⊕ G) G G × Option F) (b₁ b₂ : F)
@@ -679,53 +652,37 @@ private lemma hindepB_real (gp : GameParams)
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => rfl  -- sendA (uses gA only)
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
-/-- Per-cell coupling tolerating dead-write divergence on a single party's
-cell. Either the cells match, or reduction's cell is the placeholder `.inl 0`
-while honest's cell is `.inl v` for the value `v` committed in the relevant
-cache.
-
-Parameter `cache` supplies the expected honest value at the dead-write event:
-* stA-dead at embedding (P = B): cache = `optA` (embedding samples `a`).
-* stA-dead at challenge (P = A): cache = `optB` (challenge samples `b`).
-* stB-dead at embedding (P = A): cache = `optA`.
-* stB-dead at challenge (P = B): cache = `optB`. -/
+/-- Per-cell coupling:
+- either the cells match, or
+- reduction's cell is the placeholder `.inl 0` while honest's cell is `.inl v`
+  for the value `v` committed in the relevant cache. -/
 private def cellOk (stRed stHon : F ⊕ G) (cache : Option F) : Prop :=
   stRed = stHon ∨
     (stRed = (.inl 0 : F ⊕ G) ∧ ∃ v, cache = some v ∧ stHon = .inl v)
 
-/-- State relation for the general-case bridge
-`simulateQ (reductionImpl_lazy_real gp gen) ≈ simulateQ (ckaSecurityImpl …)`.
-
-* Observable fields (`tA`, `tB`, `b`, `lastAction`, `rhoA/B`, `keyA/B`) match.
-* `reachableInv` holds on the honest side (forces `phaseShapeInv` for the
-  scalar extractions in `reductionSend{A,B}`'s embedding branch).
-* `stA` / `stB` are `cellOk` with caches routed by `gp.challengedParty`:
-  - `P = A`: stA-dead pairs with `optB` (challenge samples `b`); stB-dead
-    pairs with `optA` (embedding samples `a`).
-  - `P = B`: stA-dead pairs with `optA`; stB-dead pairs with `optB`.
-
-The `correct` field is *not* required to match — reduction's dead-cell
-`recv*` comparisons can flip it, and `correct` is unobserved by the
-security game. -/
+/-- State relation for the general-case bridge. -/
 private def R_general (gen : G) (gp : GameParams) :
     ((GameState (F ⊕ G) G G × Option F) × Option F) → GameState (F ⊕ G) G G → Prop :=
   fun ((s_red, optA), optB) s_hon =>
+    -- observable equality: tA, tB, b, lastAction, rho{A,B}, key{A,B}
     s_red.tA = s_hon.tA ∧ s_red.tB = s_hon.tB ∧
     s_red.b = s_hon.b ∧
     s_red.lastAction = s_hon.lastAction ∧
     s_red.rhoA = s_hon.rhoA ∧ s_red.rhoB = s_hon.rhoB ∧
     s_red.keyA = s_hon.keyA ∧ s_red.keyB = s_hon.keyB ∧
+    -- reachability on honest side: forces `phaseShapeInv` so reduction's
+    -- scalar-extraction at the embedding-`send` doesn't take the
+    -- `.inr _ => 0` fallback.
     reachableInv gen s_hon ∧
+    -- placeholder coupling for stA, stB; cache routing depends on which
+    -- party is challenged (P = A: stA ↔ optB, stB ↔ optA; P = B: swapped).
     match gp.challengedParty with
     | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
     | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
   [DecidableEq G] [Inhabited F] in
-/-- `R_general` holds at the shared init state with empty caches:
-observable fields match trivially, `reachableInv` at init picks the
-`lastAction = none` disjunct of `phaseShapeInv` with witness `x = x₀`, and
-`cellOk _ _ none` reduces to cell equality. -/
+/-- Lemma: `R_general` holds at the shared init state with empty caches -/
 private lemma R_general_init (gp : GameParams) (x₀ : F) :
     R_general gen gp
       ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none)
