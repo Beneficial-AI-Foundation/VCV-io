@@ -456,12 +456,79 @@ private lemma probOutput_securityExpFixedBit_true (gp : GameParams)
   unfold CKAScheme.securityExpFixedBit securityExpFixedBitTrueGame ddhCKA
   simp [initGameState]
 
-/-! ### Helpers for Step (2): hit predicates and lazy reduction
+/-! ### Step (2): lazy sampling and state simulation
 
-Pattern-matched on the 9-way nested-`Sum` domain of `ckaSecuritySpec`, with
-outside-in ordering: `.inr ↦ corruptB`, `.inl .inr ↦ corruptA`,
-`.inl .inl .inr ↦ challB`, `.inl (…).inr ↦ challA`, …, innermost
-`.inl …(ℕ)` for `unifSpec`.
+For each branch:
+
+  securityReductionRealGame  =  securityExpFixedBitFalseGame
+  securityReductionRandGame  =  securityExpFixedBitTrueGame.
+
+We have gA,gB,gT where:
+- gA = a•gen
+- gB = b•gen
+- gT = (a·b)•gen or gT = c•gen (where c is random)
+where a,b,c are sampled by the DDH experiment eagerly at beginning.
+
+The goal is to show that a,b,c can be equivalently sampled lazily, at the place of use,
+so that the experiment is closer to CKA.
+
+1. **Lazy sampling of scalars.**
+For
+   `I a b := reductionOracleImpl gp gen (a•gen) (b•gen) ((a·b)•gen)`
+   (real branch; rand uses `(c•gen)` for `gT` with an extra `c ←$ F`),
+we have:
+     `do a ← $ᵗ F; b ← $ᵗ F; simulateQ (I a b) 𝒜`
+       `=  simulateQ reductionImpl_lazy_real 𝒜`
+
+   where
+     `reductionImpl_lazy_real := consumeLazy (hit := hitB gp) (fun b =>
+        consumeLazy (hit := hitA gp) (fun a => I a b))`
+
+   defers each sample to the first query where its predicate holds.
+   With `P := gp.challengedParty` and `Q := P.other`, two embedding events:
+
+     `send Q`  at `tQ = t* - 1`  embeds `gA = a•gen` into `ρ`
+     `chall P` at `tP = t*`      embeds `(gB, gT) = (b•gen, (a·b)•gen)` into `(ρ, key)`
+
+   (Counters are post-increment, after the oracle's `tX++`.) Hit predicates
+   select the query tags where samples are needed:
+
+     `hitA i ↔ i ∈ {send Q, chall P}`   -- `a` used at both events
+     `hitB i ↔ i = chall P`             -- `b` used only at the challenge
+
+   Off-epoch hits cache the sample without observable effect.
+
+2. **State simulation.** Let `σ` be reduction's game state and `σ'` honest's;
+   reduction additionally carries optional scalars `a, b : F⊥` (absent at
+   init, populated at the first hit). The relation `R_standard` between
+   `(σ, a, b)` and `σ'` is the conjunction of:
+
+   - **observable equality** — `σ` and `σ'` agree on `tA, tB, b, lastAction,
+     rho{A,B}, key{A,B}`;
+   - **dead-cell coupling** — `σ.stA ≈_{cA} σ'.stA  ∧  σ.stB ≈_{cB} σ'.stB`,
+     with cache routing `(cA, cB) = (b, a)` if `P = A`, `(a, b)` if `P = B`,
+     and `x ≈_c y  iff  x = y  ∨  (x = 0 ∧ c = some v ∧ y = v)` (i.e., `x`
+     is reduction's dead placeholder and `y` is the cached scalar from the
+     first hit);
+   - **reachability** — `reachableInv σ'`, which rules out fallback scalar
+     extraction in send embeddings.
+
+   `R_standard_init` checks `R_standard` at the shared init.
+
+   The bridge `probOutput_simulateQ_run'_eq_of_state_rel` reduces the
+   game-level equivalence to per-query `RelTriple`s: each oracle preserves
+   `R_standard` on its post-state and produces equal observable outputs.
+
+Case split:
+
+  `_per_x₀`               : per-fixed-`x₀` claim — combines lazy sampling
+                            with `R_standard` / `R_edge` lifting.
+  `_pointwise`            : bind-swap `x₀ ←$ F` to outermost.
+  `_eq_honest{False,True}` : `by_cases` on `gp = ⟨1, _, .A⟩`; dispatch.
+
+Nested `Sum` outside-in:
+  `corruptB`, `corruptA`, `challB`, `challA`,
+  `recvB`, `sendB`, `recvA`, `sendA`, `unifSpec (n : ℕ)`.
 -/
 
 section Step2
