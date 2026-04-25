@@ -521,12 +521,16 @@ Lemma `probOutput_simulateQ_run'_eq_of_state_rel` reduces the
 game-level equivalence to per-query `RelTriple`s: each oracle preserves
 `R_general` on its post-state and produces equal observable outputs.
 
-Case split:
+The proof is layered through three helpers (innermost to outermost):
 
-  `_per_x₀`               : per-fixed-`x₀` claim — combines lazy sampling
-                            with `R_general` / `R_special` lifting.
-  `_pointwise`            : bind-swap `x₀ ←$ F` to outermost.
-  `_eq_honest{False,True}` : `by_cases` on `gp = ⟨1, _, .A⟩`; dispatch.
+  `_per_x₀`              — per-fixed-`x₀` core: applies lazy sampling and
+                           `R_general` / `R_special` lifting.
+  `_pointwise`           — wraps `_per_x₀`: bind-swap `x₀ ←$ F` outermost
+                           on the reduction side, then `bind_congr'` per
+                           `x₀`.
+  `_eq_honest{False,True}` — Step (2)'s entry point: `by_cases` on
+                           `gp = ⟨1, _, .A⟩`, dispatching to the matching
+                           `_pointwise` (general or special).
 
 Nested `Sum` outside-in:
   `corruptB`, `corruptA`, `challB`, `challA`,
