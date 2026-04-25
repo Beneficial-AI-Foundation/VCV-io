@@ -133,7 +133,7 @@ embedding-send (`sendB` for `P = A`, `sendA` for `P = B`) before the
 challenge, *except* `gp = ⟨1, _, .A⟩`: there `challA` fires as the first
 action with no prior send. For this case alone, `reductionInitState` injects
 `gA` at init into `stA` (identifying `x₀` with `a`); all other `gp` use the
-standard init `x₀ ←$ F` with `gA` embedded at the pre-challenge send.
+general-case init `x₀ ←$ F` with `gA` embedded at the pre-challenge send.
 
 **Per-query coupling at the embedding.** Reduction samples `a, b ←$ F` at the
 top of the game; honest samples per-epoch scalars inside its oracle bodies.
@@ -277,14 +277,14 @@ private noncomputable def reductionOracleImpl (gp : GameParams) (gen gA gB gT : 
 
 /-- Initial CKA game state used by the reduction, case-split on `gp`.
 
-* **Edge case** `gp = ⟨1, _, .A⟩`: `challA` must fire as the first action
+* **Special case** `gp = ⟨1, _, .A⟩`: `challA` must fire as the first action
   (`validStep none .challA`), so no embedding-send can precede the challenge.
   In this case the reduction identifies `x₀` with `a` by directly injecting
   `gA` into `stA`, skipping the usual `x₀ ← $ᵗ F` sample. The placeholder
   `.inl 0` in `stB` is a dead cell — B's internal key check at subsequent
   `recvB` flips `state.correct`, which is unobserved by the security game.
 
-* **Standard case**: `x₀ ← $ᵗ F`, `stA := .inr (x₀•gen)`, `stB := .inl x₀`,
+* **General case**: `x₀ ← $ᵗ F`, `stA := .inr (x₀•gen)`, `stB := .inl x₀`,
   matching honest CKA. Embedding of `gA` happens at the `sendB`-before-challenge
   epoch for `P = A` or `sendA`-before-challenge for `P = B` (both reachable
   when the challenge is reachable). -/
@@ -348,13 +348,13 @@ equivalence `securityReductionRealGame ≡ CKA^{b = false}`, proved by
 `consumeLazy` push-in (for `a, b`) plus a state relation `R` between
 reduction-side and honest-side game states, case-split on `gp`:
 
-* **Standard case** (`gp ≠ ⟨1, _, .A⟩`). Both sides start from
+* **General case** (`gp ≠ ⟨1, _, .A⟩`). Both sides start from
   `(stA, stB) = (x₀•gen, x₀)` with shared outer `x₀ ←$ F`. For each fixed
   `x₀`: push `a, b` into hit queries (embedding + challenge); couple by `R`
   matching all cells except dead writes `stX: 0 ↔ y`, bijected `y ↔ a/b`
   with honest's fresh in-oracle sample.
 
-* **Edge case** (`gp = ⟨1, _, .A⟩`). Reduction init `(gA, 0)` vs honest
+* **Special case** (`gp = ⟨1, _, .A⟩`). Reduction init `(gA, 0)` vs honest
   `(x₀•gen, x₀)`; identify `a ≡ x₀`. For each fixed `x₀`: push only `b` into
   `challA`; couple by `R` tolerating `stB: 0 ↔ x₀` at init (healed by first
   `recvB` overwriting `stB := .inr ρ`; corruption blocked until then).
@@ -498,31 +498,33 @@ we have:
 
    Off-epoch hits cache the sample without observable effect.
 
-2. **State simulation.** Let `σ` be reduction's game state and `σ'` honest's;
-   reduction additionally carries optional scalars `a, b : F⊥` (absent at
-   init, populated at the first hit). The relation `R_standard` between
-   `(σ, a, b)` and `σ'` is the conjunction of:
+2. **State simulation.**
+We define a relation `R_general` between
 
-   - **observable equality** — `σ` and `σ'` agree on `tA, tB, b, lastAction,
-     rho{A,B}, key{A,B}`;
-   - **dead-cell coupling** — `σ.stA ≈_{cA} σ'.stA  ∧  σ.stB ≈_{cB} σ'.stB`,
-     with cache routing `(cA, cB) = (b, a)` if `P = A`, `(a, b)` if `P = B`,
-     and `x ≈_c y  iff  x = y  ∨  (x = 0 ∧ c = some v ∧ y = v)` (i.e., `x`
-     is reduction's dead placeholder and `y` is the cached scalar from the
-     first hit);
-   - **reachability** — `reachableInv σ'`, which rules out fallback scalar
-     extraction in send embeddings.
+- the reduction state `(stateR, a, b)`, and
+- the honest CKA state `stateH`
 
-   `R_standard_init` checks `R_standard` at the shared init.
+as the conjunction of:
 
-   The bridge `probOutput_simulateQ_run'_eq_of_state_rel` reduces the
-   game-level equivalence to per-query `RelTriple`s: each oracle preserves
-   `R_standard` on its post-state and produces equal observable outputs.
+   - **observable equality** — `stateR` and `stateH` agree on
+     `tA, tB, b, lastAction, rho{A,B}, key{A,B}`.
+
+   - **placeholder coupling** — for each of `stA, stB`: either both sides
+     agree, or reduction holds the placeholder `0` while honest holds the
+     scalar `v` stored in the matching `consumeLazy` cache. Pairing:
+     `stA ↔ b`-cache, `stB ↔ a`-cache if `P = A`; swapped if `P = B`.
+
+   - **reachability** — `reachableInv stateH` (rules out fallback scalar
+     extraction in send embeddings).
+
+Lemma `probOutput_simulateQ_run'_eq_of_state_rel` reduces the
+game-level equivalence to per-query `RelTriple`s: each oracle preserves
+`R_general` on its post-state and produces equal observable outputs.
 
 Case split:
 
   `_per_x₀`               : per-fixed-`x₀` claim — combines lazy sampling
-                            with `R_standard` / `R_edge` lifting.
+                            with `R_general` / `R_special` lifting.
   `_pointwise`            : bind-swap `x₀ ←$ F` to outermost.
   `_eq_honest{False,True}` : `by_cases` on `gp = ⟨1, _, .A⟩`; dispatch.
 
@@ -535,13 +537,7 @@ section Step2
 variable [Inhabited F]
 
 open OracleComp.ProgramLogic.Relational in
-/-- Hit predicate for the external DDH scalar `a`. Fires at queries where
-`reductionOracleImpl` can inject `gA = a•gen`:
-* `P = A`: `sendB` (embedding epoch) and `challA` (challenge epoch).
-* `P = B`: `sendA` (embedding epoch) and `challB` (challenge epoch).
-
-At non-hit queries the reduction's impl is `a`-independent
-(see `hindepA_real`). -/
+/-- Predicate defining which oracle calls may require embedding of scalar a -/
 private def hitA (gp : GameParams) :
     (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
   | .inl (.inl (.inl (.inr _))) =>  -- challA
@@ -554,9 +550,7 @@ private def hitA (gp : GameParams) :
       gp.challengedParty = .B
   | _ => false
 
-/-- Hit predicate for the external DDH scalar `b`. Fires at the challenge
-query of the challenged party (the only site where `gT = (a·b)•gen` is
-injected by `reductionChall{A,B}`). -/
+/-- Predicate defining which oracle calls may require embedding of scalar b -/
 private def hitB (gp : GameParams) :
     (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
   | .inl (.inl (.inl (.inr _))) =>  -- challA
@@ -695,7 +689,7 @@ private def cellOk (stRed stHon : F ⊕ G) (cache : Option F) : Prop :=
   stRed = stHon ∨
     (stRed = (.inl 0 : F ⊕ G) ∧ ∃ v, cache = some v ∧ stHon = .inl v)
 
-/-- State relation for the standard-case bridge
+/-- State relation for the general-case bridge
 `simulateQ (reductionImpl_lazy_real gp gen) ≈ simulateQ (ckaSecurityImpl …)`.
 
 * Observable fields (`tA`, `tB`, `b`, `lastAction`, `rhoA/B`, `keyA/B`) match.
@@ -709,7 +703,7 @@ private def cellOk (stRed stHon : F ⊕ G) (cache : Option F) : Prop :=
 The `correct` field is *not* required to match — reduction's dead-cell
 `recv*` comparisons can flip it, and `correct` is unobserved by the
 security game. -/
-private def R_standard (gen : G) (gp : GameParams) :
+private def R_general (gen : G) (gp : GameParams) :
     ((GameState (F ⊕ G) G G × Option F) × Option F) → GameState (F ⊕ G) G G → Prop :=
   fun ((s_red, optA), optB) s_hon =>
     s_red.tA = s_hon.tA ∧ s_red.tB = s_hon.tB ∧
@@ -724,12 +718,12 @@ private def R_standard (gen : G) (gp : GameParams) :
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
   [DecidableEq G] [Inhabited F] in
-/-- `R_standard` holds at the shared init state with empty caches:
+/-- `R_general` holds at the shared init state with empty caches:
 observable fields match trivially, `reachableInv` at init picks the
 `lastAction = none` disjunct of `phaseShapeInv` with witness `x = x₀`, and
 `cellOk _ _ none` reduces to cell equality. -/
-private lemma R_standard_init (gp : GameParams) (x₀ : F) :
-    R_standard gen gp
+private lemma R_general_init (gp : GameParams) (x₀ : F) :
+    R_general gen gp
       ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none)
       (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
@@ -747,28 +741,28 @@ private lemma R_standard_init (gp : GameParams) (x₀ : F) :
 Step (2) real decomposes through two named inner bridges — one per branch of
 `by_cases` on `(gp.tStar = 1 ∧ gp.challengedParty = .A)`:
 
-* `probOutput_standard_pointwise`: for `¬ (t* = 1 ∧ P = A)` and fixed `x₀`,
+* `probOutput_general_pointwise`: for `¬ (t* = 1 ∧ P = A)` and fixed `x₀`,
   running the reduction (with outer `a, b ←$ F`) on `init .inr (x₀•gen) .inl x₀`
   equals running honest CKA on the same state.
-* `probOutput_edge_pointwise`: in the edge case, renaming reduction's outer
+* `probOutput_special_pointwise`: in the special case, renaming reduction's outer
   `a ←$ F` to honest's `x₀ ←$ F` — since reduction's init uses `.inr (a•gen)`
   and honest's uses `.inr (x₀•gen)`, the rename is an identity bijection.
 
 Each bridge is proved by peeling its external scalars into hit queries via
 `probOutput_simulateQ_consumeLazy_run'_eq` and bridging via
 `relTriple_simulateQ_run'` + `evalDist_eq_of_relTriple_eqRel` under a state
-relation (`R_standard` / `R_edge`). Per-query `RelTriple` obligations
-(`relTriple_real_step` / `relTriple_edge_step`) follow the taxonomy: non-hit
+relation (`R_general` / `R_special`). Per-query `RelTriple` obligations
+(`relTriple_real_step` / `relTriple_special_step`) follow the taxonomy: non-hit
 → `relTriple_of_evalDist_eq`; embedding → identity bijection coupling `y ↔ a`;
 challenge → `x ↔ b`; corruption → `allowCorr ∨ finishedP` + reachability heal.
 -/
 
-/-- Per-query `RelTriple` obligation for the standard-case state relation.
+/-- Per-query `RelTriple` obligation for the general-case state relation.
 
-For each oracle index `i : (ckaSecuritySpec _).Domain`, if `R_standard` holds
+For each oracle index `i : (ckaSecuritySpec _).Domain`, if `R_general` holds
 on the pre-states, then running the lazy reduction's oracle and honest CKA's
 oracle produces equal observable outputs and a post-state pair still in
-`R_standard`.
+`R_general`.
 
 Discharged by case analysis on `i` (9-way nested Sum):
 * **Non-hit** (`recvA/B`, `corruptA/B`, `oracleUnif`, non-embedding `sendA/B`,
@@ -777,30 +771,30 @@ Discharged by case analysis on `i` (9-way nested Sum):
 * **Embedding-`send`** (`sendB` if `P = A`, `sendA` if `P = B`, at the
   `tQ = t* - 1` epoch): identity bijection coupling `y ↔ a`; commits
   `optA := some a` and tolerates the `stX := .inl 0 ↔ .inl a` divergence
-  through `R_standard`'s `cellOk` clause.
+  through `R_general`'s `cellOk` clause.
 * **Challenge** (`chall P` at `tP = t*`): identity bijection `x ↔ b`;
   commits `optB := some b`.
 * **Corruption** (`corruptA/B`): `allowCorr` is closed in the dead-cell window
   and `finishedP` only fires after a `recv` heals the dead cell; in either
   case `stX` matches across sides. -/
 private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (i : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
     (s_hon : GameState (F ⊕ G) G G)
-    (hR : R_standard gen gp s_red s_hon) :
+    (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen i).run s_red)
       ((ckaSecurityImpl gp (ddhCKA F G gen) i).run s_hon)
-      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_standard gen gp p₁.2 p₂.2) := by
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
-/-- Standard-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
+/-- General-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
-honest's. This is the "heart" of Step (2)'s standard case — the
+honest's. This is the "heart" of Step (2)'s general case — the
 `consumeLazy`-peel + state-relation bridge lives here. -/
-private lemma probOutput_standard_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+private lemma probOutput_general_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -815,16 +809,16 @@ private lemma probOutput_standard_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA 
       return b'] := by
   sorry
 
-/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) game-level bridge.
+/-- General-case (`¬ (t* = 1 ∧ P = A)`) game-level bridge.
 
 Stated with `x₀ ← $ᵗ F` sampled *inside* on both sides (matching the shape
 Step (2)'s dispatch produces after `simp only [reductionInitState, if_neg]`).
 
 Proof: swap `x₀` to outermost on LHS (3-way bind manipulation), then apply
 `probOutput_bind_congr'` on the shared outer `x₀` and close each fiber via
-`probOutput_standard_per_x₀`. -/
-private lemma probOutput_standard_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+`probOutput_general_per_x₀`. -/
+private lemma probOutput_general_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -869,13 +863,13 @@ private lemma probOutput_standard_pointwise (gp : GameParams) (hΔ : gp.deltaCKA
           return b'] := probOutput_bind_bind_swap _ _ _ _
       _ = _ := by
         refine probOutput_bind_congr' _ false fun x₀ => ?_
-        exact probOutput_standard_per_x₀ gp hΔ h_not_edge adversary x₀
+        exact probOutput_general_per_x₀ gp hΔ h_not_special adversary x₀
 
-/-- Edge-case per-fixed-`x₀` claim: with the rename `a ↔ x₀`, reduction's
+/-- Special-case per-fixed-`x₀` claim: with the rename `a ↔ x₀`, reduction's
 init `(.inr (x₀•gen), .inl 0)` (stB dead) and honest's `(.inr (x₀•gen), .inl x₀)`
 produce the same output distribution after the remaining `b ← $ᵗ F` peel. -/
-private lemma probOutput_edge_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+private lemma probOutput_special_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_special : gp.tStar = 1 ∧ gp.challengedParty = .A)
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
     Pr[= false | do
       let b ← ($ᵗ F : ProbComp F)
@@ -889,11 +883,11 @@ private lemma probOutput_edge_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       return b'] := by
   sorry
 
-/-- Edge-case (`gp = ⟨1, _, .A⟩`) bridge: reduction init `(.inr (a•gen), .inl 0)`
+/-- Special-case (`gp = ⟨1, _, .A⟩`) bridge: reduction init `(.inr (a•gen), .inl 0)`
 with outer `a ←$ F` equals honest init `(.inr (x₀•gen), .inl x₀)` with
 outer `x₀ ←$ F` (renaming `a ↔ x₀`), averaged over the remaining `b ←$ F`. -/
-private lemma probOutput_edge_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+private lemma probOutput_special_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_special : gp.tStar = 1 ∧ gp.challengedParty = .A)
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -908,7 +902,7 @@ private lemma probOutput_edge_pointwise (gp : GameParams) (hΔ : gp.deltaCKA = 1
         (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
       return b'] := by
   refine probOutput_bind_congr' _ false fun x₀ => ?_
-  exact probOutput_edge_per_x₀ gp hΔ h_edge adversary x₀
+  exact probOutput_special_per_x₀ gp hΔ h_special adversary x₀
 
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
@@ -921,20 +915,20 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
     Pr[= false | securityReductionRealGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitFalseGame (gen := gen) gp adversary] := by
   unfold securityReductionRealGame securityExpFixedBitFalseGame
-  by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
-  · -- Edge: `reductionInitState` = `pure (init .inr gA .inl 0)` (no x₀ sample).
-    simp only [reductionInitState, if_pos h_edge, pure_bind]
-    exact probOutput_edge_pointwise (gen := gen) gp hΔ h_edge adversary
-  · -- Standard: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
-    simp only [reductionInitState, if_neg h_edge, bind_assoc, pure_bind]
-    exact probOutput_standard_pointwise (gen := gen) gp hΔ h_edge adversary
+  by_cases h_special : gp.tStar = 1 ∧ gp.challengedParty = .A
+  · -- Special: `reductionInitState` = `pure (init .inr gA .inl 0)` (no x₀ sample).
+    simp only [reductionInitState, if_pos h_special, pure_bind]
+    exact probOutput_special_pointwise (gen := gen) gp hΔ h_special adversary
+  · -- General: `reductionInitState` = `do x₀ ← $F; pure (init .inr (x₀•gen) .inl x₀)`.
+    simp only [reductionInitState, if_neg h_special, bind_assoc, pure_bind]
+    exact probOutput_general_pointwise (gen := gen) gp hΔ h_special adversary
 
-/-- Standard-case rand-branch per-fixed-`x₀` claim. With `a, b, c ← $ᵗ F`,
+/-- General-case rand-branch per-fixed-`x₀` claim. With `a, b, c ← $ᵗ F`,
 reduction's output on `init .inr (x₀•gen) .inl x₀ false` matches honest's on
 the same state with `b = true`. Couples `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
-private lemma probOutput_standard_per_x₀_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+private lemma probOutput_general_per_x₀_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
-    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -950,12 +944,12 @@ private lemma probOutput_standard_per_x₀_rand (gp : GameParams) (hΔ : gp.delt
       return b'] := by
   sorry
 
-/-- Standard-case (`¬ (t* = 1 ∧ P = A)`) rand-branch game-level bridge.
-Analogue of `probOutput_standard_pointwise` with the extra `c ← $ᵗ F`
+/-- General-case (`¬ (t* = 1 ∧ P = A)`) rand-branch game-level bridge.
+Analogue of `probOutput_general_pointwise` with the extra `c ← $ᵗ F`
 sampled internally; challenge couples `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
-private lemma probOutput_standard_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+private lemma probOutput_general_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
-    (h_not_edge : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -1015,15 +1009,15 @@ private lemma probOutput_standard_pointwise_rand (gp : GameParams) (hΔ : gp.del
           return b'] := probOutput_bind_bind_swap _ _ _ _
       _ = _ := by
         refine probOutput_bind_congr' _ false fun x₀ => ?_
-        exact probOutput_standard_per_x₀_rand gp hΔ hg h_not_edge adversary x₀
+        exact probOutput_general_per_x₀_rand gp hΔ hg h_not_special adversary x₀
 
-/-- Edge-case rand-branch per-fixed-`x₀` claim: after renaming `a ↔ x₀`,
+/-- Special-case rand-branch per-fixed-`x₀` claim: after renaming `a ↔ x₀`,
 reduction's init `(.inr (x₀•gen), .inl 0)` with remaining `b, c ← $ᵗ F`
 matches honest's init `(.inr (x₀•gen), .inl x₀)` with `b = true`. Couples
 `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
-private lemma probOutput_edge_per_x₀_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+private lemma probOutput_special_per_x₀_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
-    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+    (h_special : gp.tStar = 1 ∧ gp.challengedParty = .A)
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
     Pr[= false | do
       let b ← ($ᵗ F : ProbComp F)
@@ -1038,13 +1032,13 @@ private lemma probOutput_edge_per_x₀_rand (gp : GameParams) (hΔ : gp.deltaCKA
       return b'] := by
   sorry
 
-/-- Edge-case (`gp = ⟨1, _, .A⟩`) rand-branch bridge. Analogue of
-`probOutput_edge_pointwise`; reduction's init is `(.inr (a•gen), .inl 0)`
+/-- Special-case (`gp = ⟨1, _, .A⟩`) rand-branch bridge. Analogue of
+`probOutput_special_pointwise`; reduction's init is `(.inr (a•gen), .inl 0)`
 with `c` replacing `a*b` in `gT`; rename `a ↔ x₀`, couple
 `c•gen ↔ outKey ← $ᵗ G` via `hg` at the challenge. -/
-private lemma probOutput_edge_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+private lemma probOutput_special_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (hg : Function.Bijective (· • gen : F → G))
-    (h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A)
+    (h_special : gp.tStar = 1 ∧ gp.challengedParty = .A)
     (adversary : CKAAdversary (F ⊕ G) G G) :
     Pr[= false | do
       let a ← ($ᵗ F : ProbComp F)
@@ -1060,7 +1054,7 @@ private lemma probOutput_edge_pointwise_rand (gp : GameParams) (hΔ : gp.deltaCK
         (initGameState (.inr (x₀ • gen)) (.inl x₀) true)
       return b'] := by
   refine probOutput_bind_congr' _ false fun x₀ => ?_
-  exact probOutput_edge_per_x₀_rand gp hΔ hg h_edge adversary x₀
+  exact probOutput_special_per_x₀_rand gp hΔ hg h_special adversary x₀
 
 /-- **Step (2) of the random branch.** Game-level bridge:
 `Pr[= false | securityReductionRandGame] = Pr[= false | CKA^{b = true}]`.
@@ -1072,11 +1066,11 @@ private lemma probOutput_securityReductionRandGame_eq_honestTrue
     Pr[= false | securityReductionRandGame (gen := gen) gp adversary] =
     Pr[= false | securityExpFixedBitTrueGame (gen := gen) gp adversary] := by
   unfold securityReductionRandGame securityExpFixedBitTrueGame
-  by_cases h_edge : gp.tStar = 1 ∧ gp.challengedParty = .A
-  · simp only [reductionInitState, if_pos h_edge, pure_bind]
-    exact probOutput_edge_pointwise_rand (gen := gen) gp hΔ hg h_edge adversary
-  · simp only [reductionInitState, if_neg h_edge, bind_assoc, pure_bind]
-    exact probOutput_standard_pointwise_rand (gen := gen) gp hΔ hg h_edge adversary
+  by_cases h_special : gp.tStar = 1 ∧ gp.challengedParty = .A
+  · simp only [reductionInitState, if_pos h_special, pure_bind]
+    exact probOutput_special_pointwise_rand (gen := gen) gp hΔ hg h_special adversary
+  · simp only [reductionInitState, if_neg h_special, bind_assoc, pure_bind]
+    exact probOutput_general_pointwise_rand (gen := gen) gp hΔ hg h_special adversary
 
 /-- **Real-branch lemma.**
 `Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]`.
