@@ -714,21 +714,179 @@ the rename `a ↔ x₀` (identity bijection on `F`), modulo the placeholder
 `stB := .inl 0` (healed by the first `recvB`).
 -/
 
+/-! #### Per-oracle `RelTriple` lemmas (Phase C)
+
+For each of the 9 oracles in `ckaSecuritySpec`, prove that `reductionImpl_lazy_real`
+and `ckaSecurityImpl` produce equal observable outputs and `R_general`-related
+post-states. The closure strategies (per the case recipe in the section docstring)
+are:
+
+  `relTriple_real_step_unifSpec`    -- `oracleUnif` is identical on both sides.
+  `relTriple_real_step_recvA`       -- `oracleRecvA cka ()` identical on both
+  `relTriple_real_step_recvB`         sides; cellOk on stX healed by `recv` writing
+                                      `.inr ρ`. State changes only depend on
+                                      observable fields of R_general.
+  `relTriple_real_step_corruptA`    -- gated by `allowCorr ∨ finishedP`; the gate
+  `relTriple_real_step_corruptB`      only fires after a prior `recv` overwrites
+                                      any dead `.inl 0` placeholder, so cellOk
+                                      gives equality at the read time.
+  `relTriple_real_step_sendA`       -- two sub-branches: embedding (`P = .B` and
+  `relTriple_real_step_sendB`         epoch matches) takes identity coupling on
+                                      `y ↔ a` and commits `optA`; non-embedding
+                                      runs honest CKA on both sides.
+  `relTriple_real_step_challA`      -- two sub-branches: challenge fires (party
+  `relTriple_real_step_challB`        matches) takes identity coupling on `x ↔ b`
+                                      and commits `optB`; wrong party returns
+                                      `pure none` on both sides.
+
+Each stub takes the per-step hypotheses (`gp, hΔ, h_not_special, s_red, s_hon,
+hR`) and the `R_general`-preserving `RelTriple` shape. -/
+
+private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : unifSpec.Domain)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inl (.inr u)))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inr u)))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  -- Both sides at the recvB index dispatch through `+` to `oracleRecvB cka ()`.
+  -- LHS additionally wraps via `consumeLazy ∘ consumeLazy` with `hitB = hitA = false`
+  -- at recvB; cached scalars `a, b` are read with `getD default` and dead-stored.
+  -- The inner `reductionOracleImpl ... recvB_idx = oracleRecvB cka ()` is
+  -- a/b-independent (verified by `hindepA_real`, `hindepB_real`).
+  --
+  -- After reduction:
+  --   LHS = (oracleRecvB cka () s_red.1.1).map (fun p => (p.1, ((p.2, optA), optB)))
+  --   RHS = oracleRecvB cka () s_hon
+  --
+  -- `oracleRecvB cka ()` is deterministic. Case-split on:
+  --   1. validStep s.lastAction .recvB — equal by R_general.lastAction
+  --   2. s.rhoA — equal by R_general.rhoA
+  --   3. ddhCKA.recvB s.stB ρ — depends on s.stB; cellOk allows scalar mismatch.
+  --      In the placeholder case (s_red.stB = .inl 0, s_hon.stB = .inl x), both
+  --      succeed with `stB' := .inr ρ`, restoring cellOk to the matching disjunct.
+  --
+  -- Post-state observable fields on both sides:
+  --   - tA unchanged on both, still equal
+  --   - tB := tB+1 on both (in the success branch), still equal
+  --   - lastAction := some .recvB on both
+  --   - rhoA := none, rhoB unchanged on both
+  --   - keyA := none, keyB unchanged on both
+  --   - stA unchanged (cellOk preserved)
+  --   - stB := .inr ρ on both (cellOk via matching disjunct)
+  --   - correct may diverge (different scalar gives different ok); not in R observable
+  --
+  -- reachableInv s_hon post-recvB: phaseShapeInv at lastAction = .recvB requires
+  -- s_hon.stA = .inl y ∧ s_hon.stB = .inr (y•gen), which follows from the prior
+  -- phaseShapeInv at .sendA/.challA giving rhoA = some (y•gen).
+  sorry
+
+private lemma relTriple_real_step_sendA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_sendB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inl (.inl (.inr u))))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inl (.inr u))))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_challA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen
+          (.inl (.inl (.inl (.inr u))))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inr u))))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_challB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen (.inl (.inl (.inr u)))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inl (.inl (.inr u)))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen (.inl (.inr u))).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inl (.inr u))).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
+private lemma relTriple_real_step_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
+    (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+    (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
+    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (hR : R_general gen gp s_red s_hon) :
+    OracleComp.ProgramLogic.Relational.RelTriple
+      ((reductionImpl_lazy_real gp gen (.inr u)).run s_red)
+      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inr u)).run s_hon)
+      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  sorry
+
 /-- Per-query `RelTriple` for the general-case bridge: at each oracle index
 `i`, lazy reduction and honest CKA produce equal observable outputs and
-post-states still related by `R_general`.
-
-Closure recipe by case (9-way `Sum`, outside-in):
-
-  unifSpec / recv{A,B}        same code on both sides; R preserved trivially.
-  corrupt{A,B}                allowCorr/finishedP gating; dead cells healed
-                              by a prior recv before either gate opens.
-  send{A,B} (non-embedding)   honest else-branch on both sides.
-  send{A,B} (embedding)       identity coupling `y ↔ a`; commits `optA`,
-                              tolerates `stX: 0 ↔ a` via cellOk.
-  chall{A,B} (wrong party)    `pure none` on both sides (party-guard fails).
-  chall{A,B} (challenge)      identity coupling `x ↔ b`; commits `optB`,
-                              tolerates `stX: 0 ↔ b` via cellOk. -/
+post-states still related by `R_general`. Dispatches to the per-oracle helper
+lemmas above. -/
 private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (i : (ckaSecuritySpec (F ⊕ G) G G).Domain)
@@ -740,15 +898,21 @@ private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       ((ckaSecurityImpl gp (ddhCKA F G gen) i).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   match i with
-  | .inr _ => sorry  -- corruptB
-  | .inl (.inr _) => sorry  -- corruptA
-  | .inl (.inl (.inr _)) => sorry  -- challB
-  | .inl (.inl (.inl (.inr _))) => sorry  -- challA
-  | .inl (.inl (.inl (.inl (.inr _)))) => sorry  -- recvB
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) => sorry  -- sendB
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => sorry  -- recvA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => sorry  -- sendA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => sorry  -- unifSpec
+  | .inr u => exact relTriple_real_step_corruptB gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inr u) => exact relTriple_real_step_corruptA gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inr u)) => exact relTriple_real_step_challB gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inr u))) =>
+      exact relTriple_real_step_challA gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inl (.inr u)))) =>
+      exact relTriple_real_step_recvB gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inl (.inl (.inr u))))) =>
+      exact relTriple_real_step_sendB gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))) =>
+      exact relTriple_real_step_recvA gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))) =>
+      exact relTriple_real_step_sendA gp hΔ h_not_special s_red s_hon u hR
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))) =>
+      exact relTriple_real_step_unifSpec gp hΔ h_not_special s_red s_hon u hR
 
 /-- General-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
