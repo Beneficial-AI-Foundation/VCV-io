@@ -275,6 +275,132 @@ private noncomputable def reductionOracleImpl (gp : GameParams) (gen gA gB gT : 
   + oracleCorruptA gp (F ⊕ G) G G
   + oracleCorruptB gp (F ⊕ G) G G
 
+/-! ### Cache-aware honest oracles
+
+Mirror images of `reductionSend{A,B}` / `reductionChall{A,B}` that take the
+hit-event scalars `a, b : F` as parameters in place of the internal `x ←$ᵗ F`
+samples performed by the regular honest CKA oracles. They form the impl-family
+fed to `consumeLazy` on the honest side; running `consumeLazy ... honestImpl_lazy`
+from the empty cache is distributionally equivalent to running the regular
+`ckaSecurityImpl` (bijection coupling between the cached and internal samples).
+
+At non-embedding / non-challenge events these oracles are pointwise equal to
+the corresponding regular honest oracles, ensuring the impl-family does not
+depend on the cached scalars at non-hit queries. -/
+
+private noncomputable def honestSendB_lazy (gp : GameParams) (gen : G) (a : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendB then
+      let state := { state with tB := state.tB + 1 }
+      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
+        -- substitute `a` for what `ddhCKA.send` would sample as `x'`.
+        match state.stB with
+        | .inr h =>
+          let key := a • h
+          let ρ := a • gen
+          let stB' : F ⊕ G := .inl a
+          set { state with
+            stB := stB', rhoB := some ρ, keyB := some key,
+            lastAction := some .sendB }
+          return some (ρ, key)
+        | .inl _ => pure none
+      else
+        match ← liftM (ddhCKA.send gen state.stB) with
+        | none => pure none
+        | some (key, ρ, stB') =>
+          set { state with
+            stB := stB', rhoB := some ρ, keyB := some key,
+            lastAction := some .sendB }
+          return some (ρ, key)
+    else pure none
+
+private noncomputable def honestSendA_lazy (gp : GameParams) (gen : G) (a : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if validStep state.lastAction .sendA then
+      let state := { state with tA := state.tA + 1 }
+      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
+        match state.stA with
+        | .inr h =>
+          let key := a • h
+          let ρ := a • gen
+          let stA' : F ⊕ G := .inl a
+          set { state with
+            stA := stA', rhoA := some ρ, keyA := some key,
+            lastAction := some .sendA }
+          return some (ρ, key)
+        | .inl _ => pure none
+      else
+        match ← liftM (ddhCKA.send gen state.stA) with
+        | none => pure none
+        | some (key, ρ, stA') =>
+          set { state with
+            stA := stA', rhoA := some ρ, keyA := some key,
+            lastAction := some .sendA }
+          return some (ρ, key)
+    else pure none
+
+private noncomputable def honestChallA_lazy (gp : GameParams) (gen : G) (b : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if gp.challengedParty == .A && validStep state.lastAction .challA then
+      let state := { state with tA := state.tA + 1 }
+      if isChallengeEpoch gp state then
+        -- substitute `b` for what `oracleChallA` would sample as `x` (b=false branch).
+        match state.stA with
+        | .inr h =>
+          let key := b • h
+          let ρ := b • gen
+          let stA' : F ⊕ G := .inl b
+          set { state with
+            stA := stA', rhoA := some ρ, keyA := some key,
+            lastAction := some .challA }
+          return some (ρ, key)
+        | .inl _ => pure none
+      else pure none
+    else pure none
+
+private noncomputable def honestChallB_lazy (gp : GameParams) (gen : G) (b : F) :
+    QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  fun () => do
+    let state ← get
+    if gp.challengedParty == .B && validStep state.lastAction .challB then
+      let state := { state with tB := state.tB + 1 }
+      if isChallengeEpoch gp state then
+        match state.stB with
+        | .inr h =>
+          let key := b • h
+          let ρ := b • gen
+          let stB' : F ⊕ G := .inl b
+          set { state with
+            stB := stB', rhoB := some ρ, keyB := some key,
+            lastAction := some .challB }
+          return some (ρ, key)
+        | .inl _ => pure none
+      else pure none
+    else pure none
+
+/-- Cache-aware honest oracle stack, parameterized by hit-event scalars `a, b`.
+Identical to `ckaSecurityImpl gp (ddhCKA F G gen)` at non-hit queries; at hit
+queries (embedding / challenge), uses the parameters in place of internal
+samples. `honestImpl_lazy_real gp gen a b` mirrors the shape of
+`reductionOracleImpl gp gen (a•gen) (b•gen) ((a*b)•gen)`. -/
+private noncomputable def honestImpl_lazy_real (gp : GameParams) (gen : G) (a b : F) :
+    QueryImpl (ckaSecuritySpec (F ⊕ G) G G) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
+  (oracleUnif (F ⊕ G) G G
+    + honestSendA_lazy (F := F) gp gen a
+    + oracleRecvA (ddhCKA F G gen)
+    + honestSendB_lazy (F := F) gp gen a
+    + oracleRecvB (ddhCKA F G gen))
+  + honestChallA_lazy (F := F) gp gen b
+  + honestChallB_lazy (F := F) gp gen b
+  + oracleCorruptA gp (F ⊕ G) G G
+  + oracleCorruptB gp (F ⊕ G) G G
+
 /-- Initial CKA game state used by the reduction, case-split on `gp`.
 
 * **Special case** `gp = ⟨1, _, .A⟩`: `challA` must fire as the first action
@@ -556,6 +682,24 @@ private noncomputable def reductionImpl_lazy_real (gp : GameParams) (gen : G) :
     consumeLazy (hit := hitA gp) (implFam := fun a =>
       reductionOracleImpl gp gen (a • gen) (b • gen) ((a * b) • gen)))
 
+open OracleComp.ProgramLogic.Relational in
+/-- Cache-aware honest oracle stack wrapped with the same `consumeLazy ∘
+consumeLazy` shape as `reductionImpl_lazy_real`. Both sides agree on the
+cache structure, so per-query `RelTriple` obligations relate states with
+*equal* caches — the placeholder/cellOk discrepancy reduces to the
+GameState-level coupling at embedding/challenge events.
+
+The bridge `probOutput_lazy_honest_eq` shows running this from the empty
+cache is distributionally equivalent to running the regular `ckaSecurityImpl`
+(via `probOutput_simulateQ_consumeLazy_run'_eq` plus a bijection coupling
+between cached and internal samples). -/
+private noncomputable def ckaSecurityImpl_lazy_real (gp : GameParams) (gen : G) :
+    QueryImpl (ckaSecuritySpec (F ⊕ G) G G)
+      (StateT ((GameState (F ⊕ G) G G × Option F) × Option F) ProbComp) :=
+  consumeLazy (hit := hitB gp) (implFam := fun b =>
+    consumeLazy (hit := hitA gp) (implFam := fun a =>
+      honestImpl_lazy_real gp gen a b))
+
 omit [Inhabited F] in
 /-- Lemma: At non-hit queries, the reduction's output doesn't depend on `a` -/
 private lemma hindepA_real (gp : GameParams) (b : F)
@@ -660,11 +804,22 @@ private def cellOk (stRed stHon : F ⊕ G) (cache : Option F) : Prop :=
   stRed = stHon ∨
     (stRed = (.inl 0 : F ⊕ G) ∧ ∃ v, cache = some v ∧ stHon = .inl v)
 
-/-- State relation for the general-case bridge. -/
+/-- State relation for the general-case bridge.
+
+Both sides share the augmented state `(GameState × Option F) × Option F`
+because the lazy honest handler (`ckaSecurityImpl_lazy_real`) wraps the same
+`consumeLazy ∘ consumeLazy` shape as the reduction. Cache equality is then
+trivially preserved by every step (consumeLazy reads/writes the cache the
+same way on both sides regardless of the underlying impl-family). The
+non-trivial coupling is on the `GameState` part: observable equality plus
+`cellOk` placeholder absorption at embedding events. -/
 private def R_general (gen : G) (gp : GameParams) :
-    ((GameState (F ⊕ G) G G × Option F) × Option F) → GameState (F ⊕ G) G G → Prop :=
-  fun ((s_red, optA), optB) s_hon =>
-    -- observable equality: tA, tB, b, lastAction, rho{A,B}, key{A,B}
+    ((GameState (F ⊕ G) G G × Option F) × Option F) →
+    ((GameState (F ⊕ G) G G × Option F) × Option F) → Prop :=
+  fun ((s_red, optA_r), optB_r) ((s_hon, optA_h), optB_h) =>
+    -- caches equal on both sides
+    optA_r = optA_h ∧ optB_r = optB_h ∧
+    -- observable equality on `GameState`s: tA, tB, b, lastAction, rho{A,B}, key{A,B}
     s_red.tA = s_hon.tA ∧ s_red.tB = s_hon.tB ∧
     s_red.b = s_hon.b ∧
     s_red.lastAction = s_hon.lastAction ∧
@@ -677,8 +832,8 @@ private def R_general (gen : G) (gp : GameParams) :
     -- placeholder coupling for stA, stB; cache routing depends on which
     -- party is challenged (P = A: stA ↔ optB, stB ↔ optA; P = B: swapped).
     match gp.challengedParty with
-    | .A => cellOk s_red.stA s_hon.stA optB ∧ cellOk s_red.stB s_hon.stB optA
-    | .B => cellOk s_red.stA s_hon.stA optA ∧ cellOk s_red.stB s_hon.stB optB
+    | .A => cellOk s_red.stA s_hon.stA optB_r ∧ cellOk s_red.stB s_hon.stB optA_r
+    | .B => cellOk s_red.stA s_hon.stA optA_r ∧ cellOk s_red.stB s_hon.stB optB_r
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
   [DecidableEq G] [Inhabited F] in
@@ -686,16 +841,13 @@ omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
 private lemma R_general_init (gp : GameParams) (x₀ : F) :
     R_general gen gp
       ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none)
-      (initGameState (.inr (x₀ • gen)) (.inl x₀) false) := by
-  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
+      ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none) := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, ?_, ?_⟩
   · -- reachableInv gen (init ...)
     refine ⟨?_, rfl, ?_⟩
-    · -- phaseCounterInv: lastAction = none ⇒ tA = tB; both 0 at init.
-      simp [phaseCounterInv, initGameState]
-    · -- phaseShapeInv at lastAction = none: take x = x₀.
-      exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  · -- cellOk match: optA = optB = none ⇒ first disjunct (equality) holds.
-    cases gp.challengedParty <;> exact ⟨Or.inl rfl, Or.inl rfl⟩
+    · simp [phaseCounterInv, initGameState]
+    · exact ⟨x₀, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · cases gp.challengedParty <;> exact ⟨Or.inl rfl, Or.inl rfl⟩
 
 /-! #### Inner bridges (pointwise wrappers)
 
@@ -745,25 +897,41 @@ hR`) and the `R_general`-preserving `RelTriple` shape. -/
 private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : unifSpec.Domain)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : unifSpec.Domain)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
-  sorry
+  -- Both sides at unifSpec dispatch to `oracleUnif`, which samples uniformly and
+  -- preserves state. consumeLazy wrappers on the LHS pass through with hitA=hitB=false.
+  -- After unfolding and `show`-coercion, both sides reduce to
+  -- `liftM (query u) >>= fun v => pure (v, <respective state>)`.
+  unfold reductionImpl_lazy_real
+  unfold OracleComp.ProgramLogic.Relational.consumeLazy
+  simp only [hitA, hitB, Bool.false_eq_true, ↓reduceIte,
+    reductionOracleImpl, QueryImpl.add_apply_inl,
+    ckaSecurityImpl, ckaCorrectnessImpl,
+    oracleUnif, QueryImpl.liftTarget_apply, QueryImpl.ofLift_apply]
+  change OracleComp.ProgramLogic.Relational.RelTriple
+    ((liftM (query u) : ProbComp _) >>= fun v => pure (v, s_red))
+    ((liftM (query u) : ProbComp _) >>= fun v => pure (v, s_hon)) _
+  refine OracleComp.ProgramLogic.Relational.relTriple_bind
+    (OracleComp.ProgramLogic.Relational.relTriple_refl _) ?_
+  rintro v _ rfl
+  exact OracleComp.ProgramLogic.Relational.relTriple_pure_pure ⟨rfl, hR⟩
 
 private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
@@ -771,12 +939,12 @@ private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1
 private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inr u)))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inr u)))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   -- Both sides at the recvB index dispatch through `+` to `oracleRecvB cka ()`.
@@ -814,12 +982,12 @@ private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1
 private lemma relTriple_real_step_sendA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
@@ -827,12 +995,12 @@ private lemma relTriple_real_step_sendA (gp : GameParams) (hΔ : gp.deltaCKA = 1
 private lemma relTriple_real_step_sendB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inr u))))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inr u))))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
@@ -840,46 +1008,57 @@ private lemma relTriple_real_step_sendB (gp : GameParams) (hΔ : gp.deltaCKA = 1
 private lemma relTriple_real_step_challA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inr u))))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen)
+      ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inr u))))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+  -- BLOCKED: per-query RelTriple as stated is unprovable on the right-party
+  -- (P = .A) branch because `R_general` does not constrain the lazy caches
+  -- (`optA`, `optB`). At a `challA` hit when the cache is populated to e.g.
+  -- `optB = some 0`, the LHS uses `b = 0` deterministically while the RHS
+  -- samples `x ←$ F` fresh — output distributions differ.
+  --
+  -- See discussion above: fix by either strengthening `R_general` to encode
+  -- "cache populated only by a prior fresh sample whose value also reached
+  -- the honest state" (history-dependent), or retargeting this lemma to a
+  -- cache-aware honest handler that mirrors the lazy caches and proving a
+  -- separate bridge from there to `ckaSecurityImpl`.
   sorry
 
 private lemma relTriple_real_step_challB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen (.inl (.inl (.inr u)))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inl (.inl (.inr u)))).run s_hon)
+      ((ckaSecurityImpl_lazy_real gp gen (.inl (.inl (.inr u)))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
 private lemma relTriple_real_step_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen (.inl (.inr u))).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inl (.inr u))).run s_hon)
+      ((ckaSecurityImpl_lazy_real gp gen (.inl (.inr u))).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
 private lemma relTriple_real_step_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G) (u : Unit)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen (.inr u)).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen) (.inr u)).run s_hon)
+      ((ckaSecurityImpl_lazy_real gp gen (.inr u)).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
@@ -891,11 +1070,11 @@ private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (i : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
-    (s_hon : GameState (F ⊕ G) G G)
+    (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F)
     (hR : R_general gen gp s_red s_hon) :
     OracleComp.ProgramLogic.Relational.RelTriple
       ((reductionImpl_lazy_real gp gen i).run s_red)
-      ((ckaSecurityImpl gp (ddhCKA F G gen) i).run s_hon)
+      ((ckaSecurityImpl_lazy_real gp gen i).run s_hon)
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   match i with
   | .inr u => exact relTriple_real_step_corruptB gp hΔ h_not_special s_red s_hon u hR
@@ -913,6 +1092,42 @@ private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
       exact relTriple_real_step_sendA gp hΔ h_not_special s_red s_hon u hR
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))) =>
       exact relTriple_real_step_unifSpec gp hΔ h_not_special s_red s_hon u hR
+
+/-! ### Bridge: lazy honest cache-aware ↔ regular honest
+
+`ckaSecurityImpl_lazy_real` from the empty cache produces the same output
+distribution as the regular `ckaSecurityImpl`. The proof is two applications
+of `probOutput_simulateQ_consumeLazy_run'_eq` (peeling `b` and `a` to top-
+level samples) followed by a bijection-coupling argument: `a` (external)
+plays the role of the `x'` internally sampled at the embedding-`send` event,
+and `b` plays the role of the `x` internally sampled at the challenge.
+
+For the bijection step, the cached scalar enters the cache-aware honest
+oracle exactly where the regular honest oracle would sample fresh:
+`honestSendB_lazy gp gen a` substitutes `a` for `x'` at the embedding event
+of `ddhCKA.send`, etc. -/
+
+/-- Bridge lemma: lazy honest cache-aware game ≡ regular honest game.
+
+The key observation: `honestImpl_lazy_real gp gen a b` is identical to
+`ckaSecurityImpl gp (ddhCKA F G gen)` at every query *except* the embedding-
+send and challenge events, where the parameter `a` (resp. `b`) substitutes
+for what the regular oracle would have sampled internally.
+
+Each substitution is a bijection on `F` (identity), so externally sampling
+`a, b ← $ᵗ F` and feeding them into `honestImpl_lazy_real` is distributionally
+equivalent to letting the regular oracle sample its `x', x` internally. -/
+private lemma probOutput_lazy_honest_eq (gp : GameParams)
+    (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
+    Pr[= false | do
+      let (b', _) ← (simulateQ (ckaSecurityImpl_lazy_real gp gen) adversary).run
+        ((initGameState (.inr (x₀ • gen)) (.inl x₀) false, none), none)
+      return b'] =
+    Pr[= false | do
+      let (b', _) ← (simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) adversary).run
+        (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
+      return b'] := by
+  sorry
 
 /-- General-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
