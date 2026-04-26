@@ -1514,6 +1514,84 @@ private lemma relTriple_lazy_honest_per_query (gp : GameParams)
     exact relTriple_lazy_honest_sendB (gen := gen) gp u aug bare hR
   | _ => sorry
 
+omit [Inhabited F] [Fintype G] in
+/-- **Non-divergence step lemma** for `evalDist_eager_honest_lazy_eq`.
+
+At an oracle index `t` where the lazy and eager implementations agree
+pointwise (`(honestImpl_lazy_real gp gen a b t).run s = (ckaSecurityImpl gp
+(ddhCKA F G gen) t).run s` for all `a, b`), the per-query bridge step is just
+a Fubini swap of the external samples `(b, a)` past the impl call followed
+by the inductive hypothesis on the continuation.
+
+Used for the 5 non-divergence cases (unifSpec, recvA, recvB, corruptA,
+corruptB) of `evalDist_eager_honest_lazy_eq`'s `query_bind` case. -/
+private lemma evalDist_eager_honest_lazy_eq_step_passthrough
+    (gp : GameParams) (s : GameState (F ⊕ G) G G)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (k : (ckaSecuritySpec (F ⊕ G) G G).Range t →
+         OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool)
+    (h_impl_eq : ∀ (a b : F),
+      (honestImpl_lazy_real gp gen a b t).run s =
+      (ckaSecurityImpl gp (ddhCKA F G gen) t).run s)
+    (h_ih : ∀ (u : (ckaSecuritySpec (F ⊕ G) G G).Range t)
+            (s' : GameState (F ⊕ G) G G),
+      evalDist (do
+        let b ← ($ᵗ F : ProbComp F)
+        let a ← ($ᵗ F : ProbComp F)
+        (simulateQ (honestImpl_lazy_real gp gen a b) (k u)).run' s') =
+      evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) (k u)).run' s')) :
+    evalDist (do
+      let b ← ($ᵗ F : ProbComp F)
+      let a ← ($ᵗ F : ProbComp F)
+      (simulateQ (honestImpl_lazy_real gp gen a b) (query t >>= k)).run' s) =
+    evalDist ((simulateQ (ckaSecurityImpl gp (ddhCKA F G gen)) (query t >>= k)).run' s) := by
+  apply evalDist_ext; intro y
+  simp only [simulateQ_bind, simulateQ_query, OracleQuery.cont_query, id_map,
+    OracleQuery.input_query, StateT.run'_eq, StateT.run_bind, map_bind]
+  -- Step 1: align inner impl call.
+  have eq1 : Pr[= y | do
+        let b ← ($ᵗ F : ProbComp F)
+        let a ← ($ᵗ F : ProbComp F)
+        let p ← (honestImpl_lazy_real gp gen a b t).run s
+        Prod.fst <$> (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2] =
+      Pr[= y | do
+        let b ← ($ᵗ F : ProbComp F)
+        let a ← ($ᵗ F : ProbComp F)
+        let p ← (ckaSecurityImpl gp (ddhCKA F G gen) t).run s
+        Prod.fst <$> (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2] := by
+    refine probOutput_bind_congr' _ y fun b => ?_
+    refine probOutput_bind_congr' _ y fun a => ?_
+    rw [h_impl_eq a b]
+  rw [eq1]
+  -- Step 2a: swap `a ← $F` past `p ← impl.run s` (under outer `b`).
+  have eq2 : Pr[= y | do
+        let b ← ($ᵗ F : ProbComp F)
+        let a ← ($ᵗ F : ProbComp F)
+        let p ← (ckaSecurityImpl gp (ddhCKA F G gen) t).run s
+        Prod.fst <$> (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2] =
+      Pr[= y | do
+        let b ← ($ᵗ F : ProbComp F)
+        let p ← (ckaSecurityImpl gp (ddhCKA F G gen) t).run s
+        let a ← ($ᵗ F : ProbComp F)
+        Prod.fst <$> (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2] := by
+    refine probOutput_bind_congr' _ y fun b => ?_
+    exact probOutput_bind_bind_swap (mx := ($ᵗ F : ProbComp F))
+      (my := (ckaSecurityImpl gp (ddhCKA F G gen) t).run s)
+      (f := fun a p => Prod.fst <$>
+        (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2) (z := y)
+  rw [eq2]
+  -- Step 2b: swap `b ← $F` past `p ← impl.run s`.
+  rw [probOutput_bind_bind_swap (mx := ($ᵗ F : ProbComp F))
+      (my := (ckaSecurityImpl gp (ddhCKA F G gen) t).run s)
+      (f := fun b p => do
+        let a ← ($ᵗ F : ProbComp F)
+        Prod.fst <$> (simulateQ (honestImpl_lazy_real gp gen a b) (k p.1)).run p.2) (z := y)]
+  -- Step 3: apply IH pointwise.
+  refine probOutput_bind_congr' _ y fun p => ?_
+  have hi := h_ih p.1 p.2
+  simp only [StateT.run'_eq] at hi
+  exact congrFun (congrArg DFunLike.coe hi) y
+
 /-- **Step 2 of the bridge** — the substantive content:
 
   `do b, a ← $ᵗ F; simulate (honestImpl_lazy_real a b) adv .run' s
@@ -1570,31 +1648,21 @@ private lemma evalDist_eager_honest_lazy_eq
     --     Off-party: same as non-divergence. On-party with embedding/challenge:
     --     bijection `a ↔ x'` or `b ↔ x` via `probOutput_bind_bijective_uniform_cross`.
     match t with
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))) =>  -- unifSpec
-      -- At unifSpec, both impls dispatch to `oracleUnif` (rfl).
-      -- The impl-call output is uniform sampling, post-state preserved.
-      -- LHS = do b, a ← $ᵗ; (impl_lazy a b _idx).run s >>= fun (u, s') =>
-      --       (simulateQ_lazy_a_b (k u)).run' s'.
-      -- RHS = (impl_reg _idx).run s >>= fun (u, s') => (simulateQ_reg (k u)).run' s'.
-      -- Inner runs match (oracleUnif both sides). Bind-swap (b, a) past the
-      -- inner call (Fubini, since oracleUnif is (a,b)-independent), then IH.
-      have h_impl_eq : ∀ (a b : F),
-        honestImpl_lazy_real gp gen a b
-          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u)))))))) =
-        ckaSecurityImpl gp (ddhCKA F G gen)
-          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u)))))))) := by
-        intro a b; rfl
-      simp only [simulateQ_query_bind, OracleQuery.input_query, OracleQuery.cont_query]
-      simp only [h_impl_eq]
-      refine evalDist_ext fun y => ?_
-      -- After h_impl_eq rewrite, both sides have the same inner liftM
-      -- (impl_reg _idx). External (a, b) on LHS are independent of this.
-      -- Use bind-swap to push (a, b) past, then apply IH on each k v.
-      sorry
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => sorry  -- recvA
-    | .inl (.inl (.inl (.inl (.inr _)))) => sorry  -- recvB
-    | .inl (.inr _) => sorry  -- corruptA
-    | .inr _ => sorry  -- corruptB
+    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) =>  -- unifSpec
+      exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+        (fun _ _ => rfl) ih
+    | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) =>  -- recvA
+      exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+        (fun _ _ => rfl) ih
+    | .inl (.inl (.inl (.inl (.inr _)))) =>  -- recvB
+      exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+        (fun _ _ => rfl) ih
+    | .inl (.inr _) =>  -- corruptA
+      exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+        (fun _ _ => rfl) ih
+    | .inr _ =>  -- corruptB
+      exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+        (fun _ _ => rfl) ih
     | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => sorry  -- sendA
     | .inl (.inl (.inl (.inl (.inl (.inr _))))) => sorry  -- sendB
     | .inl (.inl (.inl (.inr _))) => sorry  -- challA
