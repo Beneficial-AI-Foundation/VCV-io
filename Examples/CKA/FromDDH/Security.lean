@@ -347,9 +347,9 @@ private noncomputable def honestChallA_lazy (gp : GameParams) (gen : G) (b : F) 
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if gp.challengedParty == .A && validStep state.lastAction .challA then
+    if validStep state.lastAction .challA then
       let state := { state with tA := state.tA + 1 }
-      if isChallengeEpoch gp state then
+      if gp.challengedParty == .A && isChallengeEpoch gp state then
         -- substitute `b` for what `oracleChallA` would sample as `x` (b=false branch).
         match state.stA with
         | .inr h =>
@@ -368,9 +368,9 @@ private noncomputable def honestChallB_lazy (gp : GameParams) (gen : G) (b : F) 
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if gp.challengedParty == .B && validStep state.lastAction .challB then
+    if validStep state.lastAction .challB then
       let state := { state with tB := state.tB + 1 }
-      if isChallengeEpoch gp state then
+      if gp.challengedParty == .B && isChallengeEpoch gp state then
         match state.stB with
         | .inr h =>
           let key := b • h
@@ -1515,6 +1515,56 @@ private lemma relTriple_lazy_honest_per_query (gp : GameParams)
   | _ => sorry
 
 omit [Inhabited F] [Fintype G] in
+/-- Off-party dispatch: at `P = .A`, `honestSendA_lazy` is pointwise equal
+to `oracleSendA (ddhCKA F G gen)`. Used to apply
+`evalDist_eager_honest_lazy_eq_step_passthrough` for the `sendA-P=A` case. -/
+private lemma honestSendA_lazy_run_eq_at_P_A
+    (gp : GameParams) (h_cp : gp.challengedParty = .A)
+    (a : F) (s : GameState (F ⊕ G) G G) :
+    (honestSendA_lazy (F := F) gp gen a ()).run s =
+    (oracleSendA (ddhCKA F G gen) ()).run s := by
+  -- After unfold + reducing the `gp.challengedParty == .B && _` if to false,
+  -- LHS and RHS print identically but Lean's term engine retains a hidden
+  -- elaboration difference (likely the `do _ ← liftM (cka.sendA st)` vs
+  -- `do _ ← liftM (ddhCKA.send gen st)` resolved through a different path
+  -- in monad-bind elaboration). Documented as a leaf obstacle for now.
+  sorry
+
+omit [Inhabited F] [Fintype G] in
+/-- Off-party dispatch: at `P = .B`, `honestSendB_lazy` is pointwise equal
+to `oracleSendB (ddhCKA F G gen)`. -/
+private lemma honestSendB_lazy_run_eq_at_P_B
+    (gp : GameParams) (h_cp : gp.challengedParty = .B)
+    (a : F) (s : GameState (F ⊕ G) G G) :
+    (honestSendB_lazy (F := F) gp gen a ()).run s =
+    (oracleSendB (ddhCKA F G gen) ()).run s := by
+  -- See `honestSendA_lazy_run_eq_at_P_A` for the leaf-elaboration obstacle.
+  sorry
+
+omit [Inhabited F] [Fintype G] in
+/-- Off-party dispatch: at `P = .B`, `honestChallA_lazy` is pointwise equal
+to `oracleChallA gp (ddhCKA F G gen)`. -/
+private lemma honestChallA_lazy_run_eq_at_P_B
+    (gp : GameParams) (h_cp : gp.challengedParty = .B)
+    (b : F) (s : GameState (F ⊕ G) G G) :
+    (honestChallA_lazy (F := F) gp gen b ()).run s =
+    (oracleChallA gp (ddhCKA F G gen) ()).run s := by
+  -- After structural alignment, the lazy and eager challA differ only in
+  -- the inner `gp.challengedParty == .A && _` test. At P=B both reduce to
+  -- the same `pure none` branch (post tA-increment).
+  sorry
+
+omit [Inhabited F] [Fintype G] in
+/-- Off-party dispatch: at `P = .A`, `honestChallB_lazy` is pointwise equal
+to `oracleChallB gp (ddhCKA F G gen)`. -/
+private lemma honestChallB_lazy_run_eq_at_P_A
+    (gp : GameParams) (h_cp : gp.challengedParty = .A)
+    (b : F) (s : GameState (F ⊕ G) G G) :
+    (honestChallB_lazy (F := F) gp gen b ()).run s =
+    (oracleChallB gp (ddhCKA F G gen) ()).run s := by
+  sorry
+
+omit [Inhabited F] [Fintype G] in
 /-- **Non-divergence step lemma** for `evalDist_eager_honest_lazy_eq`.
 
 At an oracle index `t` where the lazy and eager implementations agree
@@ -1663,10 +1713,37 @@ private lemma evalDist_eager_honest_lazy_eq
     | .inr _ =>  -- corruptB
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => sorry  -- sendA
-    | .inl (.inl (.inl (.inl (.inl (.inr _))))) => sorry  -- sendB
-    | .inl (.inl (.inl (.inr _))) => sorry  -- challA
-    | .inl (.inl (.inr _)) => sorry  -- challB
+    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))) =>  -- sendA
+      -- Case-split on `gp.challengedParty`:
+      -- • P=A (off-party): impl_eq via `honestSendA_lazy_run_eq_at_P_A`, then passthrough.
+      -- • P=B (on-party): embedding event; bijection coupling needed.
+      cases h_cp : gp.challengedParty with
+      | A =>
+        refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+          (fun a _ => ?_) ih
+        exact honestSendA_lazy_run_eq_at_P_A (gen := gen) gp h_cp a s
+      | B => sorry
+    | .inl (.inl (.inl (.inl (.inl (.inr u))))) =>  -- sendB
+      cases h_cp : gp.challengedParty with
+      | A => sorry
+      | B =>
+        refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+          (fun a _ => ?_) ih
+        exact honestSendB_lazy_run_eq_at_P_B (gen := gen) gp h_cp a s
+    | .inl (.inl (.inl (.inr u))) =>  -- challA
+      cases h_cp : gp.challengedParty with
+      | A => sorry
+      | B =>
+        refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+          (fun _ b => ?_) ih
+        exact honestChallA_lazy_run_eq_at_P_B (gen := gen) gp h_cp b s
+    | .inl (.inl (.inr u)) =>  -- challB
+      cases h_cp : gp.challengedParty with
+      | A =>
+        refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
+          (fun _ b => ?_) ih
+        exact honestChallB_lazy_run_eq_at_P_A (gen := gen) gp h_cp b s
+      | B => sorry
 
 private lemma probOutput_lazy_honest_eq (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
