@@ -1523,11 +1523,12 @@ private lemma honestSendA_lazy_run_eq_at_P_A
     (a : F) (s : GameState (F ⊕ G) G G) :
     (honestSendA_lazy (F := F) gp gen a ()).run s =
     (oracleSendA (ddhCKA F G gen) ()).run s := by
-  -- After unfold + reducing the `gp.challengedParty == .B && _` if to false,
-  -- LHS and RHS print identically but Lean's term engine retains a hidden
-  -- elaboration difference (likely the `do _ ← liftM (cka.sendA st)` vs
-  -- `do _ ← liftM (ddhCKA.send gen st)` resolved through a different path
-  -- in monad-bind elaboration). Documented as a leaf obstacle for now.
+  -- After unfold + simp [h_beq, bind_pure_comp, ddhCKA] both sides print
+  -- absolutely identically (down to liftM (send gen state.stA) and the
+  -- record literal for state). However Lean's `rfl` / `congr` retains a
+  -- non-defequal residual. Likely a cached typeclass instance mismatch
+  -- (the `Pure`/`Bind` resolution path differs between the lazy and eager
+  -- definitions). Documented as a leaf obstacle.
   sorry
 
 omit [Inhabited F] [Fintype G] in

@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"map_sum\" \"/Users/sergiu.bursuc/baif/Protocol Verification/lean/deps/VCV-io-v4.29-w/.lake/packages/mathlib/Mathlib/Algebra/Group/Hom\"/*.lean)",
+      "Bash(find \"/Users/sergiu.bursuc/baif/Protocol Verification/lean/deps/VCV-io-v4.29-w/.lake/packages/mathlib/Mathlib/Algebra\" -name \"*.lean\" -exec grep -l \"def map_sum\\\\|lemma map_sum\\\\|theorem map_sum\" {} \\\\;)",
+      "Bash(find \"/Users/sergiu.bursuc/baif/Protocol Verification/lean/deps/VCV-io-v4.29-w/.lake/packages/mathlib/Mathlib\" -name \"*.lean\" -exec grep -l \"^\\\\s*theorem map_sum\\\\|^\\\\s*lemma map_sum\" {} \\\\;)",
+      "Bash(grep -rn \"exact_mod_cast\" \"/Users/sergiu.bursuc/baif/Protocol Verification/lean/deps/VCV-io-v4.29-w\" --include=\"*.lean\" ! -path \"./.lake/*\")",
+      "Bash(lake env:*)",
+      "Bash(lake build:*)",
+      "Bash(grep -n \"simulateQ\\\\|bind_swap\\\\|uniform_cross\\\\|$ᵗ\" Examples/CommitmentScheme/Hiding/Main.lean)",
+      "Bash(grep -n \"notation.*\\\\$ᵗ\\\\|uniformOfFintype\" VCVio/OracleComp/Constructions/SampleableType.lean)",
+      "Bash(grep -n \"\\\\\\\\$ᵗ\\\\|uniformOfFintype\\\\\\\\s\\\\\\\\|SampleableType\" VCVio/OracleComp/Constructions/SampleableType.lean)",
+      "Bash(./scripts/update-lib.sh)",
+      "Bash(cd /)",
+      "Bash(find / -name \"StateT.lean\")",
+      "Bash(grep -rn \"map_const.*eq\\\\|map_const_eq\\\\|<\\\\$>.*pure\\\\|SPMF.map_const\" VCVio/EvalDist/)",
+      "Bash(wait)",
+      "Bash(git commit -m ' *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(grep -n \"private lemma hindepB_real\\\\|private lemma hindepA_real\\\\|^omit \\\\[Inhabited F\\\\] in$\" \"/Users/sergiu.bursuc/baif/Protocol Verification/lean/deps/VCV-io-w/Examples/CKA/FromDDH/Security.lean\")",
+      "Bash(awk -F: '$1 >= 1015 && $1 <= 1310 {print}')",
+      "Bash(rm -f /tmp/commit-msg.txt)",
+      "Bash(printf '%s\\\\n' 'Refactor bridge to adversary-structure induction \\(Option B\\)' '' 'Replace the per-query relTriple_simulateQ_run prime approach with an' 'inductive proof of evalDist_eager_honest_lazy_eq. The per-query approach' 'failed at embedding/challenge events because the state-relation R cannot' 'capture cross-event sample correspondence \\(cached a from a prior challA' 'event must couple with internally-sampled x prime at a later sendB' 'embedding\\).' '' 'Architecture now:' '- ckaSecurityImpl_lazy_real \\(cache-aware honest, consumeLazy-wrapped\\)' '- honestImpl_lazy_real a b \\(parameterized impl, substitutes a, b for x prime, x\\)' '- Step 1: evalDist_ckaSecurityImpl_lazy_eq_eager \\(consumeLazy commutation x2\\)' '- Step 2: evalDist_eager_honest_lazy_eq \\(adversary induction, this commit\\)' '- probOutput_lazy_honest_eq composes Step 1 + Step 2' '' 'Pure case of induction closed; 9-way query_bind case-split scaffolded with' 'sub-sorries. Each sub-case has documented closure recipe \\(bind-swap plus' 'IH for non-divergence; bijection coupling for embedding/challenge\\).' '' 'Old per-query bridge helpers \\(5 closed, 4 stuck\\) kept as dead code' 'documenting the discarded approach. Sorry count: 16 \\(one new for the' 'inductive proof, replacing 4 stuck sorries that no longer block\\).' '' 'Co-Authored-By: Claude Opus 4.7 \\(1M context\\) <noreply@anthropic.com>')",
+      "Bash(git stash *)"
+    ]
+  }
+}
