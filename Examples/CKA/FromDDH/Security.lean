@@ -1570,7 +1570,27 @@ private lemma evalDist_eager_honest_lazy_eq
     --     Off-party: same as non-divergence. On-party with embedding/challenge:
     --     bijection `a ↔ x'` or `b ↔ x` via `probOutput_bind_bijective_uniform_cross`.
     match t with
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => sorry  -- unifSpec
+    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u))))))) =>  -- unifSpec
+      -- At unifSpec, both impls dispatch to `oracleUnif` (rfl).
+      -- The impl-call output is uniform sampling, post-state preserved.
+      -- LHS = do b, a ← $ᵗ; (impl_lazy a b _idx).run s >>= fun (u, s') =>
+      --       (simulateQ_lazy_a_b (k u)).run' s'.
+      -- RHS = (impl_reg _idx).run s >>= fun (u, s') => (simulateQ_reg (k u)).run' s'.
+      -- Inner runs match (oracleUnif both sides). Bind-swap (b, a) past the
+      -- inner call (Fubini, since oracleUnif is (a,b)-independent), then IH.
+      have h_impl_eq : ∀ (a b : F),
+        honestImpl_lazy_real gp gen a b
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u)))))))) =
+        ckaSecurityImpl gp (ddhCKA F G gen)
+          (.inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl u)))))))) := by
+        intro a b; rfl
+      simp only [simulateQ_query_bind, OracleQuery.input_query, OracleQuery.cont_query]
+      simp only [h_impl_eq]
+      refine evalDist_ext fun y => ?_
+      -- After h_impl_eq rewrite, both sides have the same inner liftM
+      -- (impl_reg _idx). External (a, b) on LHS are independent of this.
+      -- Use bind-swap to push (a, b) past, then apply IH on each k v.
+      sorry
     | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => sorry  -- recvA
     | .inl (.inl (.inl (.inl (.inr _)))) => sorry  -- recvB
     | .inl (.inr _) => sorry  -- corruptA
