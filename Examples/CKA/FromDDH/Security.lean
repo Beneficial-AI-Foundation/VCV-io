@@ -1288,6 +1288,16 @@ private lemma honestChallB_lazy_run_eq_at_P_A
   have h_beq : (gp.challengedParty == CKAParty.B) = false := by simp [h_cp]
   simp [honestChallB_lazy, StateT.run, h_beq]
 
+/-- **Generic StateT helper**: applying `.run s` to `do let state ← get; F state`
+reduces to `(F s).run s`. This combines `StateT.run_bind`, `StateT.run_get`, and
+`pure_bind` into a single simp-rewrite. Used to make state-conditional reasoning
+in lazy oracle proofs tractable. -/
+@[simp]
+lemma StateT.run_get_bind {σ α : Type _} {m : Type _ → Type _} [Monad m] [LawfulMonad m]
+    (f : σ → StateT σ m α) (s : σ) :
+    ((get : StateT σ m σ) >>= f).run s = (f s).run s := by
+  simp [StateT.run_bind, StateT.run_get]
+
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **On-party bijection helper for `sendA` at `P = .B`.**
 
