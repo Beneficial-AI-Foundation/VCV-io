@@ -303,7 +303,7 @@ private noncomputable def honestSendB_lazy (gp : GameParams) (gen : G) (a : F) :
   fun () => do
     let state ← get
     let state' := { state with tB := state.tB + 1 }
-    if validStep state.lastAction .sendB ∧ gp.challengedParty == .A ∧
+    if validStep state.lastAction .sendB && gp.challengedParty == .A &&
         isOtherSendBeforeChall gp state' then
       match state'.stB with
       | .inr h =>
@@ -325,7 +325,7 @@ private noncomputable def honestSendA_lazy (gp : GameParams) (gen : G) (a : F) :
   fun () => do
     let state ← get
     let state' := { state with tA := state.tA + 1 }
-    if validStep state.lastAction .sendA ∧ gp.challengedParty == .B ∧
+    if validStep state.lastAction .sendA && gp.challengedParty == .B &&
         isOtherSendBeforeChall gp state' then
       match state'.stA with
       | .inr h =>
@@ -347,7 +347,7 @@ private noncomputable def honestChallA_lazy (gp : GameParams) (gen : G) (b : F) 
   fun () => do
     let state ← get
     let state' := { state with tA := state.tA + 1 }
-    if validStep state.lastAction .challA ∧ gp.challengedParty == .A ∧
+    if validStep state.lastAction .challA && gp.challengedParty == .A &&
         isChallengeEpoch gp state' then
       match state'.stA with
       | .inr h =>
@@ -367,7 +367,7 @@ private noncomputable def honestChallB_lazy (gp : GameParams) (gen : G) (b : F) 
   fun () => do
     let state ← get
     let state' := { state with tB := state.tB + 1 }
-    if validStep state.lastAction .challB ∧ gp.challengedParty == .B ∧
+    if validStep state.lastAction .challB && gp.challengedParty == .B &&
         isChallengeEpoch gp state' then
       match state'.stB with
       | .inr h =>
