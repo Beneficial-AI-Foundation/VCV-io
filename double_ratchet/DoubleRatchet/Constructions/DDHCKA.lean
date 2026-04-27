@@ -69,9 +69,10 @@ def ddhCKAWithCoins (g : G) : CKASchemeWithCoins F G F G G F where
   sendDet h x := (x, x • g, x • h)
   recv x msg := pure (msg, x • msg)
 
+omit [Fintype F] [DecidableEq F] [SampleableType G] [DecidableEq G] in
 /-- The derived `CKAScheme` from `ddhCKAWithCoins` equals `ddhCKA`. -/
 lemma ddhCKAWithCoins_toCKAScheme (g : G) :
     (ddhCKAWithCoins (F := F) g).toCKAScheme = ddhCKA (F := F) g := by
-  sorry
+  rfl
 
 end CKA

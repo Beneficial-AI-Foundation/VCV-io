@@ -70,6 +70,7 @@ The DDH adversary ignores `g` and `a • g` (the setup), and feeds
 def ckaAdvToDDHAdv (adversary : CKAAdversary G G) : DDHAdversary F G :=
   fun _g _aG bG cG => adversary bG cG
 
+omit [Fintype F] [DecidableEq F] [Inhabited F] [SampleableType G] [DecidableEq G] [Inhabited G] in
 /-- The CKA real game with the DDH-CKA scheme produces the same distribution
 as the DDH real game with the reduced adversary.
 
@@ -80,8 +81,9 @@ lemma ckaRealExp_eq_ddhExpReal (g : G) (adversary : CKAAdversary G G) :
     ckaRealExp (SharedKey := F) (SenderState := G) (ReceiverState := F)
       (ddhCKA (F := F) g) adversary =
       ddhExpReal (F := F) g (ckaAdvToDDHAdv adversary) := by
-  sorry
+  simp [ckaRealExp, ddhExpReal, ckaAdvToDDHAdv, ddhCKA, smul_smul, mul_comm]
 
+omit [DecidableEq F] [Inhabited F] [DecidableEq G] [Inhabited G] in
 /-- The CKA random game with the DDH-CKA scheme produces the same distribution
 as the DDH random game with the reduced adversary.
 
@@ -92,11 +94,20 @@ samples `c ← $ᵗ F` and computes `c • g`. These distributions coincide iff
 lemma ckaRandExp_eq_ddhExpRand (g : G)
     (hg : Function.Bijective (· • g : F → G))
     (adversary : CKAAdversary G G) :
-    ckaRandExp (SharedKey := F) (SenderState := G) (ReceiverState := F)
-      (ddhCKA (F := F) g) adversary =
-      ddhExpRand (F := F) g (ckaAdvToDDHAdv adversary) := by
-  sorry
+    evalDist (ckaRandExp (SharedKey := F) (SenderState := G) (ReceiverState := F)
+      (ddhCKA (F := F) g) adversary) =
+      evalDist (ddhExpRand (F := F) g (ckaAdvToDDHAdv adversary)) := by
+  apply evalDist_ext
+  intro z
+  simp [ckaRandExp, ddhExpRand, ckaAdvToDDHAdv, ddhCKA]
+  refine probOutput_bind_congr' ($ᵗ F : ProbComp F) z ?_
+  intro a
+  symm
+  exact probOutput_bind_bijective_uniform_cross
+    (α := F) (β := G) (fun c : F => c • g) hg
+    (fun randOutput : G => adversary (a • g) randOutput) z
 
+omit [DecidableEq F] [Inhabited F] [DecidableEq G] [Inhabited G] in
 /-- **Theorem 3** (Alwen-Coretti-Dodis 2020), concrete per-adversary form:
 
 For every CKA adversary `A`, its advantage against the DDH-CKA scheme is
@@ -110,8 +121,16 @@ theorem ddh_implies_cka_security (g : G)
     (adversary : CKAAdversary G G) :
     ckaDistAdvantage (ddhCKA (F := F) g) adversary ≤
       ddhDistAdvantage (F := F) g (ckaAdvToDDHAdv adversary) := by
-  sorry
+  unfold ckaDistAdvantage ddhDistAdvantage
+  rw [ckaRealExp_eq_ddhExpReal g adversary]
+  have hrand :
+      Pr[= true | ckaRandExp (SharedKey := F) (SenderState := G) (ReceiverState := F)
+        (ddhCKA (F := F) g) adversary] =
+        Pr[= true | ddhExpRand (F := F) g (ckaAdvToDDHAdv adversary)] :=
+    probOutput_congr rfl (ckaRandExp_eq_ddhExpRand g hg adversary)
+  rw [hrand]
 
+omit [DecidableEq F] [Inhabited F] [DecidableEq G] [Inhabited G] in
 /-- **Theorem 3** (Alwen-Coretti-Dodis 2020), single-epoch epsilon form:
 
 If every DDH adversary has advantage ≤ ε, then every single-epoch CKA
@@ -126,7 +145,24 @@ theorem ddh_implies_cka_security_single_epoch (g : G)
     (ε : ℝ)
     (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
     CKASecure (ddhCKA (F := F) g) ε := by
-  sorry
+  intro adversary
+  exact le_trans (ddh_implies_cka_security g hg adversary) (hDDH _)
+
+omit [Fintype F] [DecidableEq F] [Inhabited F] [DecidableEq G] [Inhabited G] in
+/-- Package a pointwise reduction from restricted multi-epoch CKA adversaries to
+DDH adversaries into `CKASecureDelta`.
+
+The simulation proof is supplied as `hreduce`; this lemma only performs the
+advantage transitivity step against the DDH security hypothesis. -/
+lemma CKASecureDelta_of_reduction (g : G) (ε : ℝ)
+    (reduce : MultiEpochCKAAdversary G G G F → DDHAdversary F G)
+    (hreduce : ∀ A : MultiEpochCKAAdversary G G G F,
+      multiEpochAdvantage (ddhCKA (F := F) g) 1 A ≤
+        ddhDistAdvantage (F := F) g (reduce A))
+    (hDDH : ∀ B : DDHAdversary F G, ddhDistAdvantage g B ≤ ε) :
+    CKASecureDelta (ddhCKA (F := F) g) 1 ε := by
+  intro A
+  exact le_trans (hreduce A) (hDDH (reduce A))
 
 /-- **Theorem 3** (restricted multi-epoch game, auxiliary, Δ=1):
 
@@ -155,7 +191,16 @@ theorem figure3Advantage_le_ddhAdvantage (g : G)
     (A : Figure3.Figure3Adversary F G G G F) :
     Figure3.figure3Advantage (ddhCKAWithCoins (F := F) g) tStar 1 A ≤
       ddhDistAdvantage (F := F) g (figure3AdvToDDHAdv (tStar, A)) := by
-  sorry
+  unfold Figure3.figure3Advantage ddhDistAdvantage ProbComp.boolDistAdvantage
+  have hreal :
+      Pr[= true | Figure3.figure3Exp (ddhCKAWithCoins (F := F) g) tStar 1 false A] =
+        Pr[= true | ddhExpReal (F := F) g (figure3AdvToDDHAdv (tStar, A))] :=
+    probOutput_congr rfl (figure3Exp_real_eq_ddhExpReal g hg tStar A)
+  have hrand :
+      Pr[= true | Figure3.figure3Exp (ddhCKAWithCoins (F := F) g) tStar 1 true A] =
+        Pr[= true | ddhExpRand (F := F) g (figure3AdvToDDHAdv (tStar, A))] :=
+    probOutput_congr rfl (figure3Exp_rand_eq_ddhExpRand g hg tStar A)
+  rw [hreal, hrand]
 
 /-- Paper-facing hidden-bit bound for the concrete Figure 3 reduction. -/
 theorem figure3GuessAdvantage_le_ddhAdvantage (g : G)
