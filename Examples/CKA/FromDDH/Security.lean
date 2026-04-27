@@ -1298,6 +1298,89 @@ lemma StateT.run_get_bind {σ α : Type _} {m : Type _ → Type _} [Monad m] [La
     ((get : StateT σ m σ) >>= f).run s = (f s).run s := by
   simp [StateT.run_bind, StateT.run_get]
 
+omit [Inhabited F] [Fintype G] in
+/-- **Generic predicate-false dispatch for `sendA`.**
+
+Lazy `sendA` equals eager `oracleSendA` at any state where the
+embedding-firing predicate is false. Subsumes both off-party (`P = .A`
+makes `(gp.challengedParty == .B) = false`) and post-event (`s.tA + 1 ≠
+gp.tStar - 1` makes `isOtherSendBeforeChall (s with tA++) = false`). -/
+private lemma honestSendA_lazy_run_eq_when_pred_false
+    (gp : GameParams) (a : F) (s : GameState (F ⊕ G) G G)
+    (h_pred : (validStep s.lastAction CKAAction.sendA &&
+               (gp.challengedParty == CKAParty.B) &&
+               isOtherSendBeforeChall gp { s with tA := s.tA + 1 }) = false) :
+    (honestSendA_lazy (F := F) gp gen a ()).run s =
+    (oracleSendA (ddhCKA F G gen) ()).run s := by
+  unfold honestSendA_lazy
+  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  rw [StateT.run_get_bind]
+  simp [h_pred]
+
+omit [Inhabited F] [Fintype G] in
+/-- Symmetric: lazy `sendB` equals eager when the on-party (`P = .A`)
+embedding predicate is false. -/
+private lemma honestSendB_lazy_run_eq_when_pred_false
+    (gp : GameParams) (a : F) (s : GameState (F ⊕ G) G G)
+    (h_pred : (validStep s.lastAction CKAAction.sendB &&
+               (gp.challengedParty == CKAParty.A) &&
+               isOtherSendBeforeChall gp { s with tB := s.tB + 1 }) = false) :
+    (honestSendB_lazy (F := F) gp gen a ()).run s =
+    (oracleSendB (ddhCKA F G gen) ()).run s := by
+  unfold honestSendB_lazy
+  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  rw [StateT.run_get_bind]
+  simp [h_pred]
+
+omit [Inhabited F] [Fintype G] in
+/-- Lazy `challA` equals eager when the challenge-firing predicate is false. -/
+private lemma honestChallA_lazy_run_eq_when_pred_false
+    (gp : GameParams) (b : F) (s : GameState (F ⊕ G) G G)
+    (h_pred : (validStep s.lastAction CKAAction.challA &&
+               (gp.challengedParty == CKAParty.A) &&
+               isChallengeEpoch gp { s with tA := s.tA + 1 }) = false) :
+    (honestChallA_lazy (F := F) gp gen b ()).run s =
+    (oracleChallA gp (ddhCKA F G gen) ()).run s := by
+  unfold honestChallA_lazy
+  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  rw [StateT.run_get_bind]
+  simp [h_pred]
+
+omit [Inhabited F] [Fintype G] in
+/-- Lazy `challB` equals eager when the challenge-firing predicate is false. -/
+private lemma honestChallB_lazy_run_eq_when_pred_false
+    (gp : GameParams) (b : F) (s : GameState (F ⊕ G) G G)
+    (h_pred : (validStep s.lastAction CKAAction.challB &&
+               (gp.challengedParty == CKAParty.B) &&
+               isChallengeEpoch gp { s with tB := s.tB + 1 }) = false) :
+    (honestChallB_lazy (F := F) gp gen b ()).run s =
+    (oracleChallB gp (ddhCKA F G gen) ()).run s := by
+  unfold honestChallB_lazy
+  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  rw [StateT.run_get_bind]
+  simp [h_pred]
+
+omit [Inhabited F] [Fintype G] in
+/-- **Post-event `a`-independence at `sendA-P=B`.**
+
+At any state `s` satisfying `s.tA + 1 ≠ gp.tStar - 1`, the lazy honest impl
+is `a`-independent at `sendA`. Used inside the inductive a-indep proof. -/
+private lemma honestSendA_lazy_a_indep_post_event
+    (gp : GameParams) (h_cp : gp.challengedParty = .B) (a₁ a₂ : F)
+    (s : GameState (F ⊕ G) G G) (h_post : s.tA + 1 ≠ gp.tStar - 1) :
+    (honestSendA_lazy (F := F) gp gen a₁ ()).run s =
+    (honestSendA_lazy (F := F) gp gen a₂ ()).run s := by
+  have h_pred_false :
+      (validStep s.lastAction CKAAction.sendA &&
+       (gp.challengedParty == CKAParty.B) &&
+       isOtherSendBeforeChall gp { s with tA := s.tA + 1 }) = false := by
+    have h_o : isOtherSendBeforeChall gp { s with tA := s.tA + 1 } = false := by
+      simp only [isOtherSendBeforeChall, GameState.tP, h_cp, CKAParty.other, beq_iff_eq]
+      exact decide_eq_false h_post
+    simp [h_o]
+  rw [honestSendA_lazy_run_eq_when_pred_false gp a₁ s h_pred_false,
+      honestSendA_lazy_run_eq_when_pred_false gp a₂ s h_pred_false]
+
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **On-party bijection helper for `sendA` at `P = .B`.**
 
