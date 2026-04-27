@@ -1760,7 +1760,22 @@ private lemma evalDist_eager_honest_lazy_eq
         refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
           (fun a _ => ?_) ih
         exact honestSendA_lazy_run_eq_at_P_A (gen := gen) gp h_cp a s
-      | B => sorry  -- On-party embedding for sendA: bijection a ↔ (eager x).
+      | B =>
+        -- On-party embedding for sendA-P=B.
+        -- Use `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B` to convert
+        -- the impl-call marginal `do a ← $F; (honestSendA_lazy gp gen a ()).run s`
+        -- to `(oracleSendA cka ()).run s`. The continuation `(sim_lazy(a, b) (k p.1)).run' p.2`
+        -- depends on `a` AND `b`; the post-event a-independence (when the embedding fires,
+        -- the post-state has stA = .inl _ and state.tA ≥ gp.tStar, so subsequent embedding
+        -- queries can't fire and lazy is a-independent at the rest of the trace) is the
+        -- additional ingredient needed beyond the helper.
+        -- TODO: complete the wiring. Requires either:
+        --  (a) A post-event a-independence lemma `simulateQ_honest_lazy_a_indep_at_post_event`
+        --      stating `(sim_lazy(a, b) adv).run' s' = (sim_lazy(a', b) adv).run' s'` for
+        --      reachable post-event states s'. Provable by induction on adv but ~50-100 lines.
+        --  (b) A reformulation of the bridge that bundles the impl-call + continuation
+        --      together, applying a stronger IH that handles the cross-event correspondence.
+        sorry
     | .inl (.inl (.inl (.inl (.inl (.inr u))))) =>  -- sendB
       cases h_cp : gp.challengedParty with
       | A => sorry  -- On-party embedding for sendB: bijection a ↔ (eager x).
