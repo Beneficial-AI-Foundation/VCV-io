@@ -294,101 +294,92 @@ At non-embedding / non-challenge events these oracles are pointwise equal to
 the corresponding regular honest oracles, ensuring the impl-family does not
 depend on the cached scalars at non-hit queries. -/
 
+/-- Cache-aware honest sendB oracle. At on-party (P=A) with the embedding
+predicate firing, substitutes parameter `a` for `ddhCKA.send`'s internal
+`x' ← $ᵗ F`. Otherwise delegates literally to `oracleSendB (ddhCKA F G gen)`,
+which makes the off-party dispatch lemma `rfl`-close. -/
 private noncomputable def honestSendB_lazy (gp : GameParams) (gen : G) (a : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .sendB then
-      let state := { state with tB := state.tB + 1 }
-      if gp.challengedParty == .A && isOtherSendBeforeChall gp state then
-        -- substitute `a` for what `ddhCKA.send` would sample as `x'`.
-        match state.stB with
-        | .inr h =>
-          let key := a • h
-          let ρ := a • gen
-          let stB' : F ⊕ G := .inl a
-          set { state with
-            stB := stB', rhoB := some ρ, keyB := some key,
-            lastAction := some .sendB }
-          return some (ρ, key)
-        | .inl _ => pure none
-      else
-        match ← liftM (ddhCKA.send gen state.stB) with
-        | none => pure none
-        | some (key, ρ, stB') =>
-          set { state with
-            stB := stB', rhoB := some ρ, keyB := some key,
-            lastAction := some .sendB }
-          return some (ρ, key)
-    else pure none
+    let state' := { state with tB := state.tB + 1 }
+    if validStep state.lastAction .sendB ∧ gp.challengedParty == .A ∧
+        isOtherSendBeforeChall gp state' then
+      match state'.stB with
+      | .inr h =>
+        let key := a • h
+        let ρ := a • gen
+        set { state' with
+          stB := (.inl a : F ⊕ G), rhoB := some ρ, keyB := some key,
+          lastAction := some .sendB }
+        return some (ρ, key)
+      | .inl _ => pure none
+    else
+      oracleSendB (ddhCKA F G gen) ()
 
+/-- Cache-aware honest sendA oracle. At on-party (P=B) with the embedding
+predicate firing, substitutes parameter `a`. Otherwise delegates literally
+to `oracleSendA (ddhCKA F G gen)`. -/
 private noncomputable def honestSendA_lazy (gp : GameParams) (gen : G) (a : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .sendA then
-      let state := { state with tA := state.tA + 1 }
-      if gp.challengedParty == .B && isOtherSendBeforeChall gp state then
-        match state.stA with
-        | .inr h =>
-          let key := a • h
-          let ρ := a • gen
-          let stA' : F ⊕ G := .inl a
-          set { state with
-            stA := stA', rhoA := some ρ, keyA := some key,
-            lastAction := some .sendA }
-          return some (ρ, key)
-        | .inl _ => pure none
-      else
-        match ← liftM (ddhCKA.send gen state.stA) with
-        | none => pure none
-        | some (key, ρ, stA') =>
-          set { state with
-            stA := stA', rhoA := some ρ, keyA := some key,
-            lastAction := some .sendA }
-          return some (ρ, key)
-    else pure none
+    let state' := { state with tA := state.tA + 1 }
+    if validStep state.lastAction .sendA ∧ gp.challengedParty == .B ∧
+        isOtherSendBeforeChall gp state' then
+      match state'.stA with
+      | .inr h =>
+        let key := a • h
+        let ρ := a • gen
+        set { state' with
+          stA := (.inl a : F ⊕ G), rhoA := some ρ, keyA := some key,
+          lastAction := some .sendA }
+        return some (ρ, key)
+      | .inl _ => pure none
+    else
+      oracleSendA (ddhCKA F G gen) ()
 
+/-- Cache-aware honest challA oracle. At on-party (P=A) with the challenge
+epoch firing, substitutes parameter `b` for `cka.sendA`'s internal sample.
+Otherwise delegates literally to `oracleChallA gp (ddhCKA F G gen)`. -/
 private noncomputable def honestChallA_lazy (gp : GameParams) (gen : G) (b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challA then
-      let state := { state with tA := state.tA + 1 }
-      if gp.challengedParty == .A && isChallengeEpoch gp state then
-        -- substitute `b` for what `oracleChallA` would sample as `x` (b=false branch).
-        match state.stA with
-        | .inr h =>
-          let key := b • h
-          let ρ := b • gen
-          let stA' : F ⊕ G := .inl b
-          set { state with
-            stA := stA', rhoA := some ρ, keyA := some key,
-            lastAction := some .challA }
-          return some (ρ, key)
-        | .inl _ => pure none
-      else pure none
-    else pure none
+    let state' := { state with tA := state.tA + 1 }
+    if validStep state.lastAction .challA ∧ gp.challengedParty == .A ∧
+        isChallengeEpoch gp state' then
+      match state'.stA with
+      | .inr h =>
+        let key := b • h
+        let ρ := b • gen
+        set { state' with
+          stA := (.inl b : F ⊕ G), rhoA := some ρ, keyA := some key,
+          lastAction := some .challA }
+        return some (ρ, key)
+      | .inl _ => pure none
+    else
+      oracleChallA gp (ddhCKA F G gen) ()
 
+/-- Cache-aware honest challB oracle. Symmetric to `honestChallA_lazy`. -/
 private noncomputable def honestChallB_lazy (gp : GameParams) (gen : G) (b : F) :
     QueryImpl (Unit →ₒ Option (G × G)) (StateT (GameState (F ⊕ G) G G) ProbComp) :=
   fun () => do
     let state ← get
-    if validStep state.lastAction .challB then
-      let state := { state with tB := state.tB + 1 }
-      if gp.challengedParty == .B && isChallengeEpoch gp state then
-        match state.stB with
-        | .inr h =>
-          let key := b • h
-          let ρ := b • gen
-          let stB' : F ⊕ G := .inl b
-          set { state with
-            stB := stB', rhoB := some ρ, keyB := some key,
-            lastAction := some .challB }
-          return some (ρ, key)
-        | .inl _ => pure none
-      else pure none
-    else pure none
+    let state' := { state with tB := state.tB + 1 }
+    if validStep state.lastAction .challB ∧ gp.challengedParty == .B ∧
+        isChallengeEpoch gp state' then
+      match state'.stB with
+      | .inr h =>
+        let key := b • h
+        let ρ := b • gen
+        set { state' with
+          stB := (.inl b : F ⊕ G), rhoB := some ρ, keyB := some key,
+          lastAction := some .challB }
+        return some (ρ, key)
+      | .inl _ => pure none
+    else
+      oracleChallB gp (ddhCKA F G gen) ()
 
 /-- Cache-aware honest oracle stack, parameterized by hit-event scalars `a, b`.
 Identical to `ckaSecurityImpl gp (ddhCKA F G gen)` at non-hit queries; at hit
@@ -852,16 +843,14 @@ private lemma hindepA_lazy_honest (gp : GameParams) (b : F)
     | A =>
       exfalso; simp [hitA, h_cp] at h
     | B =>
-      simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestSendB_lazy, h_cp]
-      rfl
   | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
-      simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestSendA_lazy, h_cp]
-      rfl
     | B =>
       exfalso; simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
@@ -883,9 +872,8 @@ private lemma hindepB_lazy_honest (gp : GameParams)
     cases h_cp : gp.challengedParty with
     | A =>
       unfold OracleComp.ProgramLogic.Relational.consumeLazy
-      simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestChallB_lazy, hitA, h_cp]
-      rfl
     | B =>
       exfalso; simp [hitB, h_cp] at h
   | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
@@ -894,9 +882,8 @@ private lemma hindepB_lazy_honest (gp : GameParams)
       exfalso; simp [hitB, h_cp] at h
     | B =>
       unfold OracleComp.ProgramLogic.Relational.consumeLazy
-      simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestChallA_lazy, hitA, h_cp]
-      rfl
   | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
   | .inl (.inl (.inl (.inl (.inl (.inr _))))) => rfl  -- sendB
   | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
@@ -1529,15 +1516,10 @@ private lemma honestSendA_lazy_run_eq_at_P_A
     (a : F) (s : GameState (F ⊕ G) G G) :
     (honestSendA_lazy (F := F) gp gen a ()).run s =
     (oracleSendA (ddhCKA F G gen) ()).run s := by
-  -- After `unfold honestSendA_lazy oracleSendA ddhCKA` and reducing the
-  -- `gp.challengedParty == .B && _` if to false, both sides print
-  -- absolutely identically (down to `liftM (send gen state.stA)` and the
-  -- record literal). `rfl`, `congr`, and `with_unfolding_all rfl` all
-  -- fail — there is a hidden term-level difference that survives even
-  -- aggressive unfolding. Leaf obstacle; not the architectural concern.
-  sorry
+  have h_beq : (gp.challengedParty == CKAParty.B) = false := by simp [h_cp]
+  simp [honestSendA_lazy, StateT.run, h_beq]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Off-party dispatch: at `P = .B`, `honestSendB_lazy` is pointwise equal
 to `oracleSendB (ddhCKA F G gen)`. -/
 private lemma honestSendB_lazy_run_eq_at_P_B
@@ -1545,10 +1527,10 @@ private lemma honestSendB_lazy_run_eq_at_P_B
     (a : F) (s : GameState (F ⊕ G) G G) :
     (honestSendB_lazy (F := F) gp gen a ()).run s =
     (oracleSendB (ddhCKA F G gen) ()).run s := by
-  -- See `honestSendA_lazy_run_eq_at_P_A` for the leaf-elaboration obstacle.
-  sorry
+  have h_beq : (gp.challengedParty == CKAParty.A) = false := by simp [h_cp]
+  simp [honestSendB_lazy, StateT.run, h_beq]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Off-party dispatch: at `P = .B`, `honestChallA_lazy` is pointwise equal
 to `oracleChallA gp (ddhCKA F G gen)`. -/
 private lemma honestChallA_lazy_run_eq_at_P_B
@@ -1556,12 +1538,10 @@ private lemma honestChallA_lazy_run_eq_at_P_B
     (b : F) (s : GameState (F ⊕ G) G G) :
     (honestChallA_lazy (F := F) gp gen b ()).run s =
     (oracleChallA gp (ddhCKA F G gen) ()).run s := by
-  -- After structural alignment, the lazy and eager challA differ only in
-  -- the inner `gp.challengedParty == .A && _` test. At P=B both reduce to
-  -- the same `pure none` branch (post tA-increment).
-  sorry
+  have h_beq : (gp.challengedParty == CKAParty.A) = false := by simp [h_cp]
+  simp [honestChallA_lazy, StateT.run, h_beq]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Off-party dispatch: at `P = .A`, `honestChallB_lazy` is pointwise equal
 to `oracleChallB gp (ddhCKA F G gen)`. -/
 private lemma honestChallB_lazy_run_eq_at_P_A
@@ -1569,7 +1549,8 @@ private lemma honestChallB_lazy_run_eq_at_P_A
     (b : F) (s : GameState (F ⊕ G) G G) :
     (honestChallB_lazy (F := F) gp gen b ()).run s =
     (oracleChallB gp (ddhCKA F G gen) ()).run s := by
-  sorry
+  have h_beq : (gp.challengedParty == CKAParty.B) = false := by simp [h_cp]
+  simp [honestChallB_lazy, StateT.run, h_beq]
 
 omit [Inhabited F] [Fintype G] in
 /-- **Non-divergence step lemma** for `evalDist_eager_honest_lazy_eq`.
