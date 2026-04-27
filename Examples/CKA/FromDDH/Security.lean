@@ -1671,7 +1671,35 @@ Proof technique: induction on `adv : OracleComp ckaSecuritySpec _` via
 This replaces the broken per-query `relTriple_simulateQ_run'` approach,
 which can't capture the cross-event sample correspondence (e.g., `a`
 sampled by consumeLazy at a prior `challA-P=A` event but consumed at a
-later `sendB-P=A-embedding` event). -/
+later `sendB-P=A-embedding` event).
+
+**On-party bijection roadmap** (sendA-P=B / sendB-P=A / challA-P=A /
+challB-P=B). At an on-party query, the lazy impl uses parameter `a` (or
+`b`) directly when the embedding/challenge fires; the eager impl samples
+a fresh `x ← $ᵗ F`. The proof strategy:
+
+1. After `simp only [simulateQ_bind, simulateQ_query, …, StateT.run'_eq,
+   StateT.run_bind, map_bind]`, expose the impl call inside a `>>= fun p
+   => fst <$> (simulateQ … (k p.1)).run p.2`.
+2. `refine probOutput_bind_congr' _ y fun b => ?_` to fix the outer `b`
+   sample (independent of the embedding event for `a`-cases; symmetric
+   for `b`-cases).
+3. Split at the impl call: case-split on `validStep`, on `state.stA`
+   (or `stB`), and on `isOtherSendBeforeChall` (or `isChallengeEpoch`).
+4. In the embedding-fires sub-case (`validStep ∧ stA = .inr h ∧
+   OtherSendBeforeChall`), apply `probOutput_bind_bijective_uniform_cross`
+   with `f = (id : F → F)` to replace `a ← $ᵗ F; <use a>` on LHS with
+   `x ← $ᵗ F; <use x>` on RHS.
+5. After bijection, post-event states match (`stA = .inl a` ↔ `stA = .inl
+   x` under `a := x`). The lazy impl is then `a`-independent for the
+   continuation (since post-embedding `state.stA = .inl _`, future hitA
+   queries return `pure none` regardless of the parameter).
+6. Use the `a`-independence to add a vacuous `a' ← $ᵗ F` to the LHS,
+   then apply IH on `(k p.1)` and `p.2`.
+
+Estimated size: ~150–250 lines per on-party case. The bijection itself
+is straightforward (id bijection); the bookkeeping for state-conditional
+case splits and post-event a-independence is the bulk. -/
 private lemma evalDist_eager_honest_lazy_eq
     (gp : GameParams) (s : GameState (F ⊕ G) G G)
     (adversary : OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool) :
@@ -1717,23 +1745,24 @@ private lemma evalDist_eager_honest_lazy_eq
     | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr u))))))) =>  -- sendA
       -- Case-split on `gp.challengedParty`:
       -- • P=A (off-party): impl_eq via `honestSendA_lazy_run_eq_at_P_A`, then passthrough.
-      -- • P=B (on-party): embedding event; bijection coupling needed.
+      -- • P=B (on-party): embedding event; bijection coupling needed
+      --   (see `On-party bijection roadmap` doc-comment above the bridge lemma).
       cases h_cp : gp.challengedParty with
       | A =>
         refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
           (fun a _ => ?_) ih
         exact honestSendA_lazy_run_eq_at_P_A (gen := gen) gp h_cp a s
-      | B => sorry
+      | B => sorry  -- On-party embedding for sendA: bijection a ↔ (eager x).
     | .inl (.inl (.inl (.inl (.inl (.inr u))))) =>  -- sendB
       cases h_cp : gp.challengedParty with
-      | A => sorry
+      | A => sorry  -- On-party embedding for sendB: bijection a ↔ (eager x).
       | B =>
         refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
           (fun a _ => ?_) ih
         exact honestSendB_lazy_run_eq_at_P_B (gen := gen) gp h_cp a s
     | .inl (.inl (.inl (.inr u))) =>  -- challA
       cases h_cp : gp.challengedParty with
-      | A => sorry
+      | A => sorry  -- On-party challenge for challA: bijection b ↔ (eager x).
       | B =>
         refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
           (fun _ b => ?_) ih
@@ -1744,7 +1773,7 @@ private lemma evalDist_eager_honest_lazy_eq
         refine evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
           (fun _ b => ?_) ih
         exact honestChallB_lazy_run_eq_at_P_A (gen := gen) gp h_cp b s
-      | B => sorry
+      | B => sorry  -- On-party challenge for challB: bijection b ↔ (eager x).
 
 private lemma probOutput_lazy_honest_eq (gp : GameParams)
     (adversary : CKAAdversary (F ⊕ G) G G) (x₀ : F) :
