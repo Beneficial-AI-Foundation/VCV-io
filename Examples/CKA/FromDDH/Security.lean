@@ -1364,7 +1364,7 @@ omit [Inhabited F] [Fintype G] in
 /-- **Post-event `a`-independence at `sendA-P=B`.**
 
 At any state `s` satisfying `s.tA + 1 ≠ gp.tStar - 1`, the lazy honest impl
-is `a`-independent at `sendA`. Used inside the inductive a-indep proof. -/
+is `a`-independent at `sendA`. -/
 private lemma honestSendA_lazy_a_indep_post_event
     (gp : GameParams) (h_cp : gp.challengedParty = .B) (a₁ a₂ : F)
     (s : GameState (F ⊕ G) G G) (h_post : s.tA + 1 ≠ gp.tStar - 1) :
@@ -1380,6 +1380,40 @@ private lemma honestSendA_lazy_a_indep_post_event
     simp [h_o]
   rw [honestSendA_lazy_run_eq_when_pred_false gp a₁ s h_pred_false,
       honestSendA_lazy_run_eq_when_pred_false gp a₂ s h_pred_false]
+
+omit [Inhabited F] [Fintype G] in
+/-- **Full impl-level `a`-independence at `P = .B`, post-`sendA`-event.**
+
+Lazy honest impl is `a`-independent at every oracle index, given the
+state invariant `s.tA + 1 ≠ gp.tStar - 1` (no further sendA embedding
+can fire). The non-`hitA` cases follow `hindepA_lazy_honest`; the `hitA`
+cases (`sendA`, `challB`) use the predicate-false dispatch and the fact
+that `challB` uses parameter `b`, not `a`. -/
+private lemma honestImpl_lazy_real_a_indep_post_sendA
+    (gp : GameParams) (h_cp : gp.challengedParty = .B) (b : F)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G) (h_post : s.tA + 1 ≠ gp.tStar - 1)
+    (a₁ a₂ : F) :
+    (honestImpl_lazy_real gp gen a₁ b t).run s =
+    (honestImpl_lazy_real gp gen a₂ b t).run s := by
+  match t with
+  | .inr _ => rfl  -- corruptB
+  | .inl (.inr _) => rfl  -- corruptA
+  | .inl (.inl (.inr _)) =>  -- challB at h_cp = .B uses parameter b, not a
+    simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      honestChallB_lazy, h_cp]
+  | .inl (.inl (.inl (.inr _))) =>  -- challA at h_cp = .B is off-party
+    simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      honestChallA_lazy, h_cp]
+  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
+  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB at h_cp = .B is off-party
+    simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
+      honestSendB_lazy, h_cp]
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: hit at P=B
+    show (honestSendA_lazy gp gen a₁ ()).run s = (honestSendA_lazy gp gen a₂ ()).run s
+    exact honestSendA_lazy_a_indep_post_event (gen := gen) gp h_cp a₁ a₂ s h_post
+  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **On-party bijection helper for `sendA` at `P = .B`.**
