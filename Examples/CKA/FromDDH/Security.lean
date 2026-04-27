@@ -1288,6 +1288,92 @@ private lemma honestChallB_lazy_run_eq_at_P_A
   have h_beq : (gp.challengedParty == CKAParty.B) = false := by simp [h_cp]
   simp [honestChallB_lazy, StateT.run, h_beq]
 
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
+/-- **On-party bijection helper for `sendA` at `P = .B`.**
+
+Marginalising the external pre-sample `a ← $ᵗ F` at the lazy `sendA` impl
+call produces the same distribution as the eager `oracleSendA` impl call.
+
+* Non-firing states (validStep false; or stA = .inl _; or
+  !isOtherSendBeforeChall): lazy delegates to oracleSendA, so `a` is unused.
+  Marginalising a constant bind collapses (uniform F has total mass 1).
+* Firing state (validStep ∧ stA = .inr h ∧ isOtherSendBeforeChall): lazy
+  uses parameter `a` directly to produce
+  `(some (a•gen, a•h), state with stA := .inl a)`. Eager runs `ddhCKA.send`
+  which samples `x ← $ᵗ F` and produces the same shape with `x` in place
+  of `a`. Both are uniform on `F`, so the marginals match by α-renaming. -/
+private lemma evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B
+    (gp : GameParams) (h_cp : gp.challengedParty = .B)
+    (s : GameState (F ⊕ G) G G) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      (honestSendA_lazy (F := F) gp gen a ()).run s) =
+    evalDist ((oracleSendA (ddhCKA F G gen) ()).run s) := by
+  have h_beq : (gp.challengedParty == CKAParty.B) = true := by simp [h_cp]
+  -- Strategy: case-split on whether the impl call uses parameter `a`.
+  -- Outside the firing case, lazy = eager pointwise (a unused).
+  -- In the firing case, lazy uses `a`, eager samples `x` — bijection.
+  by_cases h_fire :
+      validStep s.lastAction CKAAction.sendA = true ∧
+      isOtherSendBeforeChall gp { s with tA := s.tA + 1 } = true ∧
+      ∃ h : G, s.stA = .inr h
+  · -- Firing case: bijection
+    obtain ⟨h_v, h_o, h, h_stA⟩ := h_fire
+    rw [h_stA] at h_o
+    have h_eq : (do let a ← ($ᵗ F : ProbComp F)
+                    (honestSendA_lazy (F := F) gp gen a ()).run s) =
+                ((oracleSendA (ddhCKA F G gen) ()).run s) := by
+      simp [honestSendA_lazy, oracleSendA, StateT.run_bind, StateT.run_get,
+        StateT.lift, pure_bind, bind_pure_comp,
+        h_v, h_beq, h_stA, h_o, ddhCKA, ddhCKA.send]
+    rw [h_eq]
+  · -- Non-firing case: lazy delegates to eager pointwise (a unused).
+    have h_lazy_eq_eager : ∀ a : F,
+        (honestSendA_lazy (F := F) gp gen a ()).run s =
+        (oracleSendA (ddhCKA F G gen) ()).run s := by
+      intro a
+      cases h_v : validStep s.lastAction CKAAction.sendA with
+      | false =>
+        simp [honestSendA_lazy, oracleSendA, StateT.run_bind, StateT.run_get,
+          StateT.lift, pure_bind, h_v, h_beq, ddhCKA]
+      | true =>
+        -- The key observation: in honestSendA_lazy at validStep=true, the if-condition
+        -- only depends on `state'.stA = s.stA` via OtherSendBeforeChall (which depends
+        -- on tA only, NOT on stA). So we can split on stA and OtherSend without
+        -- worrying about state-rewriting.
+        cases h_o : isOtherSendBeforeChall gp { s with tA := s.tA + 1 } with
+        | false =>
+          -- !OtherSend: lazy delegates to else (oracleSendA cka ()). Eager runs same.
+          simp [honestSendA_lazy, oracleSendA, StateT.run_bind, StateT.run_get,
+            StateT.lift, pure_bind, h_v, h_beq, h_o, ddhCKA, ddhCKA.send]
+        | true =>
+          cases h_stA : s.stA with
+          | inl x =>
+            -- Lazy: match .inl _ → pure none. Eager via ddhCKA.send .inl _ = pure none.
+            -- Note: the goal has the embedding's if-condition with `state'.stA = .inl x`;
+            -- since `isOtherSendBeforeChall` only reads tA (not stA), it agrees with `h_o`.
+            have h_o' : isOtherSendBeforeChall gp
+                { s with stA := (.inl x : F ⊕ G), tA := s.tA + 1 } = true := by
+              simp only [isOtherSendBeforeChall] at h_o ⊢
+              convert h_o using 2
+            simp [honestSendA_lazy, oracleSendA, StateT.run_bind, StateT.run_get,
+              StateT.lift, pure_bind, h_v, h_beq, h_o', h_stA, ddhCKA, ddhCKA.send]
+          | inr h =>
+            -- Contradicts h_fire (which says NOT all of validStep ∧ OtherSend ∧ stA=.inr).
+            push_neg at h_fire
+            exact absurd h_stA (h_fire h_v h_o h)
+    have h_bind_eq :
+        (do let a ← ($ᵗ F : ProbComp F)
+            (honestSendA_lazy (F := F) gp gen a ()).run s) =
+        (do let _a ← ($ᵗ F : ProbComp F)
+            (oracleSendA (ddhCKA F G gen) ()).run s) := by
+      congr 1
+      funext a
+      exact h_lazy_eq_eager a
+    refine evalDist_ext fun y => ?_
+    rw [h_bind_eq, probOutput_bind_const]
+    simp [probFailure_uniformSample]
+
 omit [Inhabited F] [Fintype G] in
 /-- **Non-divergence step lemma** for `evalDist_eager_honest_lazy_eq`.
 
