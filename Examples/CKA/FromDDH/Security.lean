@@ -158,6 +158,12 @@ coupled by the identity bijection `y ↔ a`.
 
 open OracleSpec OracleComp ENNReal
 
+-- Internal proofs in this file use the bare `query` identifier in its
+-- primitive `OracleQuery spec _` form. Upstream's `HasQuery` refactor
+-- (#349) made the bare `query` resolve to `HasQuery.query`; the local
+-- notation below restores the primitive resolution within this file.
+local notation "query" => OracleSpec.query
+
 namespace ddhCKA
 
 variable {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F]
