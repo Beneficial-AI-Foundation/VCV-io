@@ -398,7 +398,7 @@ private noncomputable def honestImpl_lazy_real (gp : GameParams) (gen : G) (a b 
   + oracleCorruptA gp (F ⊕ G) G G
   + oracleCorruptB gp (F ⊕ G) G G
 
-/-- Initial CKA game state used by the reduction, case-split on `gp`.
+/-- Initial CKA game state used by the reduction, case-split on game parameters `gp`.
 
 * **Special case** `gp = ⟨1, _, .A⟩`: `challA` must fire as the first action
   (`validStep none .challA`), so no embedding-send can precede the challenge.
@@ -1370,6 +1370,205 @@ private lemma evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B
       congr 1
       funext a
       exact h_lazy_eq_eager a
+    refine evalDist_ext fun y => ?_
+    rw [h_bind_eq, probOutput_bind_const]
+    simp [probFailure_uniformSample]
+
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
+/-- **On-party bijection helper for `sendB` at `P = .A`.**
+
+Symmetric mirror of `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B`
+with party A as the embedding-fires party. -/
+private lemma evalDist_marginalized_honestSendB_lazy_eq_oracleSendB_at_P_A
+    (gp : GameParams) (h_cp : gp.challengedParty = .A)
+    (s : GameState (F ⊕ G) G G) :
+    evalDist (do
+      let a ← ($ᵗ F : ProbComp F)
+      (honestSendB_lazy (F := F) gp gen a ()).run s) =
+    evalDist ((oracleSendB (ddhCKA F G gen) ()).run s) := by
+  have h_beq : (gp.challengedParty == CKAParty.A) = true := by simp [h_cp]
+  by_cases h_fire :
+      validStep s.lastAction CKAAction.sendB = true ∧
+      isOtherSendBeforeChall gp { s with tB := s.tB + 1 } = true ∧
+      ∃ h : G, s.stB = .inr h
+  · obtain ⟨h_v, h_o, h, h_stB⟩ := h_fire
+    rw [h_stB] at h_o
+    have h_eq : (do let a ← ($ᵗ F : ProbComp F)
+                    (honestSendB_lazy (F := F) gp gen a ()).run s) =
+                ((oracleSendB (ddhCKA F G gen) ()).run s) := by
+      simp [honestSendB_lazy, oracleSendB, StateT.run_bind, StateT.run_get,
+        StateT.lift, pure_bind, bind_pure_comp,
+        h_v, h_beq, h_stB, h_o, ddhCKA, ddhCKA.send]
+    rw [h_eq]
+  · have h_lazy_eq_eager : ∀ a : F,
+        (honestSendB_lazy (F := F) gp gen a ()).run s =
+        (oracleSendB (ddhCKA F G gen) ()).run s := by
+      intro a
+      cases h_v : validStep s.lastAction CKAAction.sendB with
+      | false =>
+        simp [honestSendB_lazy, oracleSendB, StateT.run_bind, StateT.run_get,
+          StateT.lift, pure_bind, h_v, h_beq, ddhCKA]
+      | true =>
+        cases h_o : isOtherSendBeforeChall gp { s with tB := s.tB + 1 } with
+        | false =>
+          simp [honestSendB_lazy, oracleSendB, StateT.run_bind, StateT.run_get,
+            StateT.lift, pure_bind, h_v, h_beq, h_o, ddhCKA, ddhCKA.send]
+        | true =>
+          cases h_stB : s.stB with
+          | inl x =>
+            have h_o' : isOtherSendBeforeChall gp
+                { s with stB := (.inl x : F ⊕ G), tB := s.tB + 1 } = true := by
+              simp only [isOtherSendBeforeChall] at h_o ⊢
+              convert h_o using 2
+            simp [honestSendB_lazy, oracleSendB, StateT.run_bind, StateT.run_get,
+              StateT.lift, pure_bind, h_v, h_beq, h_o', h_stB, ddhCKA, ddhCKA.send]
+          | inr h =>
+            push_neg at h_fire
+            exact absurd h_stB (h_fire h_v h_o h)
+    have h_bind_eq :
+        (do let a ← ($ᵗ F : ProbComp F)
+            (honestSendB_lazy (F := F) gp gen a ()).run s) =
+        (do let _a ← ($ᵗ F : ProbComp F)
+            (oracleSendB (ddhCKA F G gen) ()).run s) := by
+      congr 1
+      funext a
+      exact h_lazy_eq_eager a
+    refine evalDist_ext fun y => ?_
+    rw [h_bind_eq, probOutput_bind_const]
+    simp [probFailure_uniformSample]
+
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
+/-- **On-party bijection helper for `challA` at `P = .A`, `s.b = false`.**
+
+At the challenge-firing state, lazy uses parameter `b` directly to produce
+`(some (b•gen, b•h), state with stA := .inl b)`. Eager (oracleChallA at
+`gp.challengedParty == .A` and `isChallengeEpoch`) runs `cka.sendA` (which
+samples `x ← $ᵗ F`) and then `outKey ← if s.b then $I else pure key`. With
+`s.b = false`, `outKey = key`, so eager returns
+`(some (x•gen, x•h), state with stA := .inl x)` — matching by `b ↔ x`.
+
+Without the `s.b = false` hypothesis, the eager would sample a fresh `outKey`
+at `s.b = true` while the lazy returns the deterministic `key`; the bridge
+would fail. The `s.b = false` invariant is preserved across all reachable
+states (no oracle modifies `state.b`) starting from `initGameState … false`. -/
+private lemma evalDist_marginalized_honestChallA_lazy_eq_oracleChallA_at_P_A
+    (gp : GameParams) (h_cp : gp.challengedParty = .A)
+    (s : GameState (F ⊕ G) G G) (h_b : s.b = false) :
+    evalDist (do
+      let b' ← ($ᵗ F : ProbComp F)
+      (honestChallA_lazy (F := F) gp gen b' ()).run s) =
+    evalDist ((oracleChallA gp (ddhCKA F G gen) ()).run s) := by
+  have h_beq : (gp.challengedParty == CKAParty.A) = true := by simp [h_cp]
+  by_cases h_fire :
+      validStep s.lastAction CKAAction.challA = true ∧
+      isChallengeEpoch gp { s with tA := s.tA + 1 } = true ∧
+      ∃ h : G, s.stA = .inr h
+  · obtain ⟨h_v, h_e, h, h_stA⟩ := h_fire
+    rw [h_stA, h_b] at h_e
+    have h_eq : (do let b' ← ($ᵗ F : ProbComp F)
+                    (honestChallA_lazy (F := F) gp gen b' ()).run s) =
+                ((oracleChallA gp (ddhCKA F G gen) ()).run s) := by
+      simp [honestChallA_lazy, oracleChallA, StateT.run_bind, StateT.run_get,
+        StateT.lift, pure_bind, bind_pure_comp,
+        h_v, h_beq, h_stA, h_e, h_b, ddhCKA, ddhCKA.send]
+    rw [h_eq]
+  · have h_lazy_eq_eager : ∀ b' : F,
+        (honestChallA_lazy (F := F) gp gen b' ()).run s =
+        (oracleChallA gp (ddhCKA F G gen) ()).run s := by
+      intro b'
+      cases h_v : validStep s.lastAction CKAAction.challA with
+      | false =>
+        simp [honestChallA_lazy, oracleChallA, StateT.run_bind, StateT.run_get,
+          StateT.lift, pure_bind, h_v, h_beq, ddhCKA]
+      | true =>
+        cases h_e : isChallengeEpoch gp { s with tA := s.tA + 1 } with
+        | false =>
+          simp [honestChallA_lazy, oracleChallA, StateT.run_bind, StateT.run_get,
+            StateT.lift, pure_bind, h_v, h_beq, h_e, ddhCKA, ddhCKA.send]
+        | true =>
+          cases h_stA : s.stA with
+          | inl x =>
+            have h_e' : isChallengeEpoch gp
+                { s with stA := (.inl x : F ⊕ G), b := false,
+                         tA := s.tA + 1 } = true := by
+              simp only [isChallengeEpoch] at h_e ⊢
+              convert h_e using 2
+            simp [honestChallA_lazy, oracleChallA, StateT.run_bind, StateT.run_get,
+              StateT.lift, pure_bind, h_v, h_beq, h_e', h_stA, h_b, ddhCKA, ddhCKA.send]
+          | inr h =>
+            push_neg at h_fire
+            exact absurd h_stA (h_fire h_v h_e h)
+    have h_bind_eq :
+        (do let b' ← ($ᵗ F : ProbComp F)
+            (honestChallA_lazy (F := F) gp gen b' ()).run s) =
+        (do let _b' ← ($ᵗ F : ProbComp F)
+            (oracleChallA gp (ddhCKA F G gen) ()).run s) := by
+      congr 1
+      funext b'
+      exact h_lazy_eq_eager b'
+    refine evalDist_ext fun y => ?_
+    rw [h_bind_eq, probOutput_bind_const]
+    simp [probFailure_uniformSample]
+
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
+/-- **On-party bijection helper for `challB` at `P = .B`, `s.b = false`.**
+
+Symmetric mirror of `evalDist_marginalized_honestChallA_lazy_eq_oracleChallA_at_P_A`. -/
+private lemma evalDist_marginalized_honestChallB_lazy_eq_oracleChallB_at_P_B
+    (gp : GameParams) (h_cp : gp.challengedParty = .B)
+    (s : GameState (F ⊕ G) G G) (h_b : s.b = false) :
+    evalDist (do
+      let b' ← ($ᵗ F : ProbComp F)
+      (honestChallB_lazy (F := F) gp gen b' ()).run s) =
+    evalDist ((oracleChallB gp (ddhCKA F G gen) ()).run s) := by
+  have h_beq : (gp.challengedParty == CKAParty.B) = true := by simp [h_cp]
+  by_cases h_fire :
+      validStep s.lastAction CKAAction.challB = true ∧
+      isChallengeEpoch gp { s with tB := s.tB + 1 } = true ∧
+      ∃ h : G, s.stB = .inr h
+  · obtain ⟨h_v, h_e, h, h_stB⟩ := h_fire
+    rw [h_stB, h_b] at h_e
+    have h_eq : (do let b' ← ($ᵗ F : ProbComp F)
+                    (honestChallB_lazy (F := F) gp gen b' ()).run s) =
+                ((oracleChallB gp (ddhCKA F G gen) ()).run s) := by
+      simp [honestChallB_lazy, oracleChallB, StateT.run_bind, StateT.run_get,
+        StateT.lift, pure_bind, bind_pure_comp,
+        h_v, h_beq, h_stB, h_e, h_b, ddhCKA, ddhCKA.send]
+    rw [h_eq]
+  · have h_lazy_eq_eager : ∀ b' : F,
+        (honestChallB_lazy (F := F) gp gen b' ()).run s =
+        (oracleChallB gp (ddhCKA F G gen) ()).run s := by
+      intro b'
+      cases h_v : validStep s.lastAction CKAAction.challB with
+      | false =>
+        simp [honestChallB_lazy, oracleChallB, StateT.run_bind, StateT.run_get,
+          StateT.lift, pure_bind, h_v, h_beq, ddhCKA]
+      | true =>
+        cases h_e : isChallengeEpoch gp { s with tB := s.tB + 1 } with
+        | false =>
+          simp [honestChallB_lazy, oracleChallB, StateT.run_bind, StateT.run_get,
+            StateT.lift, pure_bind, h_v, h_beq, h_e, ddhCKA, ddhCKA.send]
+        | true =>
+          cases h_stB : s.stB with
+          | inl x =>
+            have h_e' : isChallengeEpoch gp
+                { s with stB := (.inl x : F ⊕ G), b := false,
+                         tB := s.tB + 1 } = true := by
+              simp only [isChallengeEpoch] at h_e ⊢
+              convert h_e using 2
+            simp [honestChallB_lazy, oracleChallB, StateT.run_bind, StateT.run_get,
+              StateT.lift, pure_bind, h_v, h_beq, h_e', h_stB, h_b, ddhCKA, ddhCKA.send]
+          | inr h =>
+            push_neg at h_fire
+            exact absurd h_stB (h_fire h_v h_e h)
+    have h_bind_eq :
+        (do let b' ← ($ᵗ F : ProbComp F)
+            (honestChallB_lazy (F := F) gp gen b' ()).run s) =
+        (do let _b' ← ($ᵗ F : ProbComp F)
+            (oracleChallB gp (ddhCKA F G gen) ()).run s) := by
+      congr 1
+      funext b'
+      exact h_lazy_eq_eager b'
     refine evalDist_ext fun y => ?_
     rw [h_bind_eq, probOutput_bind_const]
     simp [probFailure_uniformSample]
