@@ -995,8 +995,7 @@ hR`) and the `R_general`-preserving `RelTriple` shape. -/
 open OracleComp.ProgramLogic.Relational
 
 omit [Fintype G] in
-private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA = 1)
-    (h_general : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
+private lemma relTriple_real_step_unifSpec (gp : GameParams)
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
     (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (n : unifSpec.Domain)
     (hR : R_general gen gp s_red s_hon) :
@@ -1027,11 +1026,9 @@ private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
     (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F)
     (hR : R_general gen gp s_red s_hon) :
-      RelTriple
-      ((reductionImpl_lazy_real gp gen ORecvA).run s_red)
-      ((ckaSecurityImpl_lazy_real gp gen ORecvA).run s_hon)
-      (fun p₁ p₂ => (p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2)) := by
-
+    ⟪ (reductionImpl_lazy_real gp gen ORecvA).run s_red
+    ~ (ckaSecurityImpl_lazy_real gp gen ORecvA).run s_hon
+    | fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2⟫ := by
   sorry
 
 omit [Fintype G] in
@@ -1195,7 +1192,7 @@ private lemma relTriple_real_step (gp : GameParams) (hΔ : gp.deltaCKA = 1)
   | OSendA =>
       exact relTriple_real_step_sendA gp hΔ h_not_special s_red s_hon hR
   | OUnif n =>
-      exact relTriple_real_step_unifSpec gp hΔ h_not_special s_red s_hon n hR
+      exact relTriple_real_step_unifSpec gp s_red s_hon n hR
 
 /-! ### Bridge: lazy honest cache-aware ↔ regular honest
 
@@ -1254,9 +1251,10 @@ private lemma evalDist_ckaSecurityImpl_lazy_eq_eager
   exact congr_fun (congr_arg DFunLike.coe h_inner.symm) y
 
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
-/-- Off-party dispatch: at `P = .A`, `honestSendA_lazy` is pointwise equal
-to `oracleSendA (ddhCKA F G gen)`. Used to apply
-`evalDist_eager_honest_lazy_eq_step_passthrough` for the `sendA-P=A` case. -/
+/-- When the challenged party is `A` (so `sendA` is *not* the embedding
+side), `honestSendA_lazy` is pointwise equal to `oracleSendA (ddhCKA F G gen)`.
+Lets `evalDist_eager_honest_lazy_eq_step_passthrough` discharge the
+corresponding bridge clause. -/
 private lemma honestSendA_lazy_run_eq_at_P_A
     (gp : GameParams) (h_cp : gp.challengedParty = .A)
     (a : F) (s : GameState (F ⊕ G) G G) :
@@ -1371,10 +1369,9 @@ private lemma honestChallB_lazy_run_eq_when_pred_false
   simp [h_pred]
 
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
-/-- **Post-event `a`-independence at `sendA-P=B`.**
-
-At any state `s` satisfying `s.tA + 1 ≠ gp.tStar - 1`, the lazy honest impl
-is `a`-independent at `sendA`. -/
+/-- When the challenged party is `B`, `honestSendA_lazy` is `a`-independent
+at any state where the embedding cannot fire (`s.tA + 1 ≠ gp.tStar - 1`,
+i.e., this `sendA` call is not the one that would substitute `a`). -/
 private lemma honestSendA_lazy_a_indep_post_event
     (gp : GameParams) (h_cp : gp.challengedParty = .B) (a₁ a₂ : F)
     (s : GameState (F ⊕ G) G G) (h_post : s.tA + 1 ≠ gp.tStar - 1) :
@@ -1891,23 +1888,30 @@ Proof technique: induction on `adv : OracleComp ckaSecuritySpec _` via
   * **Non-divergence queries** (most): `honestImpl_lazy_real a b t = ckaSecurityImpl t`
     pointwise (impl-family is `(a, b)`-independent at non-hit queries).
     Bind-swap external samples past the query (Fubini), apply IH on `k u`.
-  * **Embedding queries** (`sendB-P=A`, `sendA-P=B`): bijection on `a ↔ x'`
+  * **Embedding queries** (`sendA` when `gp.challengedParty = .B`, or
+    `sendB` when `gp.challengedParty = .A`): bijection on `a ↔ x'`
     via `probOutput_bind_bijective_uniform_cross` with `f = id : F → F`.
     Post-event: committed value flows through state on both sides
     (`stX = .inl a` on LHS via cache, `stX = .inl x'` on RHS via internal
     sample); by coupling `a = x'` they match.
-  * **Challenge queries** (`challA-P=A`, `challB-P=B`): bijection on `b ↔ x`,
-    same pattern as embedding.
+  * **Challenge queries** (`challX` when `gp.challengedParty = .X`):
+    bijection on `b ↔ x`, same pattern as embedding.
 
 This replaces the broken per-query `relTriple_simulateQ_run'` approach,
-which can't capture the cross-event sample correspondence (e.g., `a`
-sampled by consumeLazy at a prior `challA-P=A` event but consumed at a
-later `sendB-P=A-embedding` event).
+which can't capture the cross-event sample correspondence (e.g., `b`
+sampled by `consumeLazy` at a prior `challA` query but consumed at a later
+embedding event on B's send).
 
-**On-party bijection roadmap** (sendA-P=B / sendB-P=A / challA-P=A /
-challB-P=B). At an on-party query, the lazy impl uses parameter `a` (or
-`b`) directly when the embedding/challenge fires; the eager impl samples
-a fresh `x ← $ᵗ F`. The proof strategy:
+**On-party bijection roadmap** — the four bridge clauses where the lazy
+and eager impls diverge:
+* `sendA` when `gp.challengedParty = .B` (lazy substitutes `a`),
+* `sendB` when `gp.challengedParty = .A` (lazy substitutes `a`),
+* `challA` when `gp.challengedParty = .A` (lazy substitutes `b`),
+* `challB` when `gp.challengedParty = .B` (lazy substitutes `b`).
+
+At each, the lazy impl uses the cached parameter (`a` or `b`) directly
+when the embedding/challenge fires; the eager impl samples `x ← $ᵗ F`
+internally. The proof strategy:
 
 1. After `simp only [simulateQ_bind, simulateQ_query, …, StateT.run'_eq,
    StateT.run_bind, map_bind]`, expose the impl call inside a `>>= fun p
@@ -1984,7 +1988,8 @@ private lemma evalDist_eager_honest_lazy_eq
           (fun a _ => ?_) ih
         exact honestSendA_lazy_run_eq_at_P_A (gen := gen) gp h_cp a s
       | B =>
-        -- On-party embedding for sendA-P=B. Three ingredients:
+        -- On-party embedding for `sendA` when challenged party is `B`
+        -- (the lazy impl substitutes `a` here). Three ingredients:
         -- (1) `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B`:
         --     marginal `do a ← $F; honestSendA_lazy a ()` ≡ `oracleSendA ()`
         --     at the impl-call level;
