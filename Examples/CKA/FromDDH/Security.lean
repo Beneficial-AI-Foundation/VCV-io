@@ -1494,67 +1494,9 @@ private lemma honestImpl_lazy_real_t_monotone
     sorry
 
 omit [Inhabited F] [Fintype G] in
-/-- `tA`-only projection of `honestImpl_lazy_real_t_monotone`. -/
-private lemma honestImpl_lazy_real_tA_monotone
-    (gp : GameParams) (a b : F)
-    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
-    (s : GameState (F ⊕ G) G G)
-    (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
-    (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
-    s.tA ≤ z.2.tA :=
-  (honestImpl_lazy_real_t_monotone gp a b t s z hz).1
-
-omit [Inhabited F] [Fintype G] in
-/-- `tB`-only projection of `honestImpl_lazy_real_t_monotone`. -/
-private lemma honestImpl_lazy_real_tB_monotone
-    (gp : GameParams) (a b : F)
-    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
-    (s : GameState (F ⊕ G) G G)
-    (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
-    (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
-    s.tB ≤ z.2.tB :=
-  (honestImpl_lazy_real_t_monotone gp a b t s z hz).2
-
-omit [Inhabited F] [Fintype G] in
-/-- **`PreservesInv` packaging of `tA` monotonicity.**
-
-For any threshold `k`, the predicate `s.tA ≥ k` is preserved under any
-oracle in `honestImpl_lazy_real`. Lifts directly to the simulation level
-via `simulateQ_run_preservesInv`. -/
-private lemma honestImpl_lazy_real_preservesInv_tA_ge
-    (gp : GameParams) (a b : F) (k : ℕ) :
-    QueryImpl.PreservesInv (honestImpl_lazy_real gp gen a b) (fun s => k ≤ s.tA) := by
-  intro t s h_inv z hz
-  exact h_inv.trans (honestImpl_lazy_real_tA_monotone gp a b t s z hz)
-
-omit [Inhabited F] [Fintype G] in
-/-- **Simulation-level `tA` monotonicity** lifted via `simulateQ_run_preservesInv`.
-
-For any reachable post-state `z` of running the lazy honest simulation
-on adversary `adv` from initial state `s`, we have `s.tA ≤ z.2.tA`. -/
-private lemma simulateQ_honest_lazy_tA_monotone
-    (gp : GameParams) (a b : F)
-    (adv : OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool)
-    (s : GameState (F ⊕ G) G G) (z) :
-    z ∈ support ((simulateQ (honestImpl_lazy_real gp gen a b) adv).run s) →
-    s.tA ≤ z.2.tA :=
-  fun hz =>
-    OracleComp.simulateQ_run_preservesInv
-      (honestImpl_lazy_real gp gen a b)
-      (fun s' => s.tA ≤ s'.tA)
-      (honestImpl_lazy_real_preservesInv_tA_ge (gen := gen) gp a b s.tA)
-      adv s (le_refl _) z hz
-
-omit [Inhabited F] [Fintype G] in
-/-- **Simulation-level `a`-independence post-`sendA` event at `P = .B`.**
-
-After the `sendA` embedding has fired (post-state has `s.tA ≥ gp.tStar - 1`,
-assuming `gp.tStar ≥ 1`), the lazy honest simulation of any adversary is
-independent of the parameter `a`. Composes:
-* per-query a-indep `honestImpl_lazy_real_a_indep_post_sendA`
-* `tA` monotone non-decreasing → invariant `s.tA ≥ gp.tStar - 1` preserved
-* upstream `relTriple_simulateQ_run_of_impl_eq_preservesInv` to lift to
-  whole-program equality. -/
+/-- At `P = .B` and `gp.tStar - 1 ≤ s.tA` (post-`sendA`-firing state), the
+lazy honest simulation is `a`-independent. Lifts the per-query a-indep via
+`relTriple_simulateQ_run_of_impl_eq_preservesInv` + `tA` monotonicity. -/
 private lemma simulateQ_honest_lazy_a_indep_post_sendA
     (gp : GameParams) (h_cp : gp.challengedParty = .B)
     (h_tStar : 1 ≤ gp.tStar) (b : F)
@@ -1575,26 +1517,15 @@ private lemma simulateQ_honest_lazy_a_indep_post_sendA
       honestImpl_lazy_real_a_indep_post_sendA (gen := gen) gp h_cp b t s'
         (h_inv_imp s' h_pre) a₁ a₂)
     (hpres₂ := fun t s' h_pre z hz =>
-      h_pre.trans (honestImpl_lazy_real_tA_monotone (gen := gen) gp a₂ b t s' z hz))
+      h_pre.trans (honestImpl_lazy_real_t_monotone (gen := gen) gp a₂ b t s' z hz).1)
     s h_post
   exact OracleComp.ProgramLogic.Relational.evalDist_eq_of_relTriple_eqRel
     (OracleComp.ProgramLogic.Relational.relTriple_post_mono hrel
       (fun _ _ hp => hp.1))
 
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
-/-- **On-party bijection helper for `sendA` at `P = .B`.**
-
-Marginalising the external pre-sample `a ← $ᵗ F` at the lazy `sendA` impl
-call produces the same distribution as the eager `oracleSendA` impl call.
-
-* Non-firing states (validStep false; or stA = .inl _; or
-  !isOtherSendBeforeChall): lazy delegates to oracleSendA, so `a` is unused.
-  Marginalising a constant bind collapses (uniform F has total mass 1).
-* Firing state (validStep ∧ stA = .inr h ∧ isOtherSendBeforeChall): lazy
-  uses parameter `a` directly to produce
-  `(some (a•gen, a•h), state with stA := .inl a)`. Eager runs `ddhCKA.send`
-  which samples `x ← $ᵗ F` and produces the same shape with `x` in place
-  of `a`. Both are uniform on `F`, so the marginals match by α-renaming. -/
+/-- At `P = .B`, pre-sampling `a ← $ᵗ F` for `honestSendA_lazy` yields the same
+distribution as `oracleSendA`'s internal sample. -/
 private lemma evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B
     (gp : GameParams) (h_cp : gp.challengedParty = .B)
     (s : GameState (F ⊕ G) G G) :
