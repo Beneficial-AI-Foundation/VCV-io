@@ -29,7 +29,8 @@
       "Bash(sed -n '1508,1510p' Examples/CKA/FromDDH/Security.lean)",
       "Bash(lake build *)",
       "Bash(echo \"EXIT=$?\")",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(grep -nB2 \"^def ckaCorrectnessSpec\\\\|^abbrev ckaCorrectnessSpec\" Examples/CKA/Defs.lean)"
     ]
   }
 }
