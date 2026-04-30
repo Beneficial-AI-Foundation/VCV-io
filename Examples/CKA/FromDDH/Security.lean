@@ -1323,7 +1323,7 @@ private lemma honestSendA_lazy_run_eq_when_pred_false
     (honestSendA_lazy (F := F) gp gen a ()).run s =
     (oracleSendA (ddhCKA F G gen) ()).run s := by
   unfold honestSendA_lazy
-  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  change ((get : StateT _ ProbComp _) >>= _).run s = _
   rw [StateT.run_get_bind]
   simp [h_pred]
 
@@ -1338,7 +1338,7 @@ private lemma honestSendB_lazy_run_eq_when_pred_false
     (honestSendB_lazy (F := F) gp gen a ()).run s =
     (oracleSendB (ddhCKA F G gen) ()).run s := by
   unfold honestSendB_lazy
-  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  change ((get : StateT _ ProbComp _) >>= _).run s = _
   rw [StateT.run_get_bind]
   simp [h_pred]
 
@@ -1352,7 +1352,7 @@ private lemma honestChallA_lazy_run_eq_when_pred_false
     (honestChallA_lazy (F := F) gp gen b ()).run s =
     (oracleChallA gp (ddhCKA F G gen) ()).run s := by
   unfold honestChallA_lazy
-  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  change ((get : StateT _ ProbComp _) >>= _).run s = _
   rw [StateT.run_get_bind]
   simp [h_pred]
 
@@ -1366,7 +1366,7 @@ private lemma honestChallB_lazy_run_eq_when_pred_false
     (honestChallB_lazy (F := F) gp gen b ()).run s =
     (oracleChallB gp (ddhCKA F G gen) ()).run s := by
   unfold honestChallB_lazy
-  show ((get : StateT _ ProbComp _) >>= _).run s = _
+  change ((get : StateT _ ProbComp _) >>= _).run s = _
   rw [StateT.run_get_bind]
   simp [h_pred]
 
@@ -1421,33 +1421,32 @@ private lemma honestImpl_lazy_real_a_indep_post_sendA
       honestSendB_lazy, h_cp]
   | ORecvA => rfl  -- recvA
   | OSendA =>  -- sendA: hit at P=B
-    show (honestSendA_lazy gp gen a₁ ()).run s = (honestSendA_lazy gp gen a₂ ()).run s
+    change (honestSendA_lazy gp gen a₁ ()).run s = (honestSendA_lazy gp gen a₂ ()).run s
     exact honestSendA_lazy_a_indep_post_event (gen := gen) gp h_cp a₁ a₂ s h_post
   | OUnif _ => rfl  -- oracleUnif
 
-omit [Inhabited F] [Fintype F] [Fintype G] in
-/-- Helper: `oracleCorruptB` doesn't modify state. -/
-private lemma oracleCorruptB_state_unchanged
-    (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
-    z ∈ support ((oracleCorruptB gp (F ⊕ G) G G ()).run s) → z.2 = s := by
-  unfold oracleCorruptB
-  rw [StateT.run_get_bind]
-  intro hz
-  split_ifs at hz <;>
-    · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
-      exact congrArg Prod.snd hz
-
-omit [Inhabited F] [Fintype F] [Fintype G] in
-/-- Helper: `oracleCorruptA` doesn't modify state. -/
-private lemma oracleCorruptA_state_unchanged
-    (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
-    z ∈ support ((oracleCorruptA gp (F ⊕ G) G G ()).run s) → z.2 = s := by
-  unfold oracleCorruptA
-  rw [StateT.run_get_bind]
-  intro hz
-  split_ifs at hz <;>
-    · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
-      exact congrArg Prod.snd hz
+omit [Field F] [DecidableEq F] [SampleableType F] [AddCommGroup G] [Module F G]
+  [SampleableType G] [DecidableEq G] [Inhabited F] [Fintype F] [Fintype G] in
+/-- Helper: corruption oracles don't modify state. -/
+private lemma oracleCorrupt_state_unchanged
+    (gp : GameParams) (party : CKAParty) (s : GameState (F ⊕ G) G G)
+    (z : Option (F ⊕ G) × GameState (F ⊕ G) G G) :
+    z ∈ support (((match party with
+      | .A => oracleCorruptA gp (F ⊕ G) G G
+      | .B => oracleCorruptB gp (F ⊕ G) G G) ()).run s) → z.2 = s := by
+  cases party
+  · unfold oracleCorruptA
+    rw [StateT.run_get_bind]
+    intro hz
+    split_ifs at hz <;>
+      · simp only [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
+        exact congrArg Prod.snd hz
+  · unfold oracleCorruptB
+    rw [StateT.run_get_bind]
+    intro hz
+    split_ifs at hz <;>
+      · simp only [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
+        exact congrArg Prod.snd hz
 
 omit [Inhabited F] [Fintype G] in
 /-- **Per-query `tA`/`tB` monotonicity.**
@@ -1478,13 +1477,13 @@ private lemma honestImpl_lazy_real_t_monotone
   | OCorruptB =>
     -- oracleCorruptB: state unchanged
     simp only [honestImpl_lazy_real, QueryImpl.add_apply_inr] at hz
-    have h_eq := oracleCorruptB_state_unchanged gp s z hz
+    have h_eq := oracleCorrupt_state_unchanged gp .B s z hz
     rw [h_eq]
     exact ⟨le_refl _, le_refl _⟩
   | OCorruptA =>
     -- oracleCorruptA: state unchanged
     simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr] at hz
-    have h_eq := oracleCorruptA_state_unchanged gp s z hz
+    have h_eq := oracleCorrupt_state_unchanged gp .A s z hz
     rw [h_eq]
     exact ⟨le_refl _, le_refl _⟩
   | _ =>
@@ -1498,8 +1497,7 @@ omit [Inhabited F] [Fintype G] in
 lazy honest simulation is `a`-independent. Lifts the per-query a-indep via
 `relTriple_simulateQ_run_of_impl_eq_preservesInv` + `tA` monotonicity. -/
 private lemma simulateQ_honest_lazy_a_indep_post_sendA
-    (gp : GameParams) (h_cp : gp.challengedParty = .B)
-    (h_tStar : 1 ≤ gp.tStar) (b : F)
+    (gp : GameParams) (h_cp : gp.challengedParty = .B) (b : F)
     (adv : OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool)
     (s : GameState (F ⊕ G) G G) (h_post : gp.tStar - 1 ≤ s.tA) (a₁ a₂ : F) :
     evalDist ((simulateQ (honestImpl_lazy_real gp gen a₁ b) adv).run s) =
@@ -1988,25 +1986,29 @@ private lemma evalDist_eager_honest_lazy_eq
       | B =>
         -- On-party embedding for sendA-P=B. Three ingredients:
         -- (1) `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B`:
-        --     marginal of `do a ← $F; honestSendA_lazy gp gen a ()` matches
-        --     `oracleSendA cka ()` at the impl-call level (handles bijection a ↔ x);
+        --     marginal `do a ← $F; honestSendA_lazy a ()` ≡ `oracleSendA ()`
+        --     at the impl-call level;
         -- (2) `simulateQ_honest_lazy_a_indep_post_sendA`: at post-firing
-        --     state (`gp.tStar - 1 ≤ s'.tA`), the lazy honest simulation is
-        --     `a`-independent;
-        -- (3) the IH `ih u s'` for the continuation `k u` at any post-state s'.
-        --
-        -- Goal after `simp [simulateQ_bind, …]`:
-        --   evalDist (do b ← $F; a ← $F;
-        --              (honestImpl_lazy_real gp gen a b OSendA).run s >>= K_lazy(a,b)) =
-        --   evalDist ((ckaSecurityImpl gp (ddhCKA F G gen) OSendA).run s >>= K_eager)
-        --
-        -- where K_lazy(a,b) (u,s') = (sim_lazy a b (k u)).run' s'
-        --       K_eager (u,s')     = (sim_eager (k u)).run' s'.
-        --
-        -- The proof bookkeeping (bind-swap to align outer samples with the
-        -- impl call, apply (1) to bridge impl distributions, apply (2) at
-        -- post-state to fold the a dependency, finally apply (3)) is the
-        -- substantive remaining work: ~80-150 lines.
+        --     state (`gp.tStar - 1 ≤ s'.tA`), the lazy honest simulation
+        --     is `a`-independent;
+        -- (3) the IH `ih u s'` for the continuation `k u`.
+        apply evalDist_ext; intro y
+        simp only [simulateQ_bind, simulateQ_query, OracleQuery.cont_query, id_map,
+          OracleQuery.input_query, StateT.run'_eq, StateT.run_bind, map_bind]
+        -- Step 1: identify the impl call via QueryImpl.add unfolding —
+        -- `honestImpl_lazy_real gp gen a b OSendA = honestSendA_lazy gp gen a ()`.
+        have h_impl_lazy : ∀ (a b : F),
+            (honestImpl_lazy_real gp gen a b OSendA).run s =
+            (honestSendA_lazy (F := F) gp gen a ()).run s := fun _ _ => rfl
+        -- Step 2: identify the eager impl call
+        have h_impl_eager :
+            (ckaSecurityImpl gp (ddhCKA F G gen) OSendA).run s =
+            (oracleSendA (ddhCKA F G gen) ()).run s := rfl
+        -- Step 3: rewrite both sides using the impl-call shape; the residual
+        -- goal couples `do a ← $F; (honestSendA_lazy gp gen a ()).run s` (LHS)
+        -- with `(oracleSendA cka ()).run s` (RHS) inside a continuation that
+        -- itself depends on `a`, `b`. Bridging this requires (B), (D), (E)
+        -- per the plan above. Remaining ~80–150 lines of bookkeeping.
         sorry
     | OSendB =>  -- sendB
       cases h_cp : gp.challengedParty with
@@ -2046,7 +2048,7 @@ private lemma probOutput_lazy_honest_eq (gp : GameParams)
     (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
   have h₂ := evalDist_eager_honest_lazy_eq (gen := gen) gp
     (initGameState (.inr (x₀ • gen)) (.inl x₀) false) adversary
-  show evalDist _ false = evalDist _ false
+  change evalDist _ false = evalDist _ false
   exact congr_fun (congr_arg DFunLike.coe (h₁.trans h₂)) false
 
 omit [Fintype G] in
