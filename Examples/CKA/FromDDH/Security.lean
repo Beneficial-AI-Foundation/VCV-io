@@ -1986,19 +1986,27 @@ private lemma evalDist_eager_honest_lazy_eq
           (fun a _ => ?_) ih
         exact honestSendA_lazy_run_eq_at_P_A (gen := gen) gp h_cp a s
       | B =>
-        -- On-party embedding for sendA-P=B.
-        -- Use `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B` to convert
-        -- the impl-call marginal `do a ← $F; (honestSendA_lazy gp gen a ()).run s`
-        -- to `(oracleSendA cka ()).run s`. The continuation `(sim_lazy(a, b) (k p.1)).run' p.2`
-        -- depends on `a` AND `b`; the post-event a-independence (when the embedding fires,
-        -- the post-state has stA = .inl _ and state.tA ≥ gp.tStar, so subsequent embedding
-        -- queries can't fire and lazy is a-independent at the rest of the trace) is the
-        -- additional ingredient needed beyond the helper.
-        -- Spike conclusion (2026-04-29): upstream `rvcgen` times out on this goal due to
-        -- impl-body complexity; targeted `apply evalDist_eq_of_relTriple_eqRel` + `simp` +
-        -- manual `relTriple_bind_uniformSample_bij` works but saves only ~30-45 lines/case
-        -- vs the manual `probOutput_bind_*` chain. Continuing with the manual approach
-        -- using existing bijection helpers + post-event a-indep + IH.
+        -- On-party embedding for sendA-P=B. Three ingredients:
+        -- (1) `evalDist_marginalized_honestSendA_lazy_eq_oracleSendA_at_P_B`:
+        --     marginal of `do a ← $F; honestSendA_lazy gp gen a ()` matches
+        --     `oracleSendA cka ()` at the impl-call level (handles bijection a ↔ x);
+        -- (2) `simulateQ_honest_lazy_a_indep_post_sendA`: at post-firing
+        --     state (`gp.tStar - 1 ≤ s'.tA`), the lazy honest simulation is
+        --     `a`-independent;
+        -- (3) the IH `ih u s'` for the continuation `k u` at any post-state s'.
+        --
+        -- Goal after `simp [simulateQ_bind, …]`:
+        --   evalDist (do b ← $F; a ← $F;
+        --              (honestImpl_lazy_real gp gen a b OSendA).run s >>= K_lazy(a,b)) =
+        --   evalDist ((ckaSecurityImpl gp (ddhCKA F G gen) OSendA).run s >>= K_eager)
+        --
+        -- where K_lazy(a,b) (u,s') = (sim_lazy a b (k u)).run' s'
+        --       K_eager (u,s')     = (sim_eager (k u)).run' s'.
+        --
+        -- The proof bookkeeping (bind-swap to align outer samples with the
+        -- impl call, apply (1) to bridge impl distributions, apply (2) at
+        -- post-state to fold the a dependency, finally apply (3)) is the
+        -- substantive remaining work: ~80-150 lines.
         sorry
     | OSendB =>  -- sendB
       cases h_cp : gp.challengedParty with
