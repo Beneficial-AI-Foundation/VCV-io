@@ -712,7 +712,7 @@ private noncomputable def ckaSecurityImpl_lazy_real (gp : GameParams) (gen : G) 
     consumeLazy (hit := hitA gp) (implFam := fun a =>
       honestImpl_lazy_real gp gen a b))
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- Lemma: At non-hit queries, the reduction's output doesn't depend on `a` -/
 private lemma hindepA_real (gp : GameParams) (b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
@@ -764,6 +764,7 @@ private lemma hindepA_real (gp : GameParams) (b : F)
       simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif: no gA use
 
+omit [Fintype G] in
 /-- Lemma: At non-hit queries, the reduction's output doesn't depend on `b` -/
 private lemma hindepB_real (gp : GameParams)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
@@ -808,7 +809,7 @@ private lemma hindepB_real (gp : GameParams)
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => rfl  -- sendA (uses gA only)
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- Lazy honest impl-family is `a`-independent at non-`hitA` queries.
 
 At non-hit queries, `honestImpl_lazy_real gp gen a b` dispatches to the
@@ -856,6 +857,7 @@ private lemma hindepA_lazy_honest (gp : GameParams) (b : F)
       exfalso; simp [hitA, h_cp] at h
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
+omit [Fintype G] in
 /-- Lazy honest impl wrapped in inner `consumeLazy hitA` is `b`-independent
 at non-`hitB` queries. Mirror of `hindepB_real` for the lazy honest side. -/
 private lemma hindepB_lazy_honest (gp : GameParams)
@@ -931,7 +933,7 @@ private def R_general (gen : G) (gp : GameParams) :
     | .B => cellOk s_red.stA s_hon.stA optA_r ∧ cellOk s_red.stB s_hon.stB optB_r
 
 omit [Fintype F] [DecidableEq F] [SampleableType F] [SampleableType G]
-  [DecidableEq G] [Inhabited F] in
+  [DecidableEq G] [Inhabited F] [Fintype G] in
 /-- Lemma: `R_general` holds at the shared init state with empty caches -/
 private lemma R_general_init (gp : GameParams) (x₀ : F) :
     R_general gen gp
@@ -973,7 +975,7 @@ are:
   `relTriple_real_step_recvB`         sides; cellOk on stX healed by `recv` writing
                                       `.inr ρ`. State changes only depend on
                                       observable fields of R_general.
-  `relTriple_real_step_corruptA`    -- gated by `allowCorr ∨ finishedP`; the gate
+  `relTriple_real_step_corruptA`    -- gated by `allowCorr ∨ finishedA/B`; the gate
   `relTriple_real_step_corruptB`      only fires after a prior `recv` overwrites
                                       any dead `.inl 0` placeholder, so cellOk
                                       gives equality at the read time.
@@ -989,6 +991,7 @@ are:
 Each stub takes the per-step hypotheses (`gp, hΔ, h_not_special, s_red, s_hon,
 hR`) and the `R_general`-preserving `RelTriple` shape. -/
 
+omit [Fintype G] in
 private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1020,6 +1023,7 @@ private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA 
 
 open OracleComp.ProgramLogic.Relational
 
+omit [Fintype G] in
 private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1034,6 +1038,7 @@ private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1
 
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1077,6 +1082,7 @@ private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1
   -- phaseShapeInv at .sendA/.challA giving rhoA = some (y•gen).
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_sendA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1090,6 +1096,7 @@ private lemma relTriple_real_step_sendA (gp : GameParams) (hΔ : gp.deltaCKA = 1
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_sendB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1103,6 +1110,7 @@ private lemma relTriple_real_step_sendB (gp : GameParams) (hΔ : gp.deltaCKA = 1
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_challA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1127,6 +1135,7 @@ private lemma relTriple_real_step_challA (gp : GameParams) (hΔ : gp.deltaCKA = 
   -- separate bridge from there to `ckaSecurityImpl`.
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_challB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1138,6 +1147,7 @@ private lemma relTriple_real_step_challB (gp : GameParams) (hΔ : gp.deltaCKA = 
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_corruptA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1149,6 +1159,7 @@ private lemma relTriple_real_step_corruptA (gp : GameParams) (hΔ : gp.deltaCKA 
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
+omit [Fintype G] in
 private lemma relTriple_real_step_corruptB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
@@ -1160,6 +1171,7 @@ private lemma relTriple_real_step_corruptB (gp : GameParams) (hΔ : gp.deltaCKA 
       (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
   sorry
 
+omit [Fintype G] in
 /-- Per-query `RelTriple` for the general-case bridge: at each oracle index
 `i`, lazy reduction and honest CKA produce equal observable outputs and
 post-states still related by `R_general`. Dispatches to the per-oracle helper
@@ -1247,7 +1259,7 @@ private lemma evalDist_ckaSecurityImpl_lazy_eq_eager
         adversary s
   exact congr_fun (congr_arg DFunLike.coe h_inner.symm) y
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Off-party dispatch: at `P = .A`, `honestSendA_lazy` is pointwise equal
 to `oracleSendA (ddhCKA F G gen)`. Used to apply
 `evalDist_eager_honest_lazy_eq_step_passthrough` for the `sendA-P=A` case. -/
@@ -1302,7 +1314,7 @@ lemma StateT.run_get_bind {σ α : Type _} {m : Type _ → Type _} [Monad m] [La
     ((get : StateT σ m σ) >>= f).run s = (f s).run s := by
   simp [StateT.run_bind, StateT.run_get]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **Generic predicate-false dispatch for `sendA`.**
 
 Lazy `sendA` equals eager `oracleSendA` at any state where the
@@ -1321,7 +1333,7 @@ private lemma honestSendA_lazy_run_eq_when_pred_false
   rw [StateT.run_get_bind]
   simp [h_pred]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Symmetric: lazy `sendB` equals eager when the on-party (`P = .A`)
 embedding predicate is false. -/
 private lemma honestSendB_lazy_run_eq_when_pred_false
@@ -1336,7 +1348,7 @@ private lemma honestSendB_lazy_run_eq_when_pred_false
   rw [StateT.run_get_bind]
   simp [h_pred]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Lazy `challA` equals eager when the challenge-firing predicate is false. -/
 private lemma honestChallA_lazy_run_eq_when_pred_false
     (gp : GameParams) (b : F) (s : GameState (F ⊕ G) G G)
@@ -1350,7 +1362,7 @@ private lemma honestChallA_lazy_run_eq_when_pred_false
   rw [StateT.run_get_bind]
   simp [h_pred]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- Lazy `challB` equals eager when the challenge-firing predicate is false. -/
 private lemma honestChallB_lazy_run_eq_when_pred_false
     (gp : GameParams) (b : F) (s : GameState (F ⊕ G) G G)
@@ -1364,7 +1376,7 @@ private lemma honestChallB_lazy_run_eq_when_pred_false
   rw [StateT.run_get_bind]
   simp [h_pred]
 
-omit [Inhabited F] [Fintype G] in
+omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **Post-event `a`-independence at `sendA-P=B`.**
 
 At any state `s` satisfying `s.tA + 1 ≠ gp.tStar - 1`, the lazy honest impl
@@ -1419,7 +1431,7 @@ private lemma honestImpl_lazy_real_a_indep_post_sendA
     exact honestSendA_lazy_a_indep_post_event (gen := gen) gp h_cp a₁ a₂ s h_post
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype F] [Fintype G] in
 /-- Helper: `oracleCorruptB` doesn't modify state. -/
 private lemma oracleCorruptB_state_unchanged
     (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
@@ -1431,7 +1443,7 @@ private lemma oracleCorruptB_state_unchanged
     · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
       exact congrArg Prod.snd hz
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype F] [Fintype G] in
 /-- Helper: `oracleCorruptA` doesn't modify state. -/
 private lemma oracleCorruptA_state_unchanged
     (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
@@ -1443,7 +1455,7 @@ private lemma oracleCorruptA_state_unchanged
     · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
       exact congrArg Prod.snd hz
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- **Per-query `tA` monotonicity.**
 
 Every oracle in `honestImpl_lazy_real` either leaves `state.tA` unchanged
@@ -1488,7 +1500,7 @@ private lemma honestImpl_lazy_real_tA_monotone
     -- Mechanical but verbose; deferred while the higher-level wiring proceeds.
     sorry
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- **`PreservesInv` packaging of `tA` monotonicity.**
 
 For any threshold `k`, the predicate `s.tA ≥ k` is preserved under any
@@ -1500,7 +1512,7 @@ private lemma honestImpl_lazy_real_preservesInv_tA_ge
   intro t s h_inv z hz
   exact h_inv.trans (honestImpl_lazy_real_tA_monotone gp a b t s z hz)
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- **Simulation-level `tA` monotonicity** lifted via `simulateQ_run_preservesInv`.
 
 For any reachable post-state `z` of running the lazy honest simulation
@@ -1518,7 +1530,7 @@ private lemma simulateQ_honest_lazy_tA_monotone
       (honestImpl_lazy_real_preservesInv_tA_ge (gen := gen) gp a b s.tA)
       adv s (le_refl _) z hz
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- **Simulation-level `a`-independence post-`sendA` event at `P = .B`.**
 
 After the `sendA` embedding has fired (post-state has `s.tA ≥ gp.tStar - 1`,
@@ -1917,6 +1929,7 @@ private lemma evalDist_eager_honest_lazy_eq_step_passthrough
   simp only [StateT.run'_eq] at hi
   exact congrFun (congrArg DFunLike.coe hi) y
 
+omit [Fintype G] in
 /-- **Step 2 of the bridge** — the substantive content:
 
   `do b, a ← $ᵗ F; simulate (honestImpl_lazy_real a b) adv .run' s
@@ -2082,6 +2095,7 @@ private lemma probOutput_lazy_honest_eq (gp : GameParams)
   show evalDist _ false = evalDist _ false
   exact congr_fun (congr_arg DFunLike.coe (h₁.trans h₂)) false
 
+omit [Fintype G] in
 /-- General-case per-fixed-`x₀` claim: with `a, b ← $ᵗ F` and honest init
 `(.inr (x₀•gen), .inl x₀)`, the reduction's output distribution equals
 honest's. This is the "heart" of Step (2)'s general case — the
@@ -2102,6 +2116,7 @@ private lemma probOutput_general_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA =
       return b'] := by
   sorry
 
+omit [Fintype G] in
 /-- General-case (`¬ (t* = 1 ∧ P = A)`) game-level bridge.
 
 Stated with `x₀ ← $ᵗ F` sampled *inside* on both sides (matching the shape
@@ -2158,6 +2173,7 @@ private lemma probOutput_general_pointwise (gp : GameParams) (hΔ : gp.deltaCKA 
         refine probOutput_bind_congr' _ false fun x₀ => ?_
         exact probOutput_general_per_x₀ gp hΔ h_not_special adversary x₀
 
+omit [Fintype G] in
 /-- Special-case per-fixed-`x₀` claim: with the rename `a ↔ x₀`, reduction's
 init `(.inr (x₀•gen), .inl 0)` (stB dead) and honest's `(.inr (x₀•gen), .inl x₀)`
 produce the same output distribution after the remaining `b ← $ᵗ F` peel. -/
@@ -2176,6 +2192,7 @@ private lemma probOutput_special_per_x₀ (gp : GameParams) (hΔ : gp.deltaCKA =
       return b'] := by
   sorry
 
+omit [Fintype G] in
 /-- Special-case (`gp = ⟨1, _, .A⟩`) bridge: reduction init `(.inr (a•gen), .inl 0)`
 with outer `a ←$ F` equals honest init `(.inr (x₀•gen), .inl x₀)` with
 outer `x₀ ←$ F` (renaming `a ↔ x₀`), averaged over the remaining `b ←$ F`. -/
@@ -2197,6 +2214,7 @@ private lemma probOutput_special_pointwise (gp : GameParams) (hΔ : gp.deltaCKA 
   refine probOutput_bind_congr' _ false fun x₀ => ?_
   exact probOutput_special_per_x₀ gp hΔ h_special adversary x₀
 
+omit [Fintype G] in
 /-- **Step (2) of the real branch.** Game-level bridge:
 `Pr[= false | securityReductionRealGame] = Pr[= false | CKA^{b = false}]`.
 
@@ -2216,6 +2234,7 @@ private lemma probOutput_securityReductionRealGame_eq_honestFalse
     simp only [reductionInitState, if_neg h_special, bind_assoc, pure_bind]
     exact probOutput_general_pointwise (gen := gen) gp hΔ h_special adversary
 
+omit [Fintype G] in
 /-- General-case rand-branch per-fixed-`x₀` claim. With `a, b, c ← $ᵗ F`,
 reduction's output on `init .inr (x₀•gen) .inl x₀ false` matches honest's on
 the same state with `b = true`. Couples `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
@@ -2237,6 +2256,7 @@ private lemma probOutput_general_per_x₀_rand (gp : GameParams) (hΔ : gp.delta
       return b'] := by
   sorry
 
+omit [Fintype G] in
 /-- General-case (`¬ (t* = 1 ∧ P = A)`) rand-branch game-level bridge.
 Analogue of `probOutput_general_pointwise` with the extra `c ← $ᵗ F`
 sampled internally; challenge couples `c•gen ↔ outKey ← $ᵗ G` via `hg`. -/
@@ -2304,6 +2324,7 @@ private lemma probOutput_general_pointwise_rand (gp : GameParams) (hΔ : gp.delt
         refine probOutput_bind_congr' _ false fun x₀ => ?_
         exact probOutput_general_per_x₀_rand gp hΔ hg h_not_special adversary x₀
 
+omit [Fintype G] in
 /-- Special-case rand-branch per-fixed-`x₀` claim: after renaming `a ↔ x₀`,
 reduction's init `(.inr (x₀•gen), .inl 0)` with remaining `b, c ← $ᵗ F`
 matches honest's init `(.inr (x₀•gen), .inl x₀)` with `b = true`. Couples
@@ -2325,6 +2346,7 @@ private lemma probOutput_special_per_x₀_rand (gp : GameParams) (hΔ : gp.delta
       return b'] := by
   sorry
 
+omit [Fintype G] in
 /-- Special-case (`gp = ⟨1, _, .A⟩`) rand-branch bridge. Analogue of
 `probOutput_special_pointwise`; reduction's init is `(.inr (a•gen), .inl 0)`
 with `c` replacing `a*b` in `gT`; rename `a ↔ x₀`, couple
@@ -2349,6 +2371,7 @@ private lemma probOutput_special_pointwise_rand (gp : GameParams) (hΔ : gp.delt
   refine probOutput_bind_congr' _ false fun x₀ => ?_
   exact probOutput_special_per_x₀_rand gp hΔ hg h_special adversary x₀
 
+omit [Fintype G] in
 /-- **Step (2) of the random branch.** Game-level bridge:
 `Pr[= false | securityReductionRandGame] = Pr[= false | CKA^{b = true}]`.
 Parallel to `probOutput_securityReductionRealGame_eq_honestFalse`. -/
@@ -2365,6 +2388,7 @@ private lemma probOutput_securityReductionRandGame_eq_honestTrue
   · simp only [reductionInitState, if_neg h_special, bind_assoc, pure_bind]
     exact probOutput_general_pointwise_rand (gen := gen) gp hΔ hg h_special adversary
 
+omit [Fintype G] in
 /-- **Real-branch lemma.**
 `Pr[ℬ = true | DDH_real] = Pr[𝒜 = false | CKA^{b = false}]`.
 
@@ -2382,6 +2406,7 @@ lemma securityReduction_real (gp : GameParams)
   rw [probOutput_ddhExpReal_securityReduction, probOutput_securityExpFixedBit_false]
   exact probOutput_securityReductionRealGame_eq_honestFalse (gen := gen) gp hΔ adversary
 
+omit [Fintype G] in
 /-- **Random-branch lemma.**
 `Pr[ℬ = true | DDH_rand] = Pr[𝒜 = false | CKA^{b = true}]`.
 
@@ -2429,6 +2454,7 @@ private noncomputable def securityFailGap
   |(Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary false gp]).toReal -
     (Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary true gp]).toReal|
 
+omit [Fintype G] in
 /-- **Unconditional DDH-CKA security bound.**
 
 For every CKA adversary, the CKA advantage is bounded by the DDH guess-advantage
@@ -2498,7 +2524,7 @@ lemma security_le_ddh_plus_failGap (gp : GameParams)
   unfold securityAdvantage ddhGuessAdvantage
   exact habs
 
-omit [Inhabited F] in
+omit [Inhabited F] [Fintype G] in
 /-- Auxiliary: the failure probability of `securityExpFixedBit` does not depend on
 the challenge bit.
 
@@ -2512,6 +2538,7 @@ private lemma probFailure_securityExpFixedBit_eq
     Pr[⊥ | securityExpFixedBit (ddhCKA F G gen) adversary false gp] := by
   simp
 
+omit [Fintype G] in
 /-- **DDH-CKA security (per-adversary form)** [ACD19, Theorem 3].
 
 For any CKA adversary `𝒜`, the CKA advantage is bounded by the DDH
