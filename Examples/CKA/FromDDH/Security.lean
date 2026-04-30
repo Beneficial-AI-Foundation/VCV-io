@@ -1,6 +1,7 @@
 import Examples.CKA.FromDDH.Common
 import VCVio.ProgramLogic.Relational.SimulateQ
 import VCVio.ProgramLogic.Tactics.Common.OracleSum
+import VCVio.ProgramLogic.Tactics.Relational
 import VCVio.OracleComp.QueryTracking.LazySampling
 
 /-!
@@ -1017,17 +1018,20 @@ private lemma relTriple_real_step_unifSpec (gp : GameParams) (hΔ : gp.deltaCKA 
   rintro v _ rfl
   exact OracleComp.ProgramLogic.Relational.relTriple_pure_pure ⟨rfl, hR⟩
 
+open OracleComp.ProgramLogic.Relational
+
 private lemma relTriple_real_step_recvA (gp : GameParams) (hΔ : gp.deltaCKA = 1)
     (h_not_special : ¬ (gp.tStar = 1 ∧ gp.challengedParty = .A))
     (s_red : (GameState (F ⊕ G) G G × Option F) × Option F)
     (s_hon : (GameState (F ⊕ G) G G × Option F) × Option F) (u : Unit)
     (hR : R_general gen gp s_red s_hon) :
-    OracleComp.ProgramLogic.Relational.RelTriple
+    RelTriple
       ((reductionImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_red)
       ((ckaSecurityImpl_lazy_real gp gen
           (.inl (.inl (.inl (.inl (.inl (.inl (.inr u)))))))).run s_hon)
-      (fun p₁ p₂ => p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2) := by
+      (fun p₁ p₂ => (p₁.1 = p₂.1 ∧ R_general gen gp p₁.2 p₂.2)) := by
+
   sorry
 
 private lemma relTriple_real_step_recvB (gp : GameParams) (hΔ : gp.deltaCKA = 1)
@@ -1414,6 +1418,141 @@ private lemma honestImpl_lazy_real_a_indep_post_sendA
     show (honestSendA_lazy gp gen a₁ ()).run s = (honestSendA_lazy gp gen a₂ ()).run s
     exact honestSendA_lazy_a_indep_post_event (gen := gen) gp h_cp a₁ a₂ s h_post
   | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
+
+omit [Inhabited F] in
+/-- Helper: `oracleCorruptB` doesn't modify state. -/
+private lemma oracleCorruptB_state_unchanged
+    (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
+    z ∈ support ((oracleCorruptB gp (F ⊕ G) G G ()).run s) → z.2 = s := by
+  unfold oracleCorruptB
+  rw [StateT.run_get_bind]
+  intro hz
+  split_ifs at hz <;>
+    · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
+      exact congrArg Prod.snd hz
+
+omit [Inhabited F] in
+/-- Helper: `oracleCorruptA` doesn't modify state. -/
+private lemma oracleCorruptA_state_unchanged
+    (gp : GameParams) (s : GameState (F ⊕ G) G G) (z) :
+    z ∈ support ((oracleCorruptA gp (F ⊕ G) G G ()).run s) → z.2 = s := by
+  unfold oracleCorruptA
+  rw [StateT.run_get_bind]
+  intro hz
+  split_ifs at hz <;>
+    · simp [StateT.run_pure, support_pure, Set.mem_singleton_iff] at hz
+      exact congrArg Prod.snd hz
+
+omit [Inhabited F] in
+/-- **Per-query `tA` monotonicity.**
+
+Every oracle in `honestImpl_lazy_real` either leaves `state.tA` unchanged
+or increments it by `1`. This is the key invariant that lifts to the
+simulation level for the post-event `a`-independence argument: once
+`s.tA ≥ gp.tStar - 1` holds (after the `sendA` embedding has fired),
+the inequality is preserved by all subsequent oracle calls.
+
+Proof outline (per oracle case):
+* `oracleUnif`: lifts `ProbComp` to `StateT`, state unchanged.
+* `oracleCorruptA`, `oracleCorruptB`: read-only, state unchanged
+  (`oracleCorruptA_state_unchanged`, `oracleCorruptB_state_unchanged`).
+* `oracleSendB`, `oracleRecvB`, `oracleChallB`, `honestSendB_lazy`,
+  `honestChallB_lazy`: increment `tB` only, leave `tA` unchanged.
+* `oracleSendA`, `oracleRecvA`, `oracleChallA`: increment `tA` by `1`
+  if `validStep`, else leave unchanged.
+* `honestSendA_lazy`: firing path increments `tA`; else delegates to
+  `oracleSendA` (also monotone).
+* `honestChallA_lazy`: firing path increments `tA`; else delegates to
+  `oracleChallA` (also monotone). -/
+private lemma honestImpl_lazy_real_tA_monotone
+    (gp : GameParams) (a b : F)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G)
+    (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
+    (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
+    s.tA ≤ z.2.tA := by
+  match t with
+  | .inr _ =>
+    -- oracleCorruptB: state unchanged
+    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inr] at hz
+    have h_eq := oracleCorruptB_state_unchanged gp s z hz
+    rw [h_eq]
+  | .inl (.inr _) =>
+    -- oracleCorruptA: state unchanged
+    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr] at hz
+    have h_eq := oracleCorruptA_state_unchanged gp s z hz
+    rw [h_eq]
+  | _ =>
+    -- TODO: remaining 7 cases (per-oracle unfold + StateT.run normalization +
+    -- case-split on validStep / state.stX → either state unchanged or tA += 1).
+    -- Mechanical but verbose; deferred while the higher-level wiring proceeds.
+    sorry
+
+omit [Inhabited F] in
+/-- **`PreservesInv` packaging of `tA` monotonicity.**
+
+For any threshold `k`, the predicate `s.tA ≥ k` is preserved under any
+oracle in `honestImpl_lazy_real`. Lifts directly to the simulation level
+via `simulateQ_run_preservesInv`. -/
+private lemma honestImpl_lazy_real_preservesInv_tA_ge
+    (gp : GameParams) (a b : F) (k : ℕ) :
+    QueryImpl.PreservesInv (honestImpl_lazy_real gp gen a b) (fun s => k ≤ s.tA) := by
+  intro t s h_inv z hz
+  exact h_inv.trans (honestImpl_lazy_real_tA_monotone gp a b t s z hz)
+
+omit [Inhabited F] in
+/-- **Simulation-level `tA` monotonicity** lifted via `simulateQ_run_preservesInv`.
+
+For any reachable post-state `z` of running the lazy honest simulation
+on adversary `adv` from initial state `s`, we have `s.tA ≤ z.2.tA`. -/
+private lemma simulateQ_honest_lazy_tA_monotone
+    (gp : GameParams) (a b : F)
+    (adv : OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool)
+    (s : GameState (F ⊕ G) G G) (z) :
+    z ∈ support ((simulateQ (honestImpl_lazy_real gp gen a b) adv).run s) →
+    s.tA ≤ z.2.tA :=
+  fun hz =>
+    OracleComp.simulateQ_run_preservesInv
+      (honestImpl_lazy_real gp gen a b)
+      (fun s' => s.tA ≤ s'.tA)
+      (honestImpl_lazy_real_preservesInv_tA_ge (gen := gen) gp a b s.tA)
+      adv s (le_refl _) z hz
+
+omit [Inhabited F] in
+/-- **Simulation-level `a`-independence post-`sendA` event at `P = .B`.**
+
+After the `sendA` embedding has fired (post-state has `s.tA ≥ gp.tStar - 1`,
+assuming `gp.tStar ≥ 1`), the lazy honest simulation of any adversary is
+independent of the parameter `a`. Composes:
+* per-query a-indep `honestImpl_lazy_real_a_indep_post_sendA`
+* `tA` monotone non-decreasing → invariant `s.tA ≥ gp.tStar - 1` preserved
+* upstream `relTriple_simulateQ_run_of_impl_eq_preservesInv` to lift to
+  whole-program equality. -/
+private lemma simulateQ_honest_lazy_a_indep_post_sendA
+    (gp : GameParams) (h_cp : gp.challengedParty = .B)
+    (h_tStar : 1 ≤ gp.tStar) (b : F)
+    (adv : OracleComp (ckaSecuritySpec (F ⊕ G) G G) Bool)
+    (s : GameState (F ⊕ G) G G) (h_post : gp.tStar - 1 ≤ s.tA) (a₁ a₂ : F) :
+    evalDist ((simulateQ (honestImpl_lazy_real gp gen a₁ b) adv).run s) =
+    evalDist ((simulateQ (honestImpl_lazy_real gp gen a₂ b) adv).run s) := by
+  have h_inv_imp : ∀ s' : GameState (F ⊕ G) G G,
+      gp.tStar - 1 ≤ s'.tA → s'.tA + 1 ≠ gp.tStar - 1 := by
+    intro s' h
+    omega
+  have hrel := OracleComp.ProgramLogic.Relational.relTriple_simulateQ_run_of_impl_eq_preservesInv
+    (impl₁ := honestImpl_lazy_real gp gen a₁ b)
+    (impl₂ := honestImpl_lazy_real gp gen a₂ b)
+    (Inv := fun s' : GameState (F ⊕ G) G G => gp.tStar - 1 ≤ s'.tA)
+    (oa := adv)
+    (himpl_eq := fun t s' h_pre =>
+      honestImpl_lazy_real_a_indep_post_sendA (gen := gen) gp h_cp b t s'
+        (h_inv_imp s' h_pre) a₁ a₂)
+    (hpres₂ := fun t s' h_pre z hz =>
+      h_pre.trans (honestImpl_lazy_real_tA_monotone (gen := gen) gp a₂ b t s' z hz))
+    s h_post
+  exact OracleComp.ProgramLogic.Relational.evalDist_eq_of_relTriple_eqRel
+    (OracleComp.ProgramLogic.Relational.relTriple_post_mono hrel
+      (fun _ _ hp => hp.1))
 
 omit [Inhabited F] [Fintype G] [DecidableEq G] in
 /-- **On-party bijection helper for `sendA` at `P = .B`.**
@@ -1896,12 +2035,11 @@ private lemma evalDist_eager_honest_lazy_eq
         -- the post-state has stA = .inl _ and state.tA ≥ gp.tStar, so subsequent embedding
         -- queries can't fire and lazy is a-independent at the rest of the trace) is the
         -- additional ingredient needed beyond the helper.
-        -- TODO: complete the wiring. Requires either:
-        --  (a) A post-event a-independence lemma `simulateQ_honest_lazy_a_indep_at_post_event`
-        --      stating `(sim_lazy(a, b) adv).run' s' = (sim_lazy(a', b) adv).run' s'` for
-        --      reachable post-event states s'. Provable by induction on adv but ~50-100 lines.
-        --  (b) A reformulation of the bridge that bundles the impl-call + continuation
-        --      together, applying a stronger IH that handles the cross-event correspondence.
+        -- Spike conclusion (2026-04-29): upstream `rvcgen` times out on this goal due to
+        -- impl-body complexity; targeted `apply evalDist_eq_of_relTriple_eqRel` + `simp` +
+        -- manual `relTriple_bind_uniformSample_bij` works but saves only ~30-45 lines/case
+        -- vs the manual `probOutput_bind_*` chain. Continuing with the manual approach
+        -- using existing bijection helpers + post-event a-indep + IH.
         sorry
     | .inl (.inl (.inl (.inl (.inl (.inr u))))) =>  -- sendB
       cases h_cp : gp.challengedParty with
@@ -2139,7 +2277,7 @@ private lemma probOutput_general_pointwise_rand (gp : GameParams) (hΔ : gp.delt
               (reductionOracleImpl gp gen (a • gen) (b • gen) (c • gen)) adversary).run
             (initGameState (.inr (x₀ • gen)) (.inl x₀) false)
           return b'] := by
-        refine probOutput_bind_congr' _ false fun a => ?_
+        refine probOutput_bind_congr' _ false fun a => ?_2
         refine probOutput_bind_congr' _ false fun b => ?_
         exact probOutput_bind_bind_swap _ _ _ _
       _ = Pr[= false | do

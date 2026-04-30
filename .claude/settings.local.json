@@ -22,7 +22,14 @@
       "Bash(awk -F: '$1 >= 1015 && $1 <= 1310 {print}')",
       "Bash(rm -f /tmp/commit-msg.txt)",
       "Bash(printf '%s\\\\n' 'Refactor bridge to adversary-structure induction \\(Option B\\)' '' 'Replace the per-query relTriple_simulateQ_run prime approach with an' 'inductive proof of evalDist_eager_honest_lazy_eq. The per-query approach' 'failed at embedding/challenge events because the state-relation R cannot' 'capture cross-event sample correspondence \\(cached a from a prior challA' 'event must couple with internally-sampled x prime at a later sendB' 'embedding\\).' '' 'Architecture now:' '- ckaSecurityImpl_lazy_real \\(cache-aware honest, consumeLazy-wrapped\\)' '- honestImpl_lazy_real a b \\(parameterized impl, substitutes a, b for x prime, x\\)' '- Step 1: evalDist_ckaSecurityImpl_lazy_eq_eager \\(consumeLazy commutation x2\\)' '- Step 2: evalDist_eager_honest_lazy_eq \\(adversary induction, this commit\\)' '- probOutput_lazy_honest_eq composes Step 1 + Step 2' '' 'Pure case of induction closed; 9-way query_bind case-split scaffolded with' 'sub-sorries. Each sub-case has documented closure recipe \\(bind-swap plus' 'IH for non-divergence; bijection coupling for embedding/challenge\\).' '' 'Old per-query bridge helpers \\(5 closed, 4 stuck\\) kept as dead code' 'documenting the discarded approach. Sorry count: 16 \\(one new for the' 'inductive proof, replacing 4 stuck sorries that no longer block\\).' '' 'Co-Authored-By: Claude Opus 4.7 \\(1M context\\) <noreply@anthropic.com>')",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(lake exe *)",
+      "Bash(awk 'NR < 1246 || NR > 1521' Examples/CKA/FromDDH/Security.lean)",
+      "Bash(sed -n '1245,1246p' Examples/CKA/FromDDH/Security.lean)",
+      "Bash(sed -n '1508,1510p' Examples/CKA/FromDDH/Security.lean)",
+      "Bash(lake build *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//tmp/**)"
     ]
   }
 }
