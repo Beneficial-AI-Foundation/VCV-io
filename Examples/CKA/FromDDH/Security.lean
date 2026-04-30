@@ -667,22 +667,22 @@ open OracleComp.ProgramLogic.Relational in
 /-- Predicate defining which oracle calls may require embedding of scalar a -/
 private def hitA (gp : GameParams) :
     (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
-  | .inl (.inl (.inl (.inr _))) =>  -- challA
+  | OChallA =>  -- challA
       gp.challengedParty = .A
-  | .inl (.inl (.inr _)) =>          -- challB
+  | OChallB =>          -- challB
       gp.challengedParty = .B
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB
+  | OSendB =>  -- sendB
       gp.challengedParty = .A
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA
+  | OSendA =>  -- sendA
       gp.challengedParty = .B
   | _ => false
 
 /-- Predicate defining which oracle calls may require embedding of scalar b -/
 private def hitB (gp : GameParams) :
     (ckaSecuritySpec (F ⊕ G) G G).Domain → Bool
-  | .inl (.inl (.inl (.inr _))) =>  -- challA
+  | OChallA =>  -- challA
       gp.challengedParty = .A
-  | .inl (.inl (.inr _)) =>          -- challB
+  | OChallB =>          -- challB
       gp.challengedParty = .B
   | _ => false
 
@@ -723,9 +723,9 @@ private lemma hindepA_real (gp : GameParams) (b : F)
     (reductionOracleImpl gp gen (a₂ • gen) (b • gen) ((a₂ * b) • gen) t).run s := by
   -- Match on the 9-way nested Sum domain.
   match t with
-  | .inr _ => rfl  -- corruptB: no gA/gB/gT use
-  | .inl (.inr _) => rfl  -- corruptA: no gA/gB/gT use
-  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+  | OCorruptB => rfl  -- corruptB: no gA/gB/gT use
+  | OCorruptA => rfl  -- corruptA: no gA/gB/gT use
+  | OChallB =>  -- challB: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
@@ -734,7 +734,7 @@ private lemma hindepA_real (gp : GameParams) (b : F)
     | B =>
       exfalso
       simp [hitA, h_cp] at h
-  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
+  | OChallA =>  -- challA: gated by P = .A
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso
@@ -743,8 +743,8 @@ private lemma hindepA_real (gp : GameParams) (b : F)
       simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         reductionChallA, h_cp]
       rfl
-  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB: no gA use
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB: gated by P = .A
+  | ORecvB => rfl  -- recvB: no gA use
+  | OSendB =>  -- sendB: gated by P = .A
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso
@@ -753,8 +753,8 @@ private lemma hindepA_real (gp : GameParams) (b : F)
       simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         reductionSendB, h_cp]
       rfl
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA: no gA use
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: gated by P = .B
+  | ORecvA => rfl  -- recvA: no gA use
+  | OSendA =>  -- sendA: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
@@ -763,7 +763,7 @@ private lemma hindepA_real (gp : GameParams) (b : F)
     | B =>
       exfalso
       simp [hitA, h_cp] at h
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif: no gA use
+  | OUnif _ => rfl  -- oracleUnif: no gA use
 
 omit [Fintype G] in
 /-- Lemma: At non-hit queries, the reduction's output doesn't depend on `b` -/
@@ -782,9 +782,9 @@ private lemma hindepB_real (gp : GameParams)
   -- Only challA/challB with matching party use gB/gT; hitB restricts exactly
   -- those cases, so at hitB=false the inner impl is b-independent.
   match t with
-  | .inr _ => rfl  -- corruptB: no gB/gT use
-  | .inl (.inr _) => rfl  -- corruptA: no gB/gT use
-  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+  | OCorruptB => rfl  -- corruptB: no gB/gT use
+  | OCorruptA => rfl  -- corruptA: no gB/gT use
+  | OChallB =>  -- challB: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       unfold OracleComp.ProgramLogic.Relational.consumeLazy
@@ -794,7 +794,7 @@ private lemma hindepB_real (gp : GameParams)
     | B =>
       exfalso
       simp [hitB, h_cp] at h
-  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
+  | OChallA =>  -- challA: gated by P = .A
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso
@@ -804,11 +804,11 @@ private lemma hindepB_real (gp : GameParams)
       simp only [reductionOracleImpl, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         reductionChallA, hitA, h_cp]
       rfl
-  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) => rfl  -- sendB (uses gA only, not b)
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => rfl  -- sendA (uses gA only)
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
+  | ORecvB => rfl  -- recvB
+  | OSendB => rfl  -- sendB (uses gA only, not b)
+  | ORecvA => rfl  -- recvA
+  | OSendA => rfl  -- sendA (uses gA only)
+  | OUnif _ => rfl  -- oracleUnif
 
 omit [Inhabited F] [Fintype G] in
 /-- Lazy honest impl-family is `a`-independent at non-`hitA` queries.
@@ -824,39 +824,39 @@ private lemma hindepA_lazy_honest (gp : GameParams) (b : F)
     (honestImpl_lazy_real gp gen a₁ b t).run s =
     (honestImpl_lazy_real gp gen a₂ b t).run s := by
   match t with
-  | .inr _ => rfl
-  | .inl (.inr _) => rfl
-  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+  | OCorruptB => rfl
+  | OCorruptA => rfl
+  | OChallB =>  -- challB: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestChallB_lazy, h_cp]
     | B =>
       exfalso; simp [hitA, h_cp] at h
-  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A; impl uses b not a
+  | OChallA =>  -- challA: gated by P = .A; impl uses b not a
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso; simp [hitA, h_cp] at h
     | B =>
       simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestChallA_lazy, h_cp]
-  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB: gated by P = .A
+  | ORecvB => rfl  -- recvB
+  | OSendB =>  -- sendB: gated by P = .A
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso; simp [hitA, h_cp] at h
     | B =>
       simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestSendB_lazy, h_cp]
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: gated by P = .B
+  | ORecvA => rfl  -- recvA
+  | OSendA =>  -- sendA: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestSendA_lazy, h_cp]
     | B =>
       exfalso; simp [hitA, h_cp] at h
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
+  | OUnif _ => rfl  -- oracleUnif
 
 omit [Fintype G] in
 /-- Lazy honest impl wrapped in inner `consumeLazy hitA` is `b`-independent
@@ -870,9 +870,9 @@ private lemma hindepB_lazy_honest (gp : GameParams)
     (OracleComp.ProgramLogic.Relational.consumeLazy (hit := hitA gp)
         (implFam := fun a => honestImpl_lazy_real gp gen a b₂) t).run s := by
   match t with
-  | .inr _ => rfl
-  | .inl (.inr _) => rfl
-  | .inl (.inl (.inr _)) =>  -- challB: gated by P = .B
+  | OCorruptB => rfl
+  | OCorruptA => rfl
+  | OChallB =>  -- challB: gated by P = .B
     cases h_cp : gp.challengedParty with
     | A =>
       unfold OracleComp.ProgramLogic.Relational.consumeLazy
@@ -880,7 +880,7 @@ private lemma hindepB_lazy_honest (gp : GameParams)
         honestChallB_lazy, hitA, h_cp]
     | B =>
       exfalso; simp [hitB, h_cp] at h
-  | .inl (.inl (.inl (.inr _))) =>  -- challA: gated by P = .A
+  | OChallA =>  -- challA: gated by P = .A
     cases h_cp : gp.challengedParty with
     | A =>
       exfalso; simp [hitB, h_cp] at h
@@ -888,11 +888,11 @@ private lemma hindepB_lazy_honest (gp : GameParams)
       unfold OracleComp.ProgramLogic.Relational.consumeLazy
       simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
         honestChallA_lazy, hitA, h_cp]
-  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) => rfl  -- sendB
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) => rfl  -- sendA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
+  | ORecvB => rfl  -- recvB
+  | OSendB => rfl  -- sendB
+  | ORecvA => rfl  -- recvA
+  | OSendA => rfl  -- sendA
+  | OUnif _ => rfl  -- oracleUnif
 
 /-- Per-cell coupling:
 - either the cells match, or
@@ -1407,23 +1407,23 @@ private lemma honestImpl_lazy_real_a_indep_post_sendA
     (honestImpl_lazy_real gp gen a₁ b t).run s =
     (honestImpl_lazy_real gp gen a₂ b t).run s := by
   match t with
-  | .inr _ => rfl  -- corruptB
-  | .inl (.inr _) => rfl  -- corruptA
-  | .inl (.inl (.inr _)) =>  -- challB at h_cp = .B uses parameter b, not a
+  | OCorruptB => rfl  -- corruptB
+  | OCorruptA => rfl  -- corruptA
+  | OChallB =>  -- challB at h_cp = .B uses parameter b, not a
     simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
       honestChallB_lazy, h_cp]
-  | .inl (.inl (.inl (.inr _))) =>  -- challA at h_cp = .B is off-party
+  | OChallA =>  -- challA at h_cp = .B is off-party
     simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
       honestChallA_lazy, h_cp]
-  | .inl (.inl (.inl (.inl (.inr _)))) => rfl  -- recvB
-  | .inl (.inl (.inl (.inl (.inl (.inr _))))) =>  -- sendB at h_cp = .B is off-party
+  | ORecvB => rfl  -- recvB
+  | OSendB =>  -- sendB at h_cp = .B is off-party
     simp [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr,
       honestSendB_lazy, h_cp]
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) => rfl  -- recvA
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inr _))))))) =>  -- sendA: hit at P=B
+  | ORecvA => rfl  -- recvA
+  | OSendA =>  -- sendA: hit at P=B
     show (honestSendA_lazy gp gen a₁ ()).run s = (honestSendA_lazy gp gen a₂ ()).run s
     exact honestSendA_lazy_a_indep_post_event (gen := gen) gp h_cp a₁ a₂ s h_post
-  | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) => rfl  -- oracleUnif
+  | OUnif _ => rfl  -- oracleUnif
 
 omit [Inhabited F] [Fintype F] [Fintype G] in
 /-- Helper: `oracleCorruptB` doesn't modify state. -/
@@ -1450,49 +1450,70 @@ private lemma oracleCorruptA_state_unchanged
       exact congrArg Prod.snd hz
 
 omit [Inhabited F] [Fintype G] in
-/-- **Per-query `tA` monotonicity.**
+/-- **Per-query `tA`/`tB` monotonicity.**
 
-Every oracle in `honestImpl_lazy_real` either leaves `state.tA` unchanged
-or increments it by `1`. This is the key invariant that lifts to the
-simulation level for the post-event `a`-independence argument: once
-`s.tA ≥ gp.tStar - 1` holds (after the `sendA` embedding has fired),
-the inequality is preserved by all subsequent oracle calls.
+Every oracle in `honestImpl_lazy_real` either leaves `state.tA` /
+`state.tB` unchanged, or increments exactly one of them by `1`. The
+two are orthogonal: A-side oracles (`oracleSendA`, `oracleRecvA`,
+`oracleChallA`, `honestSendA_lazy`, `honestChallA_lazy`) only touch
+`tA`; B-side oracles (`oracleSendB`, `oracleRecvB`, `oracleChallB`,
+`honestSendB_lazy`, `honestChallB_lazy`) only touch `tB`. Both
+inequalities lift to the simulation level via
+`simulateQ_run_preservesInv` and underpin post-event `a`/`b`-
+independence arguments.
 
 Proof outline (per oracle case):
-* `oracleUnif`: lifts `ProbComp` to `StateT`, state unchanged.
-* `oracleCorruptA`, `oracleCorruptB`: read-only, state unchanged
-  (`oracleCorruptA_state_unchanged`, `oracleCorruptB_state_unchanged`).
-* `oracleSendB`, `oracleRecvB`, `oracleChallB`, `honestSendB_lazy`,
-  `honestChallB_lazy`: increment `tB` only, leave `tA` unchanged.
-* `oracleSendA`, `oracleRecvA`, `oracleChallA`: increment `tA` by `1`
-  if `validStep`, else leave unchanged.
-* `honestSendA_lazy`: firing path increments `tA`; else delegates to
-  `oracleSendA` (also monotone).
-* `honestChallA_lazy`: firing path increments `tA`; else delegates to
-  `oracleChallA` (also monotone). -/
+* `oracleUnif`, `oracleCorruptA`, `oracleCorruptB`: state unchanged
+  (read-only or pure lift).
+* A-side oracles: `tA` unchanged or `tA + 1`; `tB` unchanged.
+* B-side oracles: `tB` unchanged or `tB + 1`; `tA` unchanged. -/
+private lemma honestImpl_lazy_real_t_monotone
+    (gp : GameParams) (a b : F)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G)
+    (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
+    (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
+    s.tA ≤ z.2.tA ∧ s.tB ≤ z.2.tB := by
+  match t with
+  | OCorruptB =>
+    -- oracleCorruptB: state unchanged
+    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inr] at hz
+    have h_eq := oracleCorruptB_state_unchanged gp s z hz
+    rw [h_eq]
+    exact ⟨le_refl _, le_refl _⟩
+  | OCorruptA =>
+    -- oracleCorruptA: state unchanged
+    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr] at hz
+    have h_eq := oracleCorruptA_state_unchanged gp s z hz
+    rw [h_eq]
+    exact ⟨le_refl _, le_refl _⟩
+  | _ =>
+    -- TODO: remaining 7 cases (per-oracle unfold + StateT.run normalization +
+    -- case-split on validStep / state.stX → state unchanged, tA += 1, or tB += 1).
+    -- Mechanical but verbose; deferred while the higher-level wiring proceeds.
+    sorry
+
+omit [Inhabited F] [Fintype G] in
+/-- `tA`-only projection of `honestImpl_lazy_real_t_monotone`. -/
 private lemma honestImpl_lazy_real_tA_monotone
     (gp : GameParams) (a b : F)
     (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
     (s : GameState (F ⊕ G) G G)
     (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
     (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
-    s.tA ≤ z.2.tA := by
-  match t with
-  | .inr _ =>
-    -- oracleCorruptB: state unchanged
-    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inr] at hz
-    have h_eq := oracleCorruptB_state_unchanged gp s z hz
-    rw [h_eq]
-  | .inl (.inr _) =>
-    -- oracleCorruptA: state unchanged
-    simp only [honestImpl_lazy_real, QueryImpl.add_apply_inl, QueryImpl.add_apply_inr] at hz
-    have h_eq := oracleCorruptA_state_unchanged gp s z hz
-    rw [h_eq]
-  | _ =>
-    -- TODO: remaining 7 cases (per-oracle unfold + StateT.run normalization +
-    -- case-split on validStep / state.stX → either state unchanged or tA += 1).
-    -- Mechanical but verbose; deferred while the higher-level wiring proceeds.
-    sorry
+    s.tA ≤ z.2.tA :=
+  (honestImpl_lazy_real_t_monotone gp a b t s z hz).1
+
+omit [Inhabited F] [Fintype G] in
+/-- `tB`-only projection of `honestImpl_lazy_real_t_monotone`. -/
+private lemma honestImpl_lazy_real_tB_monotone
+    (gp : GameParams) (a b : F)
+    (t : (ckaSecuritySpec (F ⊕ G) G G).Domain)
+    (s : GameState (F ⊕ G) G G)
+    (z : (ckaSecuritySpec (F ⊕ G) G G).Range t × GameState (F ⊕ G) G G)
+    (hz : z ∈ support ((honestImpl_lazy_real gp gen a b t).run s)) :
+    s.tB ≤ z.2.tB :=
+  (honestImpl_lazy_real_t_monotone gp a b t s z hz).2
 
 omit [Inhabited F] [Fintype G] in
 /-- **`PreservesInv` packaging of `tA` monotonicity.**
@@ -2008,19 +2029,19 @@ private lemma evalDist_eager_honest_lazy_eq
     --     Off-party: same as non-divergence. On-party with embedding/challenge:
     --     bijection `a ↔ x'` or `b ↔ x` via `probOutput_bind_bijective_uniform_cross`.
     match t with
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inl (.inl _))))))) =>  -- unifSpec
+    | OUnif _ =>  -- unifSpec
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
-    | .inl (.inl (.inl (.inl (.inl (.inl (.inr _)))))) =>  -- recvA
+    | ORecvA =>  -- recvA
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
-    | .inl (.inl (.inl (.inl (.inr _)))) =>  -- recvB
+    | ORecvB =>  -- recvB
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
-    | .inl (.inr _) =>  -- corruptA
+    | OCorruptA =>  -- corruptA
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
-    | .inr _ =>  -- corruptB
+    | OCorruptB =>  -- corruptB
       exact evalDist_eager_honest_lazy_eq_step_passthrough (gen := gen) gp s _ k
         (fun _ _ => rfl) ih
     | OSendA =>  -- sendA
