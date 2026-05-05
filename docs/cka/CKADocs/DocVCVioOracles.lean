@@ -94,10 +94,10 @@ R q   := spec.Range q
 so that `spec` is a dependent family `R : Q -> Type`. As a
 container/polynomial functor:
 
-```
-P(X) = Sum (q : Q), X^(R q)
-     = Sigma (q : Q), (R q -> X)
-```
+$$`
+P(X) \;=\; \sum_{q : Q} X^{R(q)}
+\;\cong\; \sum_{q : Q} \bigl(R(q) \to X\bigr)
+`
 
 Here `q : Q` is a query shape or oracle input, and `R q` is the type of possible
 responses to that query. The continuation `R q -> X` records what the program
@@ -114,11 +114,13 @@ def OracleSpec.toPFunctor (spec : OracleSpec iota) : PFunctor :=
 
 The corresponding one-step query functor is:
 
-```
-OracleQuery spec alpha
-  = P(alpha)
-  = Sigma (q : spec.Domain), (spec.Range q -> alpha)
-```
+$$`
+\operatorname{OracleQuery}(\mathsf{spec}, \alpha)
+\;=\; P(\alpha)
+\;\cong\;
+\sum_{q : \mathsf{spec.Domain}}
+  \bigl(\mathsf{spec.Range}(q) \to \alpha\bigr)
+`
 
 The relation with `OracleSpec` is exactly the relation between a polynomial
 signature and its value at a type:
@@ -182,24 +184,26 @@ The polynomial free-monad construction can be read as the
 `(Poly, triangleleft, y)`, with `triangleleft` meaning substitution of
 polynomials and `y` the unit, the free monad on a polynomial
 
-```
-p = Sum (q : Q), y^(R q)
-```
+$$`
+p \;=\; \sum_{q : Q} y^{R(q)}
+`
 
 is built from the transfinite chain:
 
-```
-p^(0)        := y
-p^(alpha+1) := y + p triangleleft p^(alpha)
-p^(lambda)  := colim_{alpha < lambda} p^(alpha)
-```
+$$`
+p^{(0)} := y,
+\qquad
+p^{(\alpha+1)} := y + p \triangleleft p^{(\alpha)},
+\qquad
+p^{(\lambda)} := \operatorname*{colim}_{\alpha < \lambda} p^{(\alpha)}
+`
 
 for limit ordinals `lambda`. If `p` is `kappa`-small, the free polynomial monad
 is the sufficiently large stage:
 
-```
-mathfrak_m p := p^(kappa)
-```
+$$`
+\mathfrak{m}(p) := p^{(\kappa)}
+`
 
 Concretely, `p^(0)` is "stop now", `p^(1)` is "stop or perform one
 `p`-operation", and `p^(2)` is "stop or perform one operation and then, for
@@ -212,10 +216,11 @@ queries `q : Q`, and whose outgoing branches at such a node are indexed by
 responses `r : R q`. The directions of such a tree are its dangling leaves.
 Evaluating at a return type `X` gives:
 
-```
-(mathfrak_m p)(X)
-  = Sum (T : oracle tree shape), X^(leaves T)
-```
+$$`
+\mathfrak{m}(p)(X)
+\;\cong\;
+\sum_{T : \operatorname{Tree}(p)} X^{\operatorname{Leaves}(T)}
+`
 
 So an element is a terminating oracle decision-tree shape together with a
 return value in `X` for every dangling leaf.
@@ -232,9 +237,9 @@ inductive PFunctor.FreeM (P : PFunctor) : Type -> Type
 At the evaluated level, for a fixed return type `X`, the free monad is the
 least recursive solution of:
 
-```
-T X = X + P(T X)
-```
+$$`
+T(X) \;\cong\; X + P(T(X))
+`
 
 The constructor `pure` is the `X` summand: stop now and return a value.
 The constructor `roll` is the recursive `P(T X)` summand: perform one
@@ -242,9 +247,11 @@ The constructor `roll` is the recursive `P(T X)` summand: perform one
 
 For a container polynomial, this recursive summand expands as:
 
-```
-P(T X) = Sigma (a : P.A), (P.B a -> T X)
-```
+$$`
+P(T(X))
+\;\cong\;
+\sum_{a : P.A} \bigl(P.B(a) \to T(X)\bigr)
+`
 
 so `roll a r` means: choose one operation shape `a : P.A`, and provide a
 subtree `r d : T X` for every possible direction `d : P.B a`.
@@ -254,11 +261,13 @@ functor layer `P(T X)` back into the recursive type `T X`.
 A finite-height approximation says the same thing without fixed-point
 notation:
 
-```
-T_0 X       := X
-T_(n+1) X   := X + P(T_n X)
-T_infty X   := colim_n T_n X
-```
+$$`
+T_0(X) := X,
+\qquad
+T_{n+1}(X) := X + P(T_n(X)),
+\qquad
+T_\infty(X) := \operatorname*{colim}_{n} T_n(X)
+`
 
 Here `T_n X` contains trees of height at most `n`; the colimit collects all
 finite, well-founded trees.
@@ -327,10 +336,11 @@ impl q : m (spec.Range q)
 Categorically, this induces the natural transformation from the one-step
 polynomial into the underlying functor of `m`:
 
-```
-theta_X : P(X) -> m X
-theta_X(q, k) = map k (impl q)
-```
+$$`
+\theta_X : P(X) \to mX,
+\qquad
+\theta_X(q,k) := \operatorname{map}(k)(\mathsf{impl}(q))
+`
 
 Here `(q, k)` is an element of `P(X)`, so:
 
@@ -391,10 +401,13 @@ unifSpec n = Fin (n + 1)
 
 Therefore:
 
-```
-ProbComp X
-  = FreeMonad(Sum (n : Nat), y^(Fin(n + 1)))(X)
-```
+$$`
+\operatorname{ProbComp}(X)
+\;=\;
+\operatorname{FreeMonad}\!\left(
+  \sum_{n : \mathbb{N}} y^{\operatorname{Fin}(n+1)}
+\right)(X)
+`
 
 The query `n : Nat` has one branch for every value of `Fin(n + 1)`, which
 corresponds to sampling uniformly from `{0, ..., n}`. Even here, `ProbComp` is
@@ -463,9 +476,11 @@ evalDist mx
 This is still exactly the polynomial/free-monad story. If
 `spec : OracleSpec ι` corresponds to:
 
-```
-P(X) = Sigma (q : ι), (spec q -> X)
-```
+$$`
+P(X)
+\;\cong\;
+\sum_{q : \iota} \bigl(\mathsf{spec}(q) \to X\bigr)
+`
 
 then the uniform interpretation is a concrete query implementation:
 
@@ -476,10 +491,14 @@ uniformImpl q := PMF.uniformOfFintype (spec.Range q)
 
 Equivalently, at one polynomial layer it induces:
 
-```
-P(X) -> PMF X
-(q, k) |-> PMF.map k (PMF.uniformOfFintype (spec.Range q))
-```
+$$`
+P(X) \to \operatorname{PMF}(X),
+\qquad
+(q,k) \mapsto
+\operatorname{PMF.map}(k)\bigl(
+  \operatorname{PMF.uniformOfFintype}(\mathsf{spec.Range}(q))
+\bigr)
+`
 
 The universal property of the free monad extends this one-layer map to:
 
@@ -546,12 +565,13 @@ shapes.
 
 Mathematical side:
 
-```
-Q       = type of oracle queries
-R q     = type of responses to query q
-
-P X     = Sum (q : Q), (R q -> X)
-```
+$$`
+Q = \{\text{oracle query shapes}\},
+\qquad
+R(q) = \{\text{responses to } q\},
+\qquad
+P(X) = \sum_{q : Q} \bigl(R(q) \to X\bigr)
+`
 
 Lean side:
 
@@ -605,13 +625,12 @@ A `QueryImpl` gives concrete semantics to every primitive oracle call.
 
 Mathematical side:
 
-```
-impl : Π q : Q, m (R q)
-
-(q, k) : Sum (q : Q), (R q -> X)
-maps to
-impl q >>= fun r => pure (k r)
-```
+$$`
+\mathsf{impl} : \prod_{q : Q} m(R(q)),
+\qquad
+(q,k) \mapsto
+\operatorname{bind}\bigl(\mathsf{impl}(q),\; r \mapsto \operatorname{pure}(k(r))\bigr)
+`
 
 Lean side:
 
@@ -652,6 +671,32 @@ adversary success.
 The CKA challenger is an interpreter into a state transformer over
 randomness.
 
+Read the local names as follows:
+
+```
+Name / notation        Meaning here
+---------------------------------------------------------------------------
+Exp                    experiment, not exponentiation
+securityExp            security experiment: run the hidden-bit CKA game
+correctnessExp         correctness experiment: check matching send/receive keys
+gp                     game parameters, not a group element
+→ₒ / ->o               constant oracle spec: query type -> response type
+Unit →ₒ β              one command-like oracle, with response type β
+Rho                    protocol-message type; this is the paper's T-space
+I                      CKA epoch-key type; this is the paper's I-space
+St                     local party-state type; this is the paper's γ-space
+IK                     initialization-key type; this is the paper's K-space
+```
+
+The notation `A →ₒ B` is defined in `OracleSpec.lean` as:
+
+```
+notation A " →ₒ " B => OracleSpec.ofFn (fun (_ : A) => B)
+```
+
+So `Unit →ₒ Option (Rho × I)` is the oracle spec with one query input `()` and
+responses of type `Option (Rho × I)`.
+
 Paper side:
 
 ```
@@ -662,20 +707,329 @@ and answers each oracle call by updating that state.
 Lean side:
 
 ```
+structure CKAScheme (m : Type -> Type u) [Monad m]
+    (IK St I Rho : Type) where
+  initKeyGen : m IK
+  initA      : IK -> m St
+  initB      : IK -> m St
+  sendA      : St -> m (Option (I × Rho × St))
+  recvA      : St -> Rho -> Option (I × St)
+  sendB      : St -> m (Option (I × Rho × St))
+  recvB      : St -> Rho -> Option (I × St)
+```
+
+For the security game we instantiate `m := ProbComp`, because key generation
+and sending may sample randomness. The other type parameters are the protocol's
+basic spaces:
+
+```
+IK   initial shared key material
+St   local party state
+I    epoch key / session-key material
+Rho  protocol message
+```
+
+Important: `Rho` is not a map. It is only the Lean name for the type of CKA
+messages. The paper writes these messages as `T`, for example `T_i`. We use
+`Rho` to avoid overloading `T` with Lean's type variables. Likewise, `I` is the
+type of CKA keys output in each epoch. These are the session/epoch keys that
+the CKA game tests for real-or-random security. Long-lived or evolving private
+protocol state lives in `St`, not in `I`.
+
+The parameters fixed before the adversary runs are:
+
+```
+structure CKAScheme.GameParams where
+  tStar          : Nat       -- paper t*
+  deltaCKA       : Nat       -- paper Delta_CKA
+  challengedParty : CKAParty -- paper P in {A, B}
+```
+
+Thus `gp` abbreviates "game parameters":
+
+```
+gp.tStar
+gp.deltaCKA
+gp.challengedParty
+```
+
+The Figure 3 oracle interface is the oracle specification:
+
+```
+def CKAScheme.ckaSecuritySpec (St Rho I : Type) :=
+  ckaCorrectnessSpec Rho I
+  + (Unit ->o Option (Rho × I))   -- chall-A
+  + (Unit ->o Option (Rho × I))   -- chall-B
+  + (Unit ->o Option St)          -- corr-A
+  + (Unit ->o Option St)          -- corr-B
+```
+
+Expanding `ckaCorrectnessSpec`, this is the coproduct of these primitive
+oracle families:
+
+```
+query branch        response fiber
+OUnif n             Fin (n + 1)
+OSendA              Option (Rho × I)
+ORecvA              Unit
+OSendB              Option (Rho × I)
+ORecvB              Unit
+OChallA             Option (Rho × I)
+OChallB             Option (Rho × I)
+OCorruptA           Option St
+OCorruptB           Option St
+```
+
+Here "query branch" and "response fiber" are polynomial/container words:
+
+$$`
+P_{\mathrm{sec}}(X)
+\;=\;
+\sum_{q : Q_{\mathrm{sec}}}
+  \bigl(R_{\mathrm{sec}}(q) \to X\bigr)
+`
+
+Here `query branch q` is the chosen summand / operation shape, and
+`response fiber R_sec q` is the type of possible oracle answers for that
+operation.
+
+For example, `OSendA` is one branch of the coproduct. Its response fiber is
+`Option (Rho × I)`: either the send request is rejected (`none`) or it returns
+the message/key pair (`some (rho, key)`). In Spivak-style notation:
+
+$$`
+P_{\mathrm{sec}}
+\;=\;
+\sum_{q : Q_{\mathrm{sec}}} y^{R_{\mathrm{sec}}(q)}
+`
+
+so the table lists the `q`s and their corresponding `R_sec q`s.
+
+So, as a polynomial/container, the security spec determines:
+
+$$`
+Q_{\mathrm{sec}}
+  := (\mathsf{CKAScheme.ckaSecuritySpec}\; St\; Rho\; I).\mathsf{Domain},
+\qquad
+R_{\mathrm{sec}}(q)
+  := (\mathsf{CKAScheme.ckaSecuritySpec}\; St\; Rho\; I).\mathsf{Range}(q)
+`
+
+$$`
+P_{\mathrm{sec}}(X)
+\;=\;
+\sum_{q : Q_{\mathrm{sec}}}
+  \bigl(R_{\mathrm{sec}}(q) \to X\bigr)
+`
+
+An adversary is the free monad on that polynomial, returning a Boolean guess:
+
+```
+abbrev CKAScheme.CKAAdversary (St Rho I : Type) :=
+  OracleComp (CKAScheme.ckaSecuritySpec St Rho I) Bool
+```
+
+The challenger implementation is one-layer semantics for that polynomial:
+
+```
 CKAScheme.ckaSecurityImpl :
+  CKAScheme.GameParams ->
+  CKAScheme ProbComp IK St I Rho ->
   QueryImpl (CKAScheme.ckaSecuritySpec St Rho I)
     (StateT (CKAScheme.GameState St I Rho) ProbComp)
+```
 
+Internally it is assembled by coproducting the primitive handlers:
+
+```
+ckaSecurityImpl gp cka =
+  ckaCorrectnessImpl cka
+  + oracleChallA gp cka
+  + oracleChallB gp cka
+  + oracleCorruptA gp St I Rho
+  + oracleCorruptB gp St I Rho
+```
+
+The correctness spec is the send/receive-only subinterface:
+
+```
+def CKAScheme.ckaCorrectnessSpec (Rho I : Type) :=
+  unifSpec
+  + (Unit →ₒ Option (Rho × I))  -- send-A
+  + (Unit →ₒ Unit)              -- receive-A
+  + (Unit →ₒ Option (Rho × I))  -- send-B
+  + (Unit →ₒ Unit)              -- receive-B
+```
+
+It is used by `correctnessExp`: initialize both parties, run an adversary that
+may schedule honest sends and receives, and return the accumulated `correct`
+flag saying whether every receive-side key matched the corresponding sender
+key.
+
+Equivalently, after fixing `gp` and `cka`:
+
+```
+impl := CKAScheme.ckaSecurityImpl gp cka
+
+impl :
+  (q : Q_sec) ->
+    StateT (CKAScheme.GameState St I Rho) ProbComp (R_sec q)
+```
+
+This is exactly the natural transformation from one security-oracle layer to
+the semantic monad:
+
+$$`
+\theta_X :
+P_{\mathrm{sec}}(X)
+\to
+\operatorname{StateT}(\mathsf{GameState}, \operatorname{ProbComp})(X)
+`
+
+$$`
+\theta_X(q,k)
+\;=\;
+\operatorname{bind}\bigl(\mathsf{impl}(q),\; r \mapsto \operatorname{pure}(k(r))\bigr)
+`
+
+Here the semantic monad is:
+
+```
+StateT (CKAScheme.GameState St I Rho) ProbComp X
+  = GameState St I Rho -> ProbComp (X × GameState St I Rho)
+```
+
+`StateT σ m X` is the usual state monad transformer. It turns an initial state
+`σ` into an `m`-effectful pair `(output, nextState)`. Here:
+
+```
+σ = CKAScheme.GameState St I Rho
+m = ProbComp
+```
+
+So answering a single oracle query may read and update the challenger state,
+and may also sample randomness through `ProbComp`.
+
+The game state is the concrete store for Figure 3:
+
+```
+Lean field       Paper object / role                   Natural language
+---------------------------------------------------------------------------
+stA, stB         γ_A, γ_B                               current local states
+rhoA, rhoB       pending T from A/B                     undelivered messages
+keyA, keyB       pending I paired with rhoA/rhoB        sender keys to compare
+b                hidden bit b                           real-vs-random branch
+correct          correctness accumulator                all key checks so far
+lastAction       ping-pong phase                        enforce A/B alternation
+tA, tB           t_A, t_B                               per-party epoch counters
+```
+
+By the universal property of the free monad, `simulateQ` extends the one-layer
+implementation to all adaptive adversary trees:
+
+```
+simulateQ impl :
+  OracleComp (CKAScheme.ckaSecuritySpec St Rho I) Bool ->
+  StateT (CKAScheme.GameState St I Rho) ProbComp Bool
+```
+
+Operationally:
+
+```
+simulateQ impl (pure b') = pure b'
+
+simulateQ impl (query q >>= k) =
+  do
+    let r <- impl q
+    simulateQ impl (k r)
+```
+
+Finally, `securityExp` is the Figure 3 wrapper around that interpreter:
+
+```
 CKAScheme.securityExp :
   CKAScheme ProbComp IK St I Rho ->
   CKAScheme.CKAAdversary St Rho I ->
   CKAScheme.GameParams ->
   ProbComp Bool
+
+securityExp cka adversary gp = do
+  let ik  <- cka.initKeyGen
+  let stA <- cka.initA ik
+  let stB <- cka.initB ik
+  let b   <- $ᵗ Bool
+  let initialState := initGameState stA stB b
+  let (b', _) <- (simulateQ (ckaSecurityImpl gp cka) adversary).run initialState
+  return (b == b')
 ```
 
-Thus the paper's interactive game is implemented by:
+So the paper's interactive security experiment has three Lean layers:
 
 ```
-(simulateQ (ckaSecurityImpl gp cka) adversary).run initialState
+1. ckaSecuritySpec
+   the polynomial interface of allowed Figure 3 oracle calls
+
+2. ckaSecurityImpl gp cka
+   the one-query challenger semantics into StateT GameState ProbComp
+
+3. simulateQ (ckaSecurityImpl gp cka) adversary
+   the induced interpreter for the whole adaptive adversary tree
 ```
+
+The full paper-to-code-to-language correspondence is:
+
+```
+Paper item                         Lean item                         Natural language
+------------------------------------------------------------------------------------------------
+CKA-Init-A / CKA-Init-B            initA / initB                     initialize local party states
+CKA-S                              sendA / sendB                    send, producing key/message/state
+CKA-R                              recvA / recvB                    receive a message, producing key/state
+T_i                                Rho values, rhoA/rhoB            CKA protocol messages
+I_i                                I values, keyA/keyB              CKA epoch/session keys
+γ_A, γ_B                           stA, stB                         current private/evolving states
+t*, Delta_CKA, P                   gp.tStar, gp.deltaCKA, gp.challengedParty
+                                                                      fixed game parameters
+send-P                             oracleSendA / oracleSendB        honest send oracle
+receive-P                          oracleRecvA / oracleRecvB        honest receive oracle
+chall-P                            oracleChallA / oracleChallB      real-or-random challenge send
+corr-P                             oracleCorruptA / oracleCorruptB  allowed state reveal
+Figure 3 oracle list               ckaSecuritySpec                  polynomial of allowed queries
+Figure 3 oracle procedures         ckaSecurityImpl                  one-query semantics into StateT
+adaptive attacker                  CKAAdversary                     free-monad oracle program
+running the game                   simulateQ impl adversary         interpret the attacker tree
+win condition b' = b               securityExp                      randomized experiment returning Bool
+```
+
+Faithfulness statement for the current branch:
+
+```
+Faithful within the documented scope:
+  passive adversary
+  alternating ping-pong schedule
+  static challenge epoch t*
+  explicit challenged party P
+  send / receive / challenge / corruption oracles
+  allow-corr and finished_P guards
+  hidden real-or-random bit b
+
+Intentional scope restriction:
+  Figure 3's bad-randomness oracles send-P'(r) are omitted here.
+```
+
+The omission is intentional in this branch: the current CKA game keeps the
+oracles needed for the DDH-CKA Theorem 3 path and the later post-quantum use
+case, but does not model adversarially supplied sender coins. Therefore the
+right claim is not "literal full Figure 3 including every oracle"; it is:
+
+```
+Figure 3 security game, specialized to the passive alternating static-challenge
+scope and omitting send-P'(r).
+```
+
+Within that scope, the Lean model matches the paper because initialization
+samples the initial key and party states, `securityExp` samples the hidden bit,
+`ckaSecuritySpec` lists the allowed oracle calls, `ckaSecurityImpl` implements
+the corresponding state updates and guards, failed `req` checks are represented
+by `none`/no state update, and the final Boolean is exactly the event that the
+adversary guessed the hidden bit.
 :::

@@ -128,8 +128,8 @@ def main (args : List String) : IO UInt32 :=
     (extensionImpls := by exact extension_impls%)
     (config := {
       toHtmlAssets := {
+        features := .all
         extraCss := .ofList [ckaDocsCss]
         extraJs := .ofList [ckaDocsJs]
       }
     })
-
