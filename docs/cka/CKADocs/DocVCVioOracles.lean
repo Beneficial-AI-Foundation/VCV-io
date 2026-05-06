@@ -805,14 +805,21 @@ P_{\mathrm{sec}}
 
 so the table lists the `q`s and their corresponding `R_sec q`s.
 
-So, as a polynomial/container, the security spec determines:
+So, as a polynomial/container, the security spec determines a query type and a
+response family. To keep the mathematics readable, write the Lean oracle
+specification
+
+```
+S_sec := CKAScheme.ckaSecuritySpec St Rho I
+```
+
+as `S_sec`. Then:
 
 $$`
-Q_{\mathrm{sec}}
-  := (\mathsf{CKAScheme.ckaSecuritySpec}\; St\; Rho\; I).\mathsf{Domain},
-\qquad
-R_{\mathrm{sec}}(q)
-  := (\mathsf{CKAScheme.ckaSecuritySpec}\; St\; Rho\; I).\mathsf{Range}(q)
+\begin{aligned}
+Q_{\mathrm{sec}} &:= S_{\mathrm{sec}}.\operatorname{Domain}, \\
+R_{\mathrm{sec}}(q) &:= S_{\mathrm{sec}}.\operatorname{Range}(q).
+\end{aligned}
 `
 
 $$`
@@ -978,27 +985,67 @@ So the paper's interactive security experiment has three Lean layers:
 
 The full paper-to-code-to-language correspondence is:
 
-```
-Paper item                         Lean item                         Natural language
-------------------------------------------------------------------------------------------------
-CKA-Init-A / CKA-Init-B            initA / initB                     initialize local party states
-CKA-S                              sendA / sendB                    send, producing key/message/state
-CKA-R                              recvA / recvB                    receive a message, producing key/state
-T_i                                Rho values, rhoA/rhoB            CKA protocol messages
-I_i                                I values, keyA/keyB              CKA epoch/session keys
-γ_A, γ_B                           stA, stB                         current private/evolving states
-t*, Delta_CKA, P                   gp.tStar, gp.deltaCKA, gp.challengedParty
-                                                                      fixed game parameters
-send-P                             oracleSendA / oracleSendB        honest send oracle
-receive-P                          oracleRecvA / oracleRecvB        honest receive oracle
-chall-P                            oracleChallA / oracleChallB      real-or-random challenge send
-corr-P                             oracleCorruptA / oracleCorruptB  allowed state reveal
-Figure 3 oracle list               ckaSecuritySpec                  polynomial of allowed queries
-Figure 3 oracle procedures         ckaSecurityImpl                  one-query semantics into StateT
-adaptive attacker                  CKAAdversary                     free-monad oracle program
-running the game                   simulateQ impl adversary         interpret the attacker tree
-win condition b' = b               securityExp                      randomized experiment returning Bool
-```
+* Paper `CKA-Init-A` / `CKA-Init-B`; Lean `initA` / `initB`.
+  Natural language: initialize the local party states from the initial key
+  material.
+
+* Paper `CKA-S`; Lean `sendA` / `sendB`.
+  Natural language: run the sending step, producing an epoch key, outgoing
+  protocol message, and next local state.
+
+* Paper `CKA-R`; Lean `recvA` / `recvB`.
+  Natural language: receive a pending protocol message and update the local
+  state, possibly producing the matching epoch key.
+
+* Paper `T_i`; Lean `Rho` values and the game fields `rhoA`, `rhoB`.
+  Natural language: CKA protocol messages, stored until the receiving party
+  consumes them.
+
+* Paper `I_i`; Lean `I` values and the game fields `keyA`, `keyB`.
+  Natural language: CKA epoch/session keys whose real-or-random security is
+  tested by the challenge oracle.
+
+* Paper `γ_A`, `γ_B`; Lean `stA`, `stB`.
+  Natural language: the evolving private local states of the two parties.
+
+* Paper `t*`, `Delta_CKA`, `P`; Lean `gp.tStar`, `gp.deltaCKA`,
+  `gp.challengedParty`.
+  Natural language: fixed game parameters: the challenged epoch, allowed
+  challenge window, and challenged party.
+
+* Paper `send-P`; Lean `oracleSendA` / `oracleSendB`.
+  Natural language: the honest send oracle.
+
+* Paper `receive-P`; Lean `oracleRecvA` / `oracleRecvB`.
+  Natural language: the honest receive oracle.
+
+* Paper `chall-P`; Lean `oracleChallA` / `oracleChallB`.
+  Natural language: the challenge send oracle, returning either the real epoch
+  key or a random key according to the hidden bit.
+
+* Paper `corr-P`; Lean `oracleCorruptA` / `oracleCorruptB`.
+  Natural language: the allowed state-reveal oracle, guarded by the paper's
+  corruption conditions.
+
+* Paper Figure 3 oracle list; Lean `ckaSecuritySpec`.
+  Natural language: the polynomial/container of all primitive oracle queries
+  available to the adversary.
+
+* Paper Figure 3 oracle procedures; Lean `ckaSecurityImpl`.
+  Natural language: the one-query semantics of those oracle procedures into
+  `StateT GameState ProbComp`.
+
+* Paper adaptive attacker; Lean `CKAAdversary`.
+  Natural language: a free-monad oracle program, i.e. an adaptive query tree
+  returning a Boolean guess.
+
+* Paper running the game; Lean `simulateQ impl adversary`.
+  Natural language: interpret the adversary's query tree using the challenger
+  implementation.
+
+* Paper win condition `b' = b`; Lean `securityExp`.
+  Natural language: the randomized experiment that returns whether the
+  adversary guessed the hidden bit.
 
 Faithfulness statement for the current branch:
 

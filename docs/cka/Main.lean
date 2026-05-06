@@ -58,6 +58,19 @@ r#"
   border-radius: 0 4px 4px 0;
 }
 
+.katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.15rem 0;
+}
+
+.bp_math.display {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 .bp_code_panel_wrapper {
   display: none !important;
 }
