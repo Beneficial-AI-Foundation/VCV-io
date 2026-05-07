@@ -5,7 +5,8 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import VersoManual
 import VersoBlueprint
-import CKADocs.SourceBlock
+import CKADocs.BlueprintTriptych
+import CKADocs.Cryptocode
 import Examples.CKA.FromDDH.Construction
 import Examples.CKA.FromDDH.Common
 import Examples.CKA.FromDDH.Correctness
@@ -42,58 +43,20 @@ x • h    Lean
 Here `F` is the scalar field and `G` is the additive group/module carrying the
 group action.
 
-```
-DDH-CKA translation map:
+The compact translation map is:
 
-Paper object                    Lean object
-scalar exponent x               x : F
-group element h                 h : G
-g^x                             x • gen
-h^x                             x • h
-local state gamma               F ⊕ G
-scalar state                    .inl x
-group-element state             .inr h
-message T                       rho : G
-epoch key I                     key : G
-```
+- scalar exponent `x` becomes `x : F`;
+- group element `h` becomes `h : G`;
+- `g^x` becomes `x • gen`;
+- `h^x` becomes `x • h`;
+- local state `γ` becomes `F ⊕ G`;
+- message `T` and epoch key `I` both become values of `G` in this DDH
+  instantiation.
 
-:::definition "ddh_state_sum" (lean := "ddhCKA") (parent := "ddh_core")
-The DDH CKA state type is `F ⊕ G`.
-
-Paper side:
-
-```
-The local state gamma alternates between:
-  a secret scalar used to receive the next message
-  a public/group element used to send the next message
-```
-
-Lean side:
-
-```
-St = F ⊕ G
-```
-
-Meaning of the constructors in this construction:
-
-```
-.inl x : F ⊕ G
-  the party currently stores a scalar x : F.
-  This is the receive-capable state.
-  recv can compute x • rho.
-
-.inr h : F ⊕ G
-  the party currently stores a group element h : G.
-  This is the send-capable state.
-  send samples y and computes y • h.
-```
-
-This is different from the `.inl/.inr` in oracle indices. Here `.inl` and
-`.inr` are the two cases of the protocol state type itself.
-:::
-
-:::definition "ddh_init" (lean := "ddhCKA") (parent := "ddh_core")
-Paper side:
+::::::definition "ddh_cka" (lean := "ddhCKA") (parent := "ddh_core")
+:::::ckaItem "DDH-CKA scheme"
+::::ckaPaper
+The Section 4.1 construction initializes the parties from one sampled scalar:
 
 ```
 x0 <-$ F
@@ -103,23 +66,54 @@ init-A stores h
 init-B stores x0
 ```
 
-Lean side:
+The local state alternates between a scalar used to receive the next message
+and a group element used to send the next message.
 
-```
-initKeyGen := do
-  let x <- $ᵗ F
-  return (x • gen, x)
-
-initA := fun (h, _) => return .inr h
-initB := fun (_, x) => return .inl x
-```
-
-So A begins with a group element and is ready to send first. B begins with the
-matching scalar and is ready to receive.
+:::ckaMsc
+$$`\begin{array}{l|c|l}
+\Alice & & \Bob \\ \hline
+\cmnt{initialize} & & \cmnt{initialize} \\
+\stA \getsval \chipF{\InitA(\lcka)} & & \stB \getsval \chipF{\InitB(\lcka)} \\
+\cmnt{send from group state} & & \\
+(\chipK{K_1},\rho_1,\stA) \sample \chipF{\SendA(\stA)} & \msgR{\rho_1} & \\
+& & \cmnt{derive } \chipK{K_1} \\
+& & (\chipK{K_1},\stB) \getsval \chipF{\RecB(\stB,\rho_1)} \\
+& & \cmnt{send from group state} \\
+& & (\chipK{K_2},\rho_2,\stB) \sample \chipF{\SendB(\stB)} \\
+\cmnt{derive } \chipK{K_2} & \msgL{\rho_2} & \\
+(\chipK{K_2},\stA) \getsval \chipF{\RecA(\stA,\rho_2)} & &
+\end{array}`
 :::
+::::
 
-:::definition "ddh_send" (lean := "ddhCKA.send") (parent := "ddh_core")
-Paper side:
+::::ckaLean
+Lean entry point: `ddhCKA`.
+
+The source below is the authoritative `CKAScheme` value. It sets
+`initKeyGen`, `initA`, `initB`, `sendA`, `sendB`, `recvA`, and `recvB` in one
+place.
+
+:::leanDetail
+```leanSource ddhCKA
+```
+:::
+::::
+
+::::ckaMeaning
+The sum type is protocol state, not oracle routing. `.inl x` means the party
+currently stores a scalar `x : F` and is receive-capable. `.inr h` means the
+party stores a group element `h : G` and is send-capable.
+
+A begins ready to send because it stores `.inr h`; B begins ready to receive
+because it stores `.inl x0`.
+::::
+:::::
+::::::
+
+::::::definition "ddh_send" (lean := "ddhCKA.send") (parent := "ddh_core")
+:::::ckaItem "DDH send"
+::::ckaPaper
+Paper send step:
 
 ```
 Send(h):
@@ -129,28 +123,33 @@ Send(h):
   new state := y
   return (T, I)
 ```
+::::
 
-Lean side:
+::::ckaLean
+Lean declaration: `ddhCKA.send`.
 
+The generic `CKAScheme` send order is `(key, message, newState)`. The source
+below shows the public message `x • gen`, the epoch key `x • h`, and the state
+transition back to a scalar.
+
+:::leanDetail
+```leanSource ddhCKA.send
 ```
-def ddhCKA.send (gen : G) (st : F ⊕ G) :
-    ProbComp (Option (G × G × (F ⊕ G))) :=
-  match st with
-  | .inr h => do
-    let x <- $ᵗ F
-    let key := x • h
-    let msg := x • gen
-    let st' : F ⊕ G := .inl x
-    return some (key, msg, st')
-  | .inl _ => return none
-```
-
-The generic `CKAScheme` send order is `(key, message, newState)`. The public
-message is `x • gen`; the epoch key is `x • h`.
 :::
+::::
 
-:::definition "ddh_recv" (lean := "ddhCKA.recv") (parent := "ddh_core")
-Paper side:
+::::ckaMeaning
+The send procedure only succeeds from a group-element state `.inr h`. It
+samples a fresh scalar, returns the public DH message and derived epoch key,
+and stores the sampled scalar so the next step can receive.
+::::
+:::::
+::::::
+
+::::::definition "ddh_recv" (lean := "ddhCKA.recv") (parent := "ddh_core")
+:::::ckaItem "DDH receive"
+::::ckaPaper
+Paper receive step:
 
 ```
 Receive(x, T):
@@ -158,29 +157,34 @@ Receive(x, T):
   new state := T
   return I
 ```
+::::
 
-Lean side:
-
-```
-def ddhCKA.recv (st : F ⊕ G) (rho : G) :
-    Option (G × (F ⊕ G)) :=
-  match st with
-  | .inl x =>
-    let key := x • rho
-    let st' : F ⊕ G := .inr rho
-    some (key, st')
-  | .inr _ => none
-```
+::::ckaLean
+Lean declaration: `ddhCKA.recv`.
 
 After receiving, the party stores the peer's public value `rho`, so it is
-ready to send in the next round.
+ready to send in the next round. The source below shows the accepted scalar
+state and the rejected group-state branch.
+
+:::leanDetail
+```leanSource ddhCKA.recv
+```
 :::
+::::
 
-:::theorem "ddh_correctness" (lean := "ddhCKA.correctness") (parent := "ddh_core") (tags := "correctness, ddh-cka") (effort := "medium") (priority := "medium")
+::::ckaMeaning
+The receive procedure only succeeds from a scalar state `.inl x`. It computes
+the same DH shared group element as the sender and switches to `.inr rho`, so
+the next local action can be a send.
+::::
+:::::
+::::::
+
+::::::theorem "ddh_correctness" (lean := "ddhCKA.correctness") (parent := "ddh_core") (tags := "correctness, ddh-cka") (effort := "medium") (priority := "medium")
+:::::ckaItem "DDH-CKA correctness"
+::::ckaPaper
 The correctness proof shows that the sender and receiver derive the same group
-element at every honest send/receive pair.
-
-Paper side:
+element at every honest send/receive pair:
 
 ```
 sender key   = y • (x • g)
@@ -188,18 +192,26 @@ receiver key = x • (y • g)
 
 These are equal by commutativity of scalar multiplication.
 ```
+::::
 
-Lean side:
+::::ckaLean
+Lean theorem: `ddhCKA.correctness`.
 
+The full theorem statement and proof source are shown together below, so the
+proof is not detached from the proposition it proves. The proof is driven by
+`reachableInv`, which records the four alternating state shapes that can occur
+in an honest run.
+
+:::leanDetail
+```leanSource ddhCKA.correctness
 ```
-theorem ddhCKA.correctness [DecidableEq G]
-    (adv : CKAScheme.CKACorrectnessAdversary G G) :
-    Pr[= true | CKAScheme.correctnessExp (ddhCKA F G gen) adv] = 1
-```
-
-The proof is driven by `reachableInv`, which records the four alternating
-state shapes that can occur in an honest run.
 :::
+::::
 
-```source ddhCKA.correctness
-```
+::::ckaMeaning
+The theorem quantifies over every correctness adversary that schedules honest
+send and receive oracles. The probability is one because every reachable
+receive-side key matches the pending sender key.
+::::
+:::::
+::::::

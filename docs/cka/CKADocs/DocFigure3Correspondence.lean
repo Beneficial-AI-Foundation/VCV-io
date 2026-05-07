@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import VersoManual
 import VersoBlueprint
+import CKADocs.SourceBlock
 import Examples.CKA.Defs
 
 /-!
@@ -65,22 +66,12 @@ corr-A
 corr-B
 ```
 
-Lean side:
+Lean side, live source:
 
+```leanSource CKAScheme.ckaCorrectnessSpec
 ```
-def CKAScheme.ckaCorrectnessSpec (Rho I : Type) :=
-  unifSpec
-  + (Unit ->o Option (Rho × I))
-  + (Unit ->o Unit)
-  + (Unit ->o Option (Rho × I))
-  + (Unit ->o Unit)
 
-def CKAScheme.ckaSecuritySpec (St Rho I : Type) :=
-  CKAScheme.ckaCorrectnessSpec Rho I
-  + (Unit ->o Option (Rho × I))
-  + (Unit ->o Option (Rho × I))
-  + (Unit ->o Option St)
-  + (Unit ->o Option St)
+```leanSource CKAScheme.ckaSecuritySpec
 ```
 
 The first summand is `unifSpec`, used for the adversary's internal
@@ -97,18 +88,12 @@ send-A      receive-A      chall-A      corr-A
 send-B      receive-B      chall-B      corr-B
 ```
 
-Lean side:
-
-```
-CKAScheme.ckaSecuritySpec.OSendA
-CKAScheme.ckaSecuritySpec.ORecvA
-CKAScheme.ckaSecuritySpec.OSendB
-CKAScheme.ckaSecuritySpec.ORecvB
-CKAScheme.ckaSecuritySpec.OChallA
-CKAScheme.ckaSecuritySpec.OChallB
-CKAScheme.ckaSecuritySpec.OCorruptA
-CKAScheme.ckaSecuritySpec.OCorruptB
-```
+Lean aliases include `CKAScheme.ckaSecuritySpec.OSendA`,
+`CKAScheme.ckaSecuritySpec.ORecvA`, `CKAScheme.ckaSecuritySpec.OSendB`,
+`CKAScheme.ckaSecuritySpec.ORecvB`, `CKAScheme.ckaSecuritySpec.OChallA`,
+`CKAScheme.ckaSecuritySpec.OChallB`,
+`CKAScheme.ckaSecuritySpec.OCorruptA`, and
+`CKAScheme.ckaSecuritySpec.OCorruptB`.
 
 These are marked with `@[match_pattern]`, so proofs can pattern-match against
 the names while Lean unfolds them to the underlying `.inl/.inr` path.
@@ -127,7 +112,7 @@ tagged by `.inl`; a query in the right component is tagged by `.inr`.
 Because `ckaSecuritySpec` is built by repeated binary sums, an oracle index is
 a nested route through this binary tree.
 
-Lean side, examples:
+Routing sketch, not source code:
 
 ```
 OUnif n =
@@ -174,18 +159,11 @@ corr-P:
   return state only if allow-corr or finished_P holds
 ```
 
-Lean side:
-
-```
-CKAScheme.oracleSendA
-CKAScheme.oracleSendB
-CKAScheme.oracleRecvA
-CKAScheme.oracleRecvB
-CKAScheme.oracleChallA
-CKAScheme.oracleChallB
-CKAScheme.oracleCorruptA
-CKAScheme.oracleCorruptB
-```
+Lean declarations include `CKAScheme.oracleSendA`,
+`CKAScheme.oracleSendB`, `CKAScheme.oracleRecvA`,
+`CKAScheme.oracleRecvB`, `CKAScheme.oracleChallA`,
+`CKAScheme.oracleChallB`, `CKAScheme.oracleCorruptA`, and
+`CKAScheme.oracleCorruptB`.
 
 All of them target `StateT (GameState St I Rho) ProbComp`, so every oracle may
 read and update the game state and may sample randomness when needed.
@@ -202,13 +180,8 @@ req condition
 if condition fails, the oracle call does not go through
 ```
 
-Lean side:
-
-```
-Option (Rho × I)
-Option St
-Unit
-```
+Lean response types are `Option (Rho × I)` for send and challenge,
+`Option St` for corruption, and `Unit` for receive.
 
 For send, challenge, and corruption oracles, `some value` means the call was
 accepted and `none` means the guard failed. Receive returns `Unit`, but its

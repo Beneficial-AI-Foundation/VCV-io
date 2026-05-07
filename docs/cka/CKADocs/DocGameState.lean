@@ -5,6 +5,7 @@ Released under Apache 2.0 license as described in the file LICENSE.
 
 import VersoManual
 import VersoBlueprint
+import CKADocs.SourceBlock
 import Examples.CKA.Defs
 
 /-!
@@ -51,13 +52,12 @@ Delta_CKA      healing delay
 P              challenged party
 ```
 
-Lean side:
+Lean side, live source:
 
+```leanSource CKAScheme.GameParams
 ```
-structure CKAScheme.GameParams where
-  tStar : Nat
-  deltaCKA : Nat
-  challengedParty : CKAScheme.CKAParty
+
+```leanSource CKAScheme.CKAParty
 ```
 
 The game fixes these parameters before the adversary runs.
@@ -74,21 +74,9 @@ hidden challenge bit b
 correctness flag
 ```
 
-Lean side:
+Lean side, live source:
 
-```
-structure CKAScheme.GameState (St I Rho : Type) where
-  stA : St
-  stB : St
-  rhoA : Option Rho
-  rhoB : Option Rho
-  keyA : Option I
-  keyB : Option I
-  b : Bool
-  correct : Bool
-  lastAction : Option CKAScheme.CKAAction
-  tA : Nat
-  tB : Nat
+```leanSource CKAScheme.GameState
 ```
 
 `rhoA` is the latest undelivered message from A to B; `keyA` is the sender key
@@ -108,12 +96,12 @@ Then A receives.
 Repeat.
 ```
 
-Lean side:
+Lean side, live source:
 
+```leanSource CKAScheme.CKAAction
 ```
-def CKAScheme.validStep
-    (last : Option CKAScheme.CKAAction)
-    (next : CKAScheme.CKAAction) : Bool
+
+```leanSource CKAScheme.validStep
 ```
 
 The accepted cycle is:
@@ -138,18 +126,12 @@ chall-P is accepted only at t_P = t*
 the DDH reduction embeds the previous other-party send at t* - 1
 ```
 
-Lean side:
+Lean side, live source:
 
+```leanSource CKAScheme.isChallengeEpoch
 ```
-def CKAScheme.isChallengeEpoch
-    (gp : CKAScheme.GameParams)
-    (state : CKAScheme.GameState St I Rho) : Bool :=
-  state.tP gp.challengedParty == gp.tStar
 
-def CKAScheme.isOtherSendBeforeChall
-    (gp : CKAScheme.GameParams)
-    (state : CKAScheme.GameState St I Rho) : Bool :=
-  state.tP gp.challengedParty.other == gp.tStar - 1
+```leanSource CKAScheme.isOtherSendBeforeChall
 ```
 
 The second predicate is reduction infrastructure: it identifies the send where
@@ -165,16 +147,15 @@ finished_A       <=> t_A >= t* + Delta_CKA
 finished_B       <=> t_B >= t* + Delta_CKA
 ```
 
-Lean side:
+Lean side, live source:
 
+```leanSource CKAScheme.allowCorr
 ```
-def CKAScheme.allowCorr
-    (gp : CKAScheme.GameParams)
-    (state : CKAScheme.GameState St I Rho) : Bool :=
-  (max state.tA state.tB) + 2 <= gp.tStar
 
-abbrev CKAScheme.finishedA ...
-abbrev CKAScheme.finishedB ...
+```leanSource CKAScheme.finishedA
+```
+
+```leanSource CKAScheme.finishedB
 ```
 
 The Lean inequality is the same guard written in `Nat` arithmetic.
@@ -190,16 +171,9 @@ set t_A = t_B = 0
 sample or fix hidden bit b
 ```
 
-Lean side:
+Lean side, live source:
 
-```
-def CKAScheme.initGameState (stA stB : St) (b : Bool) :
-    CKAScheme.GameState St I Rho :=
-  { stA, stB,
-    rhoA := none, rhoB := none,
-    keyA := none, keyB := none,
-    b, correct := true, lastAction := none,
-    tA := 0, tB := 0 }
+```leanSource CKAScheme.initGameState
 ```
 
 `securityExp` samples `b`; `securityExpFixedBit` fixes it so the proof can

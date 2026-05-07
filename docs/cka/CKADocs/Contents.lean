@@ -8,6 +8,7 @@ import VersoBlueprint.Commands.Graph
 import VersoBlueprint.Commands.Summary
 
 import CKADocs.SourceBlock
+import CKADocs.BlueprintTriptych
 import CKADocs.DocIntro
 import CKADocs.DocVCVioOracles
 import CKADocs.DocFigure3Correspondence
@@ -54,4 +55,3 @@ Section 4.1, Figure 3, and Theorem 3.
 {blueprint_graph}
 
 {blueprint_summary}
-
