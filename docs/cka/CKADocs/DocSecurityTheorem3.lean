@@ -155,8 +155,8 @@ b = true:  challenge returns an independent random key
 Lean declarations: `CKAScheme.securityExpFixedBit` and
 `CKAScheme.securityExp_toReal_sub_half`.
 
-The source panels below keep each declaration together with its implementation
-or proof.
+The definition is shown as source. The lemma is shown as an interactive
+statement; its proof remains in the Lean file.
 
 :::leanDetail
 ```leanSource CKAScheme.securityExpFixedBit
@@ -231,7 +231,8 @@ Random DDH branch:
 Lean lemmas: `ddhCKA.securityReduction_real` and
 `ddhCKA.securityReduction_rand`.
 
-The full statements and proof sources are shown below.
+The statements below are rendered as Lean so their names and types can be
+hovered. The proofs remain in the Lean file.
 
 :::leanDetail
 ```leanSource ddhCKA.securityReduction_real
@@ -263,7 +264,8 @@ If the group is DDH-secure, then DDH-CKA is CKA-secure with Delta_CKA = 1.
 ::::ckaLean
 Lean theorem: `ddhCKA.security`.
 
-The full theorem statement and proof source are shown together below.
+The theorem statement below is rendered as Lean. The proof remains in the Lean
+file.
 
 :::leanDetail
 ```leanSource ddhCKA.security

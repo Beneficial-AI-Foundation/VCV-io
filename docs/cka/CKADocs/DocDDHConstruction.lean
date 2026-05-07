@@ -197,10 +197,9 @@ These are equal by commutativity of scalar multiplication.
 ::::ckaLean
 Lean theorem: `ddhCKA.correctness`.
 
-The full theorem statement and proof source are shown together below, so the
-proof is not detached from the proposition it proves. The proof is driven by
-`reachableInv`, which records the four alternating state shapes that can occur
-in an honest run.
+The statement below is rendered as Lean so the names can be hovered. The proof
+itself is left in the Lean file; it is driven by `reachableInv`, which records
+the four alternating state shapes that can occur in an honest run.
 
 :::leanDetail
 ```leanSource ddhCKA.correctness

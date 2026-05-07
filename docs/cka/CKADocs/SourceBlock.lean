@@ -152,6 +152,67 @@ public meta def extractDeclBody (declName : Name) : DocElabM ExtractedSource := 
     source := fullSource.trimAscii.toString
   }
 
+private meta def readModuleSource (moduleName : Name) : DocElabM String := do
+  let parts := moduleName.components.map (·.toString)
+  let relPath := String.intercalate "/" parts ++ ".lean"
+  let candidates : List System.FilePath := [relPath, ".." / ".." / relPath]
+  let some path ← candidates.findM? (·.pathExists)
+    | throwError s!"source: source file not found (tried {candidates})"
+  IO.FS.readFile path
+
+private def isSupportSourceEndLine (line : String) : Bool :=
+  let line := line.trimAsciiStart.toString
+  line.startsWith "/--" ||
+    line.startsWith "/-!" ||
+    line.startsWith "omit " ||
+    isDeclHeaderLine line
+
+private def findSourceByHeader? (lines : List String) (header : String) : Option String := Id.run do
+  let lines := lines.toArray
+  let mut start? := none
+  for idx in [:lines.size] do
+    if lines[idx]!.trimAsciiStart.toString.startsWith header then
+      start? := some idx
+      break
+  let some start := start?
+    | return none
+
+  let mut stop := lines.size
+  for idx in [start + 1:lines.size] do
+    if isSupportSourceEndLine lines[idx]! then
+      stop := idx
+      break
+  pure <| some <| "\n".intercalate ((lines.toList.drop start).take (stop - start)) |>.trimAscii.toString
+
+private def supportHeadersFor? (declName : Name) : Option (List String) :=
+  if declName.toString == "ddhCKA.securityReduction" then
+    some [
+      "private noncomputable def reductionSendB",
+      "private noncomputable def reductionSendA",
+      "private noncomputable def reductionChallA",
+      "private noncomputable def reductionChallB",
+      "private noncomputable def reductionOracleImpl",
+      "private noncomputable def reductionInitState"
+    ]
+  else
+    none
+
+private meta def supportSourcePrefix? (declName moduleName : Name) : DocElabM (Option String) := do
+  let some headers := supportHeadersFor? declName
+    | pure none
+  let contents ← readModuleSource moduleName
+  let lines := contents.splitOn "\n"
+  let mut pieces : List String := []
+  let mut foundAll := true
+  for header in headers do
+    match findSourceByHeader? lines header with
+    | some source => pieces := pieces.concat source
+    | none => foundAll := false
+  if foundAll then
+    pure <| some <| "\n\n".intercalate pieces
+  else
+    pure none
+
 private def isPreviewableSource (source : String) : Bool :=
   let source := source.trimAsciiStart.toString
   let prefixes := #[
@@ -164,6 +225,21 @@ private def isPreviewableSource (source : String) : Bool :=
   source.length ≤ 50000 &&
     !dependsOnPrivateLocalHelper &&
     prefixes.any (source.startsWith ·)
+
+private def isTheoremLikeSource (source : String) : Bool :=
+  let source := source.trimAsciiStart.toString
+  let prefixes := #[
+    "theorem ", "private theorem ", "lemma ", "private lemma "
+  ]
+  prefixes.any (source.startsWith ·)
+
+private def theoremStatementSource? (source : String) : Option String :=
+  let source := source.trimAscii.toString
+  let stop? :=
+    match findSubstring source ":= by" with
+    | some idx => some idx
+    | none => findSubstring source ":="
+  stop?.map fun idx => (source.take idx).trimAscii.toString
 
 private def sanitizeNamespacePart (s : String) : String :=
   let chars := s.toList.map fun c =>
@@ -179,7 +255,12 @@ private def previewPrefix (moduleName declName : Name) : String :=
   let ns := previewNamespace declName
   let ddhOpen :=
     if (moduleName.toString.splitOn ".").contains "FromDDH" then
-      "open ddhCKA\n"
+      "open ddhCKA DiffieHellman\n"
+    else
+      ""
+  let ddhVars :=
+    if (moduleName.toString.splitOn ".").contains "FromDDH" then
+      "variable [DecidableEq G]\n"
     else
       ""
   s!"namespace {ns}\n" ++
@@ -188,16 +269,32 @@ private def previewPrefix (moduleName declName : Name) : String :=
   "open OracleSpec OracleComp ENNReal\n" ++
   "variable {IK St I Rho : Type}\n" ++
   "variable {F : Type} [Field F] [Fintype F] [DecidableEq F] [SampleableType F]\n" ++
-  "variable {G : Type} [AddCommGroup G] [Module F G] [SampleableType G]\n\n"
+  "variable {G : Type} [AddCommGroup G] [Module F G] [SampleableType G]\n" ++
+  ddhVars ++
+  "\n"
+
+private def theoremPreviewPrefix (moduleName declName : Name) : String :=
+  previewPrefix moduleName declName ++
+  "variable {gen : G}\n" ++
+  "axiom ckaDocsProof {p : Prop} : p\n\n"
 
 private def previewSuffix (declName : Name) : String :=
   s!"\nend {previewNamespace declName}\n"
 
 private def isSourceStartKeyword (s : String) : Bool :=
-  #["private", "noncomputable", "def", "abbrev", "structure", "inductive"].contains s
+  #["private", "noncomputable", "def", "abbrev", "structure", "inductive",
+    "theorem", "lemma"].contains s
 
 private def isKeywordLeaf (p : String → Bool) : Highlighted → Bool
   | .token ⟨.keyword .., content⟩ => p content.trimAscii.toString
+  | _ => false
+
+private def isAnyKeywordLeaf : Highlighted → Bool
+  | .token ⟨.keyword .., _⟩ => true
+  | _ => false
+
+private def isTokenLeaf (p : String → Bool) : Highlighted → Bool
+  | .token ⟨_, content⟩ => p content.trimAscii.toString
   | _ => false
 
 private partial def flattenHighlightedLeaves : Highlighted → Array Highlighted
@@ -205,6 +302,30 @@ private partial def flattenHighlightedLeaves : Highlighted → Array Highlighted
   | .span _ content => flattenHighlightedLeaves content
   | .tactics _ _ _ content => flattenHighlightedLeaves content
   | leaf => #[leaf]
+
+private def tokenText? : Highlighted → Option String
+  | .token ⟨_, content⟩ => some content.trimAscii.toString
+  | _ => none
+
+private def isProjectionTarget? (leaf : Highlighted) : Bool :=
+  match tokenText? leaf with
+  | some "toReal" => true
+  | some "run" => true
+  | _ => false
+
+private def isProjectionDotGlitch (text : String) : Bool :=
+  text == "" || text == "f" || text == "e" || text == "l" || text == "/"
+
+private def normalizeProjectionDots (leaves : Array Highlighted) : Array Highlighted :=
+  leaves.mapIdx fun idx leaf =>
+    match leaf with
+    | .token ⟨kind, content⟩ =>
+      let text := content.trimAscii.toString
+      if isProjectionDotGlitch text && leaves[idx + 1]?.any isProjectionTarget? then
+        .token ⟨kind, "."⟩
+      else
+        leaf
+    | _ => leaf
 
 private def firstIndex? (xs : Array α) (p : α → Bool) : Option Nat := Id.run do
   for i in [:xs.size] do
@@ -225,12 +346,55 @@ private def lastIndex? (xs : Array α) (p : α → Bool) : Option Nat := Id.run 
     | none => pure ()
   return none
 
+private partial def prevKeywordIndex? (leaves : Array Highlighted) (idx : Nat) : Option Nat :=
+  if idx == 0 then
+    none
+  else
+    let idx := idx - 1
+    match leaves[idx]? with
+    | some leaf =>
+      if isAnyKeywordLeaf leaf then some idx else prevKeywordIndex? leaves idx
+    | none => none
+
+private def isDeclPrimaryKeyword (s : String) : Bool :=
+  #["def", "abbrev", "structure", "inductive", "theorem", "lemma"].contains s
+
+private def isDeclModifierKeyword (s : String) : Bool :=
+  #["private", "noncomputable"].contains s
+
+private partial def rewindDeclModifiers (leaves : Array Highlighted) (idx : Nat) : Nat :=
+  match prevKeywordIndex? leaves idx with
+  | some prev =>
+    match leaves[prev]? with
+    | some leaf =>
+      if isKeywordLeaf isDeclModifierKeyword leaf then
+        rewindDeclModifiers leaves prev
+      else
+        idx
+    | none => idx
+  | none => idx
+
 private def trimHighlightedWrapper (highlighted : Highlighted) : Highlighted :=
   let leaves := flattenHighlightedLeaves highlighted
   let start := (firstIndex? leaves (isKeywordLeaf isSourceStartKeyword)).getD 0
   let leaves := leaves.extract start leaves.size
   let stop := (lastIndex? leaves (isKeywordLeaf (· == "end"))).getD leaves.size
-  .seq (leaves.extract 0 stop)
+  .seq (normalizeProjectionDots (leaves.extract 0 stop))
+
+private def trimHighlightedWrapperFromLastDecl (highlighted : Highlighted) : Highlighted :=
+  let leaves := flattenHighlightedLeaves highlighted
+  let primary := (lastIndex? leaves (isKeywordLeaf isDeclPrimaryKeyword)).getD 0
+  let start := rewindDeclModifiers leaves primary
+  let leaves := leaves.extract start leaves.size
+  let stop := (lastIndex? leaves (isKeywordLeaf (· == "end"))).getD leaves.size
+  .seq (normalizeProjectionDots (leaves.extract 0 stop))
+
+private def trimStatementHighlightedWrapper (highlighted : Highlighted) : Highlighted :=
+  let leaves := flattenHighlightedLeaves highlighted
+  let start := (firstIndex? leaves (isKeywordLeaf isSourceStartKeyword)).getD 0
+  let leaves := leaves.extract start leaves.size
+  let stop := (firstIndex? leaves (isTokenLeaf (· == ":="))).getD leaves.size
+  .seq (normalizeProjectionDots (leaves.extract 0 stop))
 
 block_extension Block.leanSource (declName : String) (source : String) where
   data := toJson (declName, source)
@@ -270,12 +434,52 @@ block_extension Block.leanSource (declName : String) (source : String) where
           ]
       | .error _ => pure .empty
 
+block_extension Block.leanStatement (declName : String) (source : String) where
+  data := toJson (declName, source)
+  traverse _id _data _contents := do
+    pure none
+  toTeX :=
+    open Verso.Output.TeX in
+    some <| fun _goI _goB _id data _contents => do
+      match fromJson? (α := String × String) data with
+      | .ok (declName, source) =>
+        pure <| .raw ("\\paragraph{Lean statement: " ++ declName ++ "}\\begin{verbatim}\n" ++
+          source ++ "\n\\end{verbatim}\n")
+      | .error _ => pure .empty
+  toHtml :=
+    some <| fun _goI goB _id data contents => do
+      match fromJson? (α := String × String) data with
+      | .ok (declName, source) =>
+        let rendered ← contents.mapM goB
+        let title := s!"Lean statement: {declName}"
+        let body :=
+          if contents.isEmpty then
+            Verso.Output.Html.tag "pre" #[
+              ("class", "cka-lean-source-code")
+            ] (Verso.Output.Html.text true source)
+          else
+            Verso.Output.Html.tag "div" #[
+              ("class", "cka-lean-source-rendered")
+            ] (.seq rendered)
+        pure <|
+          Verso.Output.Html.tag "section" #[
+            ("class", "cka-lean-source cka-lean-statement")
+          ] <| .seq #[
+            Verso.Output.Html.tag "div" #[
+              ("class", "cka-lean-source-summary")
+            ] (Verso.Output.Html.text true title),
+            body
+          ]
+      | .error _ => pure .empty
+
 private meta def sourcePreviewTerm? (declName moduleName : Name) (source : String) :
     DocElabM (Option Term) := do
-  if isPreviewableSource source then
+  let support? ← supportSourcePrefix? declName moduleName
+  if isPreviewableSource source || support?.isSome then
     let pre := previewPrefix moduleName declName
     let post := previewSuffix declName
-    let wrapped : StrLit := Syntax.mkStrLit (pre ++ source ++ post)
+    let supportPrefix := support?.map (· ++ "\n\n") |>.getD ""
+    let wrapped : StrLit := Syntax.mkStrLit (pre ++ supportPrefix ++ source ++ post)
     let cfg : Verso.Genre.Manual.InlineLean.LeanBlockConfig := {
       «show» := true
       keep := false
@@ -287,7 +491,11 @@ private meta def sourcePreviewTerm? (declName moduleName : Name) (source : Strin
       let term ←
         Verso.Genre.Manual.InlineLean.elabCommands cfg wrapped
           (fun _shouldShow highlighted _str => do
-            let highlighted := (highlighted.matchingExpr? source).getD (trimHighlightedWrapper highlighted)
+            let highlighted :=
+              if support?.isSome then
+                trimHighlightedWrapperFromLastDecl highlighted
+              else
+                trimHighlightedWrapper highlighted
             ``(Block.other (_root_.Block.leanSource $(quote declName.toString) $(quote source)) #[
                 Block.other
                   (Verso.Genre.Manual.InlineLean.Block.lean
@@ -302,19 +510,56 @@ private meta def sourcePreviewTerm? (declName moduleName : Name) (source : Strin
   else
     pure none
 
+private meta def statementPreviewTerm? (declName moduleName : Name) (statement : String) :
+    DocElabM (Option Term) := do
+  let pre := theoremPreviewPrefix moduleName declName
+  let post := previewSuffix declName
+  let wrapped : StrLit := Syntax.mkStrLit (pre ++ statement ++ " := ckaDocsProof" ++ post)
+  let cfg : Verso.Genre.Manual.InlineLean.LeanBlockConfig := {
+    «show» := true
+    keep := false
+    name := none
+    error := false
+    fresh := false
+  }
+  try
+    let term ←
+      Verso.Genre.Manual.InlineLean.elabCommands cfg wrapped
+        (fun _shouldShow highlighted _str => do
+          let highlighted := trimStatementHighlightedWrapper highlighted
+          ``(Block.other (_root_.Block.leanStatement $(quote declName.toString) $(quote statement)) #[
+              Block.other
+                (Verso.Genre.Manual.InlineLean.Block.lean
+                  $(quote highlighted)
+                  (none : Option System.FilePath)
+                  (none : Option Lean.Lsp.Range))
+                #[]
+            ]))
+    pure (some term)
+  catch
+    | _ => pure none
+
 private meta def sourceBlockTerm (cfg : SourceConfig) : DocElabM Term := do
   let declName := cfg.name.getId
   let extracted ← extractDeclBody declName
-  let preview? ← sourcePreviewTerm? declName extracted.moduleName extracted.source
-  match preview? with
-  | some term => pure term
-  | none =>
-    ``(Block.other (Block.leanSource $(quote declName.toString) $(quote extracted.source)) #[])
+  if isTheoremLikeSource extracted.source then
+    let statement := (theoremStatementSource? extracted.source).getD extracted.source
+    let preview? ← statementPreviewTerm? declName extracted.moduleName statement
+    match preview? with
+    | some term => pure term
+    | none =>
+      ``(Block.other (Block.leanStatement $(quote declName.toString) $(quote statement)) #[])
+  else
+    let preview? ← sourcePreviewTerm? declName extracted.moduleName extracted.source
+    match preview? with
+    | some term => pure term
+    | none =>
+      ``(Block.other (Block.leanSource $(quote declName.toString) $(quote extracted.source)) #[])
 
 /--
 Extracts a live Lean declaration and renders it as a CKA-local source panel.
-The panel keeps the full statement/signature with its implementation or proof,
-so a theorem proof is not detached from the theorem it proves.
+Definitions render as source. Theorems and lemmas render as interactive
+statements only; readers can open the Lean file for proof terms.
 -/
 @[code_block]
 meta def leanSource : SourceConfig → StrLit → DocElabM Term
