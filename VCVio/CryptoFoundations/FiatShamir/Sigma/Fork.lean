@@ -184,41 +184,29 @@ theorem queryLog_length_le_of_nmaHashQueryBound
       cases t with
       | inl n =>
           rcases st with ⟨cache, log⟩
-          have hus' :
-              us ∈ support
-                ((fun u => (u, (cache, log))) <$>
-                  ((wrappedSpec Chal).query (Sum.inl n) :
-                    OracleComp (wrappedSpec Chal) ((wrappedSpec Chal).Range (Sum.inl n)))) := by
-            simpa [QueryImpl.add_apply_inl, unifFwd] using hus
-          rw [support_map] at hus'
-          obtain ⟨u, _, hus_eq⟩ := hus'
-          subst us
+          have hus' : us ∈ Set.range (fun u => (u, cache, log)) := by
+            simpa [QueryImpl.add_apply_inl, unifFwd, support_map] using hus
+          obtain ⟨u, rfl⟩ := hus'
           simpa using ih u (hQ.2 u) (cache, log) hz'
       | inr mc =>
           rcases st with ⟨cache, log⟩
           cases hcache : cache mc with
           | some v =>
-              have hus' : us = (v, (cache, log)) := by
-                simpa [QueryImpl.add_apply_inr, roImpl, StateT.run_bind, StateT.run_get,
-                  hcache, support_pure, Set.mem_singleton_iff] using hus
-              subst us
+              have hus' : us ∈ ({(v, cache, log)} : Set _) := by
+                convert hus using 1 <;>
+                  simp [QueryImpl.add_apply_inr, roImpl, StateT.run_bind, StateT.run_get,
+                    hcache, support_pure]
+              obtain rfl := Set.mem_singleton_iff.mp hus'
               have hrec : z.2.2.length ≤ log.length + (Q - 1) := by
                 simpa using ih v (hQ.2 v) (cache, log) hz'
               exact le_trans hrec (Nat.add_le_add_left (Nat.sub_le _ _) _)
           | none =>
-              have hus' :
-                  us ∈ support
-                    ((fun u : Chal =>
-                        (u,
-                          ((cache.cacheQuery mc u : (M × Commit →ₒ Chal).QueryCache),
-                            log ++ [mc]))) <$>
-                      ((wrappedSpec Chal).query (Sum.inr ()) :
-                        OracleComp (wrappedSpec Chal) Chal)) := by
-                simpa [QueryImpl.add_apply_inr, roImpl, StateT.run_bind, StateT.run_get,
-                  hcache, StateT.run_set, bind_map_left] using hus
-              rw [support_map] at hus'
-              obtain ⟨u, _, hus_eq⟩ := hus'
-              subst us
+              have hus' : us ∈ Set.range (fun u : Chal =>
+                  (u, cache.cacheQuery mc u, log ++ [mc])) := by
+                convert hus using 1 <;>
+                  simp [QueryImpl.add_apply_inr, roImpl, StateT.run_bind, StateT.run_get,
+                    hcache, StateT.run_set, support_map]
+              obtain ⟨u, rfl⟩ := hus'
               have hrec : z.2.2.length ≤ (log ++ [mc]).length + (Q - 1) := by
                 simpa using
                   ih u (hQ.2 u)
